@@ -1,0 +1,36 @@
+11:47:09 | INFO    | [1/4] Grid moslashtirish...
+11:47:09 | INFO    |   🔄 Grid farqli — bilinear reproject qilinmoqda
+12:07:21 | INFO    | GDAL signalled an error: err_no=1, msg='TIFFAppendToStrip:Maximum TIFF file size exceeded. Use BIGTIFF=YES creation option.'
+12:07:21 | INFO    | GDAL signalled an error: err_no=1, msg='_aligned_B.tif: WriteEncodedTile/Strip() failed.'
+12:07:22 | INFO    | GDAL signalled an error: err_no=1, msg='_aligned_B.tif, band 4: An error occurred while writing a dirty block from GDALRasterBand::RasterIO'
+12:07:22 | ERROR   | compare_two_failed
+rasterio._err.CPLE_AppDefinedError: TIFFAppendToStrip:Maximum TIFF file size exceeded. Use BIGTIFF=YES creation option.
+
+The above exception was the direct cause of the following exception:
+
+rasterio._err.CPLE_AppDefinedError: _aligned_B.tif: WriteEncodedTile/Strip() failed.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "rasterio/_warp.pyx", line 630, in rasterio._warp._reproject
+  File "rasterio/_warp.pyx", line 630, in rasterio._warp._reproject
+  File "rasterio/_warp.pyx", line 638, in rasterio._warp._reproject
+  File "rasterio/_err.pyx", line 325, in rasterio._err.StackChecker.exc_wrap_int
+rasterio._err.CPLE_AppDefinedError: _aligned_B.tif, band 4: An error occurred while writing a dirty block from GDALRasterBand::RasterIO
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "D:\Cloud_comp\Compare\et_comparison_package_final2\compare_two.py", line 295, in main
+    reproject_to_match(raster_b, raster_a, aligned_b_path)
+  File "D:\Cloud_comp\Compare\et_comparison_package_final2\compare_two.py", line 161, in reproject_to_match
+    reproject(
+  File "C:\Users\d.nozimov\AppData\Local\miniconda3\envs\gis_pro\lib\site-packages\rasterio\env.py", line 410, in wrapper
+    return f(*args, **kwds)
+  File "C:\Users\d.nozimov\AppData\Local\miniconda3\envs\gis_pro\lib\site-packages\rasterio\warp.py", line 387, in reproject
+    dest = _reproject(
+  File "rasterio/_warp.pyx", line 641, in rasterio._warp._reproject
+rasterio.errors.WarpOperationError: Chunk and warp failed
+12:19:47 | INFO    | [1/4] Grid moslashtirish...
+12:19:47 | INFO    |   🔄 Grid farqli — bilinear reproject qilinmoqda
