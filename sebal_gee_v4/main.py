@@ -100,66 +100,6 @@ def get_hls_tile_geometry(mgrs_tile, date_start='2024-01-01',
 # BITTA TILE NI ISHLASH
 # ==============================================================
 
-# def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
-#                  tile_label=''):
-#     """
-#     Bitta ROI/tile uchun SEBAL pipeline.
-#     Returns: list of processed scene images
-#     """
-#     prefix = f"  [{tile_label}]" if tile_label else "  "
-
-#     # Preprocessing
-#     collection = preprocessing.build_collection(
-#         roi=roi, date_start=date_start, date_end=date_end,
-#         satellite=satellite, cloud_max=cloud_max)
-    
-#     if tile_label:
-#             path_num = int(tile_label.split('_')[0].replace('P', ''))
-#             row_num = int(tile_label.split('_')[1].replace('R', ''))
-#     else:
-#         path_num = None
-#         row_num = None
-
-#         collection = preprocessing.build_collection(
-#             roi=roi, date_start=date_start, date_end=date_end,
-#             satellite=satellite, cloud_max=cloud_max,
-#             mosaic_same_date=not bool(tile_label),
-#             wrs_path=path_num, wrs_row=row_num)
-#         print(f"{prefix} Filtrlangan: Path={path_num} Row={row_num} → {info['image_count']} tasvir")
-
-#     info = preprocessing.collection_info(collection)
-#     print(f"{prefix} Tasvirlar: {info['image_count']} | {info['dates']}")
-
-#     if info['image_count'] == 0:
-#         print(f"{prefix} ⚠️ Tasvir yo'q, o'tkazildi")
-#         return [], info
-
-#     # Surface props + radiation
-#     collection = collection.map(surface_props.compute_all)
-#     collection = collection.map(radiation.compute_all)
-
-#     # Energy balance (har sahna alohida)
-#     image_list = collection.toList(collection.size())
-#     n = info['image_count']
-
-#     scene_images = []
-#     for i in range(n):
-#         print(f"{prefix} Sahna {i+1}/{n}...")
-#         img = ee.Image(image_list.get(i))
-#         img = energy_balance.compute_all(img, roi)
-#         img = daily_et.compute_daily_et(img, roi)
-
-#         if mode == 'pysebal':
-#             from . import et_decomposition, soil_moisture, biomass, irrigation
-#             img = et_decomposition.compute_all(img)
-#             img = soil_moisture.compute_all(img)
-#             img = biomass.compute_all(img)
-#             img = irrigation.compute_all(img)
-
-#         scene_images.append(img)
-
-#     return scene_images, info
-
 def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                  tile_label=''):
     """
@@ -227,7 +167,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         if mode == 'pysebal':
             from . import et_decomposition, soil_moisture, biomass, irrigation
 
-            img = et_decomposition.compute_all(img)
+            img = et_decomposition.compute_all(image=img, roi=roi)
             img = soil_moisture.compute_all(img)
             img = biomass.compute_all(img)
             img = irrigation.compute_all(img)

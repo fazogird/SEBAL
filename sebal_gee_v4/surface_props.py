@@ -87,7 +87,7 @@ def compute_albedo(image):
               .rename('ALBEDO'))
 
     # Albedo 0–1 oralig'iga clamp (xavfsizlik)
-    albedo = albedo.clamp(0.0, 0.70)
+    albedo = albedo.clamp(0.0, 0.80)
 
     return image.addBands(albedo)
 

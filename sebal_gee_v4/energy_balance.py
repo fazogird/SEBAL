@@ -266,31 +266,32 @@ def compute_rah_neutral(image):
 def compute_sensible_heat_flux(image, anchors, roi):
     """
     Sezuvchan issiqlik oqimi H — iterativ hisoblash.
+    Bastiaanssen (1998) original SEBAL yondashuvi (F.24-32).
 
-    SEBAL ning eng muhim qismi!
+    ASOSIY FARAZ (klassik SEBAL, o'zgarmagan):
+      Cold pixel: δTa_cold = 0  (H_cold = 0 — yaxshi sug'orilgan
+                   maydonda butun mavjud energiya ET'ga sarflanadi)
+      Hot pixel:  δTa_hot = H_hot × rah_hot / (ρₐ × cₚ)
+                   H_hot = Q* - G₀  (hot pikselda λE = 0)
 
-    Jarayon (har iteratsiyada):
-      1. δTa lineer koeffitsientlarni hisoblash (c₄, c₅)
-         Hot pixel: δTa_hot = H_hot × rah_hot / (ρₐ × cₚ)
-         Cold pixel: δTa_cold = 0
-         → c₄ = δTa_hot / (T_hot - T_cold)
-         → c₅ = -c₄ × T_cold
+    Konvergensiya mezoni — SEBAL Manual, Appendix 8:
+      "This iterative process is repeated until the successive
+       values for dThot and rah at the 'hot' pixel have stabilized."
+      Ya'ni H o'zgarishi EMAS, balki hot pikseldagi dT va rah
+      stabillashishi tekshiriladi (mutlaq tolerantlik + min_iter).
 
-      2. Har piksel uchun δTa hisoblash
-         δTa(x,y) = c₄ × T₀(x,y) + c₅
+    Qo'shilgan raqamli xavfsizlik choralari (SEBAL fizikasini
+    o'zgartirmaydi, faqat ekstremal/degenerativ holatlardan himoya
+    qiladi):
+      - dT'ni [cold_dT, hot_dT] ± 20% margin oralig'iga cheklash
+        (chiziqli ekstrapolyatsiyaning cheksiz o'sib ketishidan himoya)
+      - Ta (hisoblangan havo harorati)ni ERA5 AIR_TEMP ± 15K bilan
+        solishtirib, chetga chiqqan qiymatlarni tuzatish (QA)
+      - H'ni fizik chegaraga cheklash: -100 ≤ H ≤ (Rn-G0)
+        (λE ≥ 0 kafolati, L_MO'ga buzuq H kirishining oldini olish)
 
-      3. H(x,y) = ρₐ × cₚ × δTa / rah
-
-      4. Monin-Obukhov uzunligi L hisoblash
-         L = -ρₐ × cₚ × u*³ × T₀ / (k × g × H)
-
-      5. Barqarorlik tuzatmalari ψm, ψh hisoblash
-
-      6. u* va rah yangilash
-
-      7. → Qayta 1-bosqichga
-
-    Odatda 3-5 iteratsiya yetarli.
+    Odatda 3-5 iteratsiyada stabillashadi (max_iter=8 — faqat
+    xavfsizlik chegarasi).
     """
     cold_lst = anchors['cold_lst']
     hot_lst = anchors['hot_lst']
@@ -301,6 +302,9 @@ def compute_sensible_heat_flux(image, anchors, roi):
     rho_air = image.select('RHO_AIR')
     u_200 = image.select('U_200')
     z0m = image.select('Z0M')
+    rn_g0 = image.select('RN_G0')          # Rn - G0, H chegarasi uchun
+    air_temp_era5 = image.select('AIR_TEMP')  # Ta sanity-check uchun
+
 
     wcfg = cfg.WIND
     k = cfg.VON_KARMAN
@@ -323,14 +327,18 @@ def compute_sensible_heat_flux(image, anchors, roi):
             maxPixels=1e9, bestEffort=True
         ).get('RHO_AIR'))
 
-    # ---- ITERATSIYA ----
     max_iter = cfg.ITERATION['max_iter']
+    min_iter = cfg.ITERATION['min_iter']
+    tol_dt = cfg.ITERATION['tol_dt']
+    tol_rah = cfg.ITERATION['tol_rah']
+
+    prev_dt_hot = None
+    prev_rah_hot = None
+    converged_at = None
 
     for i in range(max_iter):
 
         # --- 1. Hot pixel dagi rah — FAQAT hot piksellardan ---
-        # BU OLDINGI BUG EDI: butun tasvir mediani olinayotgan edi.
-        # To'g'risi: hot_mask bilan maskalash kerak.
         hot_rah = ee.Number(
             rah.updateMask(hot_mask)
             .reduceRegion(
@@ -339,49 +347,86 @@ def compute_sensible_heat_flux(image, anchors, roi):
                 maxPixels=1e9, bestEffort=True
             ).get('RAH'))
 
-        # --- 2. δTa koeffitsientlar (F.30) ---
-        # Hot: δTa_hot = H_hot × rah_hot / (ρₐ × cₚ)
-        # H_hot = Q* - G₀ (hot pixel da λE = 0)
+        # --- 2. δTa_hot — Bastiaanssen F.30, H_hot = Q*-G₀ (hot pikselda λE=0) ---
         dta_hot = hot_rn_g0.multiply(hot_rah).divide(hot_rho.multiply(cp))
 
-        # Cold: δTa_cold = 0
-        # Lineer koeffitsientlar:
-        #   c₄ = (dta_hot - 0) / (T_hot - T_cold)
-        #   c₅ = -c₄ × T_cold
+        # --- 3. Chiziqli kalibratsiya: cold dT=0, hot dT=dta_hot ---
         c4 = dta_hot.divide(hot_lst.subtract(cold_lst))
         c5 = c4.multiply(cold_lst).multiply(-1)
 
-        # --- 3. Har piksel uchun δTa va H ---
-        dta = lst.multiply(c4).add(c5).rename('DTA')
+        # --- 4. Har piksel uchun δTa ---
+        dta_raw = lst.multiply(c4).add(c5)
 
-        h = (rho_air.multiply(cp)
-             .multiply(dta)
-             .divide(rah)
-             .rename('H'))
+        # ── XAVFSIZLIK 1: dT'ni [0, dta_hot] ± 20% margin'ga cheklash ──
+        # (cold_dT=0 va hot_dT=dta_hot orasidagi "fizik kutilgan" oraliq)
+        dt_lower = ee.Number(0).min(dta_hot)
+        dt_upper = ee.Number(0).max(dta_hot)
+        margin = dt_upper.subtract(dt_lower).multiply(0.2)
+        dta = dta_raw.clamp(
+            dt_lower.subtract(margin),
+            dt_upper.add(margin)
+        ).rename('DTA')
 
-        # --- 4. Monin-Obukhov uzunligi L ---
-        # L = -(ρₐ × cₚ × u*³ × T₀) / (k × g × H)
-        # H = 0 bo'lganda L → ∞ (neytral) — himoya kerak
+        # ── XAVFSIZLIK 2: Ta = T0 - dT, ERA5 AIR_TEMP ± 15K bilan QA ──
+        ta_img = lst.subtract(dta)
+        ta_min = air_temp_era5.subtract(15)
+        ta_max = air_temp_era5.add(15)
+        ta_img = ta_img.where(ta_img.lt(ta_min), ta_min)
+        ta_img = ta_img.where(ta_img.gt(ta_max), ta_max)
+        # Ta tuzatilgan bo'lsa, dT ham mos ravishda qayta hisoblanadi
+        # (T0 o'zgarmaydi, faqat Ta chegaralanganda dT ta'sirlanadi)
+        dta = lst.subtract(ta_img).rename('DTA')
+
+        # --- 5. H = ρₐ × cₚ × δTa / rah ---
+        h_raw = (rho_air.multiply(cp)
+                 .multiply(dta)
+                 .divide(rah))
+
+        # ── XAVFSIZLIK 3: H ni fizik chegaraga cheklash ──
+        # H ≤ Rn-G0 (λE≥0 kafolati), H ≥ -100 W/m² (haddan tashqari
+        # manfiy H'dan himoya — L_MO hisobini buzmasligi uchun)
+        h = h_raw.min(rn_g0).max(-100).rename('H')
+
+        # --- Diagnostika: hot pixeldagi dT/rah — konvergensiya uchun ---
+        hot_check = (image.select([]).addBands(dta).addBands(rah)
+                     .updateMask(hot_mask)
+                     .reduceRegion(
+                         reducer=ee.Reducer.median(),
+                         geometry=roi, scale=30,
+                         maxPixels=1e9, bestEffort=True))
+        dt_hot_val = hot_check.get('DTA').getInfo()
+        rah_hot_val = hot_check.get('RAH').getInfo()
+
+        # ── KONVERGENSIYA — SEBAL Manual Appendix 8 ──
+        if (prev_dt_hot is not None and prev_rah_hot is not None
+                and (i + 1) >= min_iter):
+            if (abs(dt_hot_val - prev_dt_hot) < tol_dt and
+                    abs(rah_hot_val - prev_rah_hot) < tol_rah):
+                converged_at = i + 1
+                print(f"  ✅ Konvergensiya {i+1}-iteratsiyada: "
+                      f"dT_hot={dt_hot_val:.4f} K, "
+                      f"rah_hot={rah_hot_val:.3f} s/m")
+                break
+
+        prev_dt_hot = dt_hot_val
+        prev_rah_hot = rah_hot_val
+        print(f"  iter {i+1}: dT_hot={dt_hot_val:.4f} K, "
+              f"rah_hot={rah_hot_val:.3f} s/m")
+
+        # --- 6. Monin-Obukhov uzunligi L ---
         h_safe = h.where(h.abs().lt(1.0), ee.Image(1.0))
-
         L_mo = (rho_air.multiply(cp)
                 .multiply(ustar.pow(3))
                 .multiply(lst)
                 .divide(ee.Image(k * g).multiply(h_safe))
                 .multiply(-1)
                 .rename('L_MO'))
-
-        # L ni oqilona oralig'iga cheklash
         L_mo = L_mo.clamp(-1e6, 1e6)
 
-        # --- 5. Barqarorlik tuzatmalari ψm va ψh ---
-        # Paulson (1970) formulalari
-        # Nobarqaror (L < 0): konvektiv
-        # Barqaror (L > 0): barqaror stratifikatsiya
-
+        # --- 7. Barqarorlik tuzatmalari ψm, ψh (Paulson/Webb) ---
         psi_m_200, psi_h = _stability_corrections(L_mo, z_blend, z1, z2)
 
-        # --- 6. u* va rah yangilash ---
+        # --- 8. u* va rah yangilash — KEYINGI iteratsiya uchun ---
         ustar = (ee.Image(k).multiply(u_200)
                  .divide(ee.Image(z_blend).divide(z0m).log().subtract(psi_m_200))
                  .rename('USTAR'))
@@ -392,12 +437,19 @@ def compute_sensible_heat_flux(image, anchors, roi):
                .rename('RAH'))
         rah = rah.max(1.0)
 
-    # Iteratsiya tugadi — yakuniy H
+    else:
+        print(f"  ⚠️ {max_iter} iteratsiyada konvergensiya topilmadi — "
+              f"eng so'nggi H bilan davom etadi")
+
+    # Yakuniy bandlar
     image = image.addBands(dta, overwrite=True)
     image = image.addBands(h, overwrite=True)
     image = image.addBands(ustar, overwrite=True)
     image = image.addBands(rah, overwrite=True)
     image = image.addBands(L_mo, overwrite=True)
+
+    image = image.set('h_converged_iter',
+                       converged_at if converged_at is not None else -1)
 
     return image
 
@@ -451,8 +503,12 @@ def _stability_corrections(L_mo, z_blend, z1, z2):
     # ψh = ψh(z1) - ψh(z2) — ikki balandlik orasidagi farq
     psi_h_unstable = psi_h_2_unstable.subtract(psi_h_01_unstable)
 
-    # --- Barqaror (L > 0) ---
-    psi_m_200_stable = ee.Image(-5.0 * z2).divide(L_mo)
+    # --- Barqaror (L > 0), Eq. 38-39 ---
+    # MUHIM: Allen et al. (2007, ASCE) ga ko'ra, bandning nomi "200m" bo'lsa
+    # ham, STABLE sharoitda formulada ATAYLAB z=2m ishlatiladi (200m emas),
+    # chunki barqaror chegara qatlami juda yupqa va 200m ishlatilsa
+    # raqamli beqarorlik (numerical instability) paydo bo'ladi.
+    psi_m_200_stable = ee.Image(-5.0 * z1).divide(L_mo)   # z1 = 2.0m (config.WIND)
     psi_h_stable = (ee.Image(-5.0 * z1).divide(L_mo)
                     .subtract(ee.Image(-5.0 * z2).divide(L_mo)))
 
@@ -492,43 +548,6 @@ def compute_latent_heat_flux(image):
                 .rename('LAMBDA_E'))
 
     return image.addBands(lambda_e)
-
-
-# ==============================================================
-# ETrF — ET Reference Fraction
-# ==============================================================
-
-def compute_etrf(image):
-    """
-    ET reference fraction — instantaneous.
-
-    ETrF = λE / λE_ref
-
-    λE_ref = cold pixel dagi λE = Q* - G₀ (H=0)
-
-    ETrF oralig'i:
-      0.0 — to'liq quruq
-      1.0 — reference ET ga teng (yaxshi sug'orilgan)
-      >1.0 — adveksiya (issiq havodan qo'shimcha energiya)
-      Odatda 0–1.4 oraliq
-    """
-    lambda_e = image.select('LAMBDA_E')
-    rn_g0 = image.select('RN_G0')
-
-    # Cold pixel dagi λE ≈ Q* - G₀ (maksimal bug'lanish)
-    # Bu allaqachon RN_G0 band da bor
-    # ETrF = λE / (Q* - G₀)  bu aslida Λ (evaporative fraction)
-    # Lekin ETrF kontekstida cold pixel RN_G0 ning o'rtachasiga
-    # nisbatan hisoblanadi
-
-    # Sodda versiya: ETrF ≈ Λ = λE / (Q* - G₀)
-    rn_g0_safe = rn_g0.max(10)  # division by zero himoyasi
-
-    etrf = (lambda_e.divide(rn_g0_safe)
-            .clamp(0, 1.5)
-            .rename('ETrF'))
-
-    return image.addBands(etrf)
 
 
 # ==============================================================
@@ -596,7 +615,6 @@ def compute_all(image, roi):
 
     # M8: Latent heat flux
     image = compute_latent_heat_flux(image)
-    image = compute_etrf(image)
     image = compute_evaporative_fraction(image)
 
     return image

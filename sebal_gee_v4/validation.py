@@ -37,12 +37,16 @@ OPENET_COLLECTIONS = {
     'SIMS':      'projects/openet/assets/sims/conus/gridmet/monthly/v2_1',
     'SSEBop':    'projects/openet/assets/ssebop/conus/gridmet/monthly/v2_1',
 }
-# Eski (XATO):
-OPENET_BAND = 'et'
-
-# Yangi (TO'G'RI):
-OPENET_BAND = 'et_ensemble_mad'
-
+# Har model uchun HAQIQIY, aniq band nomi — birinchi band emas
+OPENET_MODEL_BANDS = {
+    'ENSEMBLE': 'et_ensemble_mad',
+    'DisALEXI': 'et',
+    'eeMETRIC': 'et',
+    'geeSEBAL': 'et',
+    'PT_JPL':   'et',
+    'SIMS':     'et',
+    'SSEBop':   'et',
+}
 
 # ==============================================================
 # OpenET ma'lumotlarini olish
@@ -79,26 +83,36 @@ def get_openet_monthly(roi, year, month, models=None):
 
     for model_name in models:
         collection_id = OPENET_COLLECTIONS.get(model_name)
-        if collection_id is None:
+        band_name = OPENET_MODEL_BANDS.get(model_name)
+        if collection_id is None or band_name is None:
             print(f"  ⚠️  '{model_name}' topilmadi, o'tkazildi")
             continue
 
         try:
             col = (ee.ImageCollection(collection_id)
                    .filterDate(date_start, date_end)
-                   .filterBounds(roi)
-                   .first())
+                   .filterBounds(roi))
+            
+            if col.size().getInfo() == 0:
+                print(f"  ⚠️  {model_name}: {year}-{month:02d} uchun tasvir yo'q")
+                continue
 
-            # Har model o'z band nomiga ega — birinchi bandni olish
-            first_band = col.bandNames().get(0)
-            img = col.select([first_band]).rename(f'ET_{model_name}')
+
+            first = col.first()
+            available = first.bandNames().getInfo()
+            if band_name not in available:
+                print(f"  ⚠️  {model_name}: '{band_name}' bandi topilmadi "
+                      f"(mavjud: {available}) — o'tkazildi")
+                continue
+
+            img = first.select([band_name]).rename(f'ET_{model_name}')
 
             if result is None:
                 result = img
             else:
                 result = result.addBands(img)
-        except Exception:
-            print(f"  ⚠️  {model_name} yuklanmadi")
+        except Exception as e:
+            print(f"  ⚠️  {model_name} yuklanmadi: {e}")
 
     return result
 

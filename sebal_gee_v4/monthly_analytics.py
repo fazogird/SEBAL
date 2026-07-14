@@ -47,9 +47,7 @@ def _get_daily_rs24(date, roi):
 # def _interpolate_bands(scene_collection, target_date, bands):
 #     """
 #     Landsat sanalar orasida lineer interpolyatsiya.
-
-#     Oldingi va keyingi sahna orasida weight bo'yicha aralashtirish.
-#     Agar faqat bir tomonda sahna bo'lsa — eng yaqinini olish.
+#     Bulut/NoData teshiklari composite mean bilan to'ldiriladi.
 #     """
 #     target_millis = target_date.millis()
 
@@ -64,27 +62,41 @@ def _get_daily_rs24(date, roi):
 #     has_before = before_col.size().gt(0)
 #     has_after = after_col.size().gt(0)
 
+#     # Oy ichidagi barcha mavjud sahnalar bo'yicha piksel-wise mean.
+#     # Bulut teshiklarini to'ldirish uchun fallback.
 #     default_img = scene_collection.select(bands).mean()
 
 #     before_img = ee.Image(ee.Algorithms.If(
-#         has_before, before_col.select(bands).first(), default_img))
+#         has_before,
+#         ee.Image(before_col.select(bands).first()).unmask(default_img),
+#         default_img
+#     ))
 
 #     after_img = ee.Image(ee.Algorithms.If(
-#         has_after, after_col.select(bands).first(), default_img))
+#         has_after,
+#         ee.Image(after_col.select(bands).first()).unmask(default_img),
+#         default_img
+#     ))
 
 #     before_millis = ee.Number(ee.Algorithms.If(
 #         has_before,
 #         ee.Date(before_img.get('system:time_start')).millis(),
-#         target_millis))
+#         target_millis
+#     ))
 
 #     after_millis = ee.Number(ee.Algorithms.If(
 #         has_after,
 #         ee.Date(after_img.get('system:time_start')).millis(),
-#         target_millis))
+#         target_millis
+#     ))
 
 #     time_range = after_millis.subtract(before_millis).max(1)
-#     weight = (target_millis.subtract(before_millis)
-#               .divide(time_range).min(1).max(0))
+
+#     weight = (ee.Number(target_millis)
+#               .subtract(before_millis)
+#               .divide(time_range)
+#               .min(1)
+#               .max(0))
 
 #     interpolated = (before_img.multiply(ee.Image(1).subtract(weight))
 #                     .add(after_img.multiply(weight)))
@@ -92,14 +104,27 @@ def _get_daily_rs24(date, roi):
 #     result = ee.Image(ee.Algorithms.If(
 #         has_before.And(has_after),
 #         interpolated,
-#         ee.Algorithms.If(has_before, before_img, after_img)))
+#         ee.Algorithms.If(has_before, before_img, after_img)
+#     ))
 
-#     return ee.Image(result)
+#     # Oxirgi himoya: qolgan NoData joylar ham composite bilan to'ladi
+#     return ee.Image(result).unmask(default_img)
 
 def _interpolate_bands(scene_collection, target_date, bands):
     """
-    Landsat sanalar orasida lineer interpolyatsiya.
+    Ikkita eng yaqin Landsat sana orasida — MIDPOINT (o'rtacha) qiymat.
     Bulut/NoData teshiklari composite mean bilan to'ldiriladi.
+
+    daily_et.py dagi _interpolate_lambda() bilan BIR XIL mantiq
+    (izchillik uchun) — chiziqli og'irlik EMAS, pog'onali:
+
+    Agar target_date barcha tasvirlardan OLDIN bo'lsa:
+      -- eng yaqin (birinchi) tasvirning qiymati (ekstrapolyatsiya)
+    Agar target_date barcha tasvirlardan KEYIN bo'lsa:
+      -- eng yaqin (oxirgi) tasvirning qiymati (ekstrapolyatsiya)
+    Aks holda:
+      -- oldingi va keyingi sahna orasidagi BARCHA kunlarga bitta xil
+         qiymat: (before + after) / 2
     """
     target_millis = target_date.millis()
 
@@ -130,28 +155,9 @@ def _interpolate_bands(scene_collection, target_date, bands):
         default_img
     ))
 
-    before_millis = ee.Number(ee.Algorithms.If(
-        has_before,
-        ee.Date(before_img.get('system:time_start')).millis(),
-        target_millis
-    ))
-
-    after_millis = ee.Number(ee.Algorithms.If(
-        has_after,
-        ee.Date(after_img.get('system:time_start')).millis(),
-        target_millis
-    ))
-
-    time_range = after_millis.subtract(before_millis).max(1)
-
-    weight = (ee.Number(target_millis)
-              .subtract(before_millis)
-              .divide(time_range)
-              .min(1)
-              .max(0))
-
-    interpolated = (before_img.multiply(ee.Image(1).subtract(weight))
-                    .add(after_img.multiply(weight)))
+    # O'rtacha (midpoint) qiymat: ikki sahna orasidagi BARCHA kunlarga
+    # bir xil qiymat beriladi (chiziqli og'irlik EMAS)
+    interpolated = (before_img.add(after_img)).multiply(0.5)
 
     result = ee.Image(ee.Algorithms.If(
         has_before.And(has_after),
@@ -269,27 +275,30 @@ def compute_monthly_biomass(scene_images, roi, year, month):
 
 def compute_monthly_et_components(scene_images, roi, year, month):
     """
-    Oylik ET komponentlari — interpolyatsiya + ERA5.
+    Oylik ET komponentlari.
 
-    YIG'INDI (mm/month):
-      ETref, ETpot, ET_deficit, Tact, Eact
+    ETREF_24, ETPOT_24 — endi HAR KALENDAR KUN uchun to'g'ridan-to'g'ri
+    ref_et.py (ASCE-EWRI FAO-PM) orqali hisoblanadi — Landsat sahnadan
+    interpolyatsiya/scaling QILINMAYDI (chunki bu sof meteorologik
+    miqdor, har kuni aniq hisoblash mumkin).
 
-    Har kun ETref ni ERA5 dan hisoblash kerak (wind, temp, VPD).
-    Soddalashtirilgan: ETref_kun = ETref_interp × (Rs24_kun / Rs24_scene)
+    TACT_24, EACT_24 — hali ham Landsat sahnalardan interpolyatsiya
+    (chunki bular LAI/canopy-ga bog'liq, faqat Landsat orqali biladi),
+    radiatsiya nisbati bilan masshtablanadi.
     """
+    from . import ref_et
+
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
     conversion = cfg.DAILY_ET['seconds_per_day'] / cfg.LAMBDA_V
 
     scene_col = ee.ImageCollection(scene_images)
 
-    # Scene sahnalardan o'rtacha Rs24 (radiatsiya ratio uchun)
-    scene_rs24_mean = (scene_col.select('RN24')
-                       .mean()
-                       .max(1))
+    scene_rn24_mean = (scene_col.select('RN24').mean().max(1))
 
+    # ETREF_24/ETPOT_24 ENDI shu ro'yxatda YO'Q — Landsat'dan
+    # interpolyatsiya qilinmaydi, alohida, to'g'ridan-to'g'ri hisoblanadi
     interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW',
-                    'ETREF_24', 'ETPOT_24', 'ET_DEFICIT',
                     'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION']
 
     def compute_day(day_offset):
@@ -299,21 +308,26 @@ def compute_monthly_et_components(scene_images, roi, year, month):
         interp = _interpolate_bands(scene_col, current_date, interp_bands)
         rs24 = _get_daily_rs24(current_date, roi)
 
-        # Radiatsiya nisbati — bulutsiz vs haqiqiy kun
         albedo = interp.select('ALBEDO')
         tau_sw = interp.select('TAU_SW')
         rn24_actual = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
                        .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
                        .max(0))
 
-        rad_ratio = rn24_actual.divide(scene_rs24_mean).clamp(0, 1.5)
+        rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
 
-        # ET komponentlar — radiatsiya bilan masshtablash
+        # ET (haqiqiy) — Landsat/SEBAL asosli, o'zgarmadi
         et_day = (interp.select('EVAP_FRAC')
                   .multiply(rn24_actual).multiply(conversion).max(0))
-        etref_day = interp.select('ETREF_24').multiply(rad_ratio)
-        etpot_day = interp.select('ETPOT_24').multiply(rad_ratio)
+
+        # ETREF, ETPOT — ENDI to'g'ridan-to'g'ri, mustaqil, aniq hisob
+        refs = ref_et.compute_reference_ets_for_date(current_date, roi)
+        etref_day = refs.select('ETREF_24')
+        etpot_day = refs.select('ETPOT_24')
+
         deficit_day = etpot_day.subtract(et_day).max(0)
+
+        # TACT, EACT — hali ham Landsat-interpolyatsiya (LAI-bog'liq)
         tact_day = interp.select('TACT_24').multiply(rad_ratio)
         eact_day = et_day.subtract(tact_day).max(0)
 
@@ -327,7 +341,6 @@ def compute_monthly_et_components(scene_images, roi, year, month):
     day_offsets = ee.List.sequence(0, days - 1)
     daily_comp = ee.ImageCollection(day_offsets.map(compute_day))
 
-    # Yig'indi
     monthly = daily_comp.sum()
 
     return (monthly.select('ET').rename('ET_MONTHLY')
@@ -336,6 +349,77 @@ def compute_monthly_et_components(scene_images, roi, year, month):
             .addBands(monthly.select('DEFICIT').rename('DEFICIT_MONTHLY'))
             .addBands(monthly.select('TACT').rename('TACT_MONTHLY'))
             .addBands(monthly.select('EACT').rename('EACT_MONTHLY')))
+
+
+# def compute_monthly_et_components(scene_images, roi, year, month):
+#     """
+#     Oylik ET komponentlari — interpolyatsiya + ERA5.
+
+#     YIG'INDI (mm/month):
+#       ETref, ETpot, ET_deficit, Tact, Eact
+
+#     Har kun ETref ni ERA5 dan hisoblash kerak (wind, temp, VPD).
+#     Soddalashtirilgan: ETref_kun = ETref_interp × (Rs24_kun / Rs24_scene)
+#     """
+#     days = calendar.monthrange(year, month)[1]
+#     month_start = ee.Date.fromYMD(year, month, 1)
+#     conversion = cfg.DAILY_ET['seconds_per_day'] / cfg.LAMBDA_V
+
+#     scene_col = ee.ImageCollection(scene_images)
+
+#     # Scene sahnalardan o'rtacha Rs24 (radiatsiya ratio uchun)
+#     scene_rs24_mean = (scene_col.select('RN24')
+#                        .mean()
+#                        .max(1))
+
+#     interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW',
+#                     'ETREF_24', 'ETPOT_24', 'ET_DEFICIT',
+#                     'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION']
+
+#     def compute_day(day_offset):
+#         day_offset = ee.Number(day_offset)
+#         current_date = month_start.advance(day_offset, 'day')
+
+#         interp = _interpolate_bands(scene_col, current_date, interp_bands)
+#         rs24 = _get_daily_rs24(current_date, roi)
+
+#         # Radiatsiya nisbati — bulutsiz vs haqiqiy kun
+#         albedo = interp.select('ALBEDO')
+#         tau_sw = interp.select('TAU_SW')
+#         rn24_actual = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
+#                        .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
+#                        .max(0))
+
+#         rad_ratio = rn24_actual.divide(scene_rs24_mean).clamp(0, 1.5)
+
+#         # ET komponentlar — radiatsiya bilan masshtablash
+#         et_day = (interp.select('EVAP_FRAC')
+#                   .multiply(rn24_actual).multiply(conversion).max(0))
+#         etref_day = interp.select('ETREF_24').multiply(rad_ratio)
+#         etpot_day = interp.select('ETPOT_24').multiply(rad_ratio)
+#         deficit_day = etpot_day.subtract(et_day).max(0)
+#         tact_day = interp.select('TACT_24').multiply(rad_ratio)
+#         eact_day = et_day.subtract(tact_day).max(0)
+
+#         return (et_day.rename('ET')
+#                 .addBands(etref_day.rename('ETREF'))
+#                 .addBands(etpot_day.rename('ETPOT'))
+#                 .addBands(deficit_day.rename('DEFICIT'))
+#                 .addBands(tact_day.rename('TACT'))
+#                 .addBands(eact_day.rename('EACT')))
+
+#     day_offsets = ee.List.sequence(0, days - 1)
+#     daily_comp = ee.ImageCollection(day_offsets.map(compute_day))
+
+#     # Yig'indi
+#     monthly = daily_comp.sum()
+
+#     return (monthly.select('ET').rename('ET_MONTHLY')
+#             .addBands(monthly.select('ETREF').rename('ETREF_MONTHLY'))
+#             .addBands(monthly.select('ETPOT').rename('ETPOT_MONTHLY'))
+#             .addBands(monthly.select('DEFICIT').rename('DEFICIT_MONTHLY'))
+#             .addBands(monthly.select('TACT').rename('TACT_MONTHLY'))
+#             .addBands(monthly.select('EACT').rename('EACT_MONTHLY')))
 
 
 # ==============================================================

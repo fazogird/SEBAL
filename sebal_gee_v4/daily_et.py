@@ -80,7 +80,7 @@ def compute_daily_et(image, roi):
       1. Λ (evaporative fraction) — allaqachon hisoblangan
       2. Rs24 — ERA5 dan shu kungi 24 soatlik quyosh radiatsiyasi
       3. Rn24 = (1 - α) × Rs24 - 110 × τsw
-      4. ET₂₄ = Λ × Rn24 × 86400 / (λ × 1000)  [mm/day]
+      4. ET₂₄ = Λ × Rn24 × 86400 / (λ)  [mm/day]
 
     λ = 2.45 × 10⁶ J/kg (suvning bug'lanish issiqligi)
     1000 = kg/m³ → mm konversiya (1 kg/m² = 1 mm)
@@ -105,7 +105,7 @@ def compute_daily_et(image, roi):
     image = image.addBands(rn24)
 
     # 3. ET₂₄ (mm/day)
-    # ET₂₄ = Λ × Rn24 × 86400 / (λ × 1000)
+    # ET₂₄ = Λ × Rn24 × 86400 / λ 
     # = Λ × Rn24 × 86400 / 2.45e9
     # = Λ × Rn24 × 3.5265e-5
     conversion = cfg.DAILY_ET['seconds_per_day'] / (cfg.LAMBDA_V )      # * 1000  o'chirdim 
@@ -228,52 +228,139 @@ def compute_monthly_et(image_list, roi, year, month):
     return et_monthly
 
 
+# def _interpolate_lambda(lambda_collection, target_date):
+#     """
+#     Lineer interpolyatsiya — ikkita eng yaqin Landsat sana orasida.
+
+#     Agar target_date barcha tasvirlardan OLDIN bo'lsa:
+#       → eng yaqin (birinchi) tasvirning Λ sini olish
+#     Agar target_date barcha tasvirlardan KEYIN bo'lsa:
+#       → eng yaqin (oxirgi) tasvirning Λ sini olish
+#     Aks holda:
+#       → oldingi va keyingi orasida lineer interpolyatsiya
+
+#     weight = (target - before) / (after - before)
+#     Λ_interp = Λ_before × (1 - weight) + Λ_after × weight
+#     """
+#     target_millis = target_date.millis()
+
+#     # Oldingi tasvir (target_date dan oldin yoki teng)
+#     before_col = (lambda_collection
+#                   .filter(ee.Filter.lte('system:time_start', target_millis))
+#                   .sort('system:time_start', False))  # eng yaqini birinchi
+
+#     # Keyingi tasvir (target_date dan keyin yoki teng)
+#     after_col = (lambda_collection
+#                  .filter(ee.Filter.gte('system:time_start', target_millis))
+#                  .sort('system:time_start', True))  # eng yaqini birinchi
+
+#     # Oldingi bor-yo'qligini tekshirish
+#     has_before = before_col.size().gt(0)
+#     has_after = after_col.size().gt(0)
+
+#     # Default: to'liq collection ning o'rtachasi (fallback)
+#     default_image = lambda_collection.mean()
+
+#     # # Faqat oldingi bor
+#     # before_image = ee.Image(ee.Algorithms.If(
+#     #     has_before,
+#     #     before_col.first(),
+#     #     default_image
+#     # ))
+    
+#     before_image = ee.Image(ee.Algorithms.If(
+#     has_before,
+#     ee.Image(before_col.first()).unmask(default_image),
+#     default_image
+#     ))
+
+#     # # Faqat keyingi bor
+#     # after_image = ee.Image(ee.Algorithms.If(
+#     #     has_after,
+#     #     after_col.first(),
+#     #     default_image
+#     # ))
+    
+#     after_image = ee.Image(ee.Algorithms.If(
+#     has_after,
+#     ee.Image(after_col.first()).unmask(default_image),
+#     default_image
+#     ))
+
+#     # Ikkalasi ham bor — interpolyatsiya
+#     before_millis = ee.Number(ee.Algorithms.If(
+#         has_before,
+#         ee.Date(before_image.get('system:time_start')).millis(),
+#         target_millis
+#     ))
+
+#     after_millis = ee.Number(ee.Algorithms.If(
+#         has_after,
+#         ee.Date(after_image.get('system:time_start')).millis(),
+#         target_millis
+#     ))
+
+#     # Weight hisoblash
+#     time_range = after_millis.subtract(before_millis).max(1)  # div by 0 himoya
+#     weight = target_millis.subtract(before_millis).divide(time_range).min(1).max(0)
+
+#     # Lineer interpolyatsiya: Λ = before×(1-w) + after×w
+#     interpolated = (before_image.multiply(ee.Image(1).subtract(weight))
+#                     .add(after_image.multiply(weight)))
+
+#     # Agar faqat bir tomoni bor bo'lsa — eng yaqinini olish
+#     result = ee.Image(ee.Algorithms.If(
+#         has_before.And(has_after),
+#         interpolated,
+#         ee.Algorithms.If(has_before, before_image, after_image)
+#     ))
+
+#     return result.unmask(default_image)
+
 def _interpolate_lambda(lambda_collection, target_date):
     """
-    Lineer interpolyatsiya — ikkita eng yaqin Landsat sana orasida.
-
+    Ikkita eng yaqin Landsat sana orasida — MIDPOINT (o'rtacha) qiymat.
+ 
     Agar target_date barcha tasvirlardan OLDIN bo'lsa:
-      → eng yaqin (birinchi) tasvirning Λ sini olish
+      -- eng yaqin (birinchi) tasvirning Lambda qiymatini olish (ekstrapolyatsiya)
     Agar target_date barcha tasvirlardan KEYIN bo'lsa:
-      → eng yaqin (oxirgi) tasvirning Λ sini olish
+      -- eng yaqin (oxirgi) tasvirning Lambda qiymatini olish (ekstrapolyatsiya)
     Aks holda:
-      → oldingi va keyingi orasida lineer interpolyatsiya
-
-    weight = (target - before) / (after - before)
-    Λ_interp = Λ_before × (1 - weight) + Λ_after × weight
+      -- oldingi va keyingi sahna orasidagi BARCHA kunlarga bitta xil
+         qiymat: (Lambda_before + Lambda_after) / 2 (pog'onali,
+         chiziqli og'irlik EMAS -- vaqt masofasi hisobga olinmaydi)
+ 
+    2/3/4+ ta sahna bo'lsa ham mantiq avtomatik moslashadi: har kun
+    o'ziga eng yaqin oldingi va keyingi sahnani qidiradi, shu ikkisi
+    orasida o'rtacha qiymat qo'llanadi (kesma-kesma pog'onali funksiya).
     """
     target_millis = target_date.millis()
-
+ 
     # Oldingi tasvir (target_date dan oldin yoki teng)
     before_col = (lambda_collection
                   .filter(ee.Filter.lte('system:time_start', target_millis))
                   .sort('system:time_start', False))  # eng yaqini birinchi
-
+ 
     # Keyingi tasvir (target_date dan keyin yoki teng)
     after_col = (lambda_collection
                  .filter(ee.Filter.gte('system:time_start', target_millis))
                  .sort('system:time_start', True))  # eng yaqini birinchi
-
+ 
     # Oldingi bor-yo'qligini tekshirish
     has_before = before_col.size().gt(0)
     has_after = after_col.size().gt(0)
-
+ 
     # Default: to'liq collection ning o'rtachasi (fallback)
     default_image = lambda_collection.mean()
-
+ 
     # # Faqat oldingi bor
-    # before_image = ee.Image(ee.Algorithms.If(
-    #     has_before,
-    #     before_col.first(),
-    #     default_image
-    # ))
-    
+
     before_image = ee.Image(ee.Algorithms.If(
     has_before,
     ee.Image(before_col.first()).unmask(default_image),
     default_image
     ))
-
+ 
     # # Faqat keyingi bor
     # after_image = ee.Image(ee.Algorithms.If(
     #     has_after,
@@ -286,38 +373,20 @@ def _interpolate_lambda(lambda_collection, target_date):
     ee.Image(after_col.first()).unmask(default_image),
     default_image
     ))
-
-    # Ikkalasi ham bor — interpolyatsiya
-    before_millis = ee.Number(ee.Algorithms.If(
-        has_before,
-        ee.Date(before_image.get('system:time_start')).millis(),
-        target_millis
-    ))
-
-    after_millis = ee.Number(ee.Algorithms.If(
-        has_after,
-        ee.Date(after_image.get('system:time_start')).millis(),
-        target_millis
-    ))
-
-    # Weight hisoblash
-    time_range = after_millis.subtract(before_millis).max(1)  # div by 0 himoya
-    weight = target_millis.subtract(before_millis).divide(time_range).min(1).max(0)
-
-    # Lineer interpolyatsiya: Λ = before×(1-w) + after×w
-    interpolated = (before_image.multiply(ee.Image(1).subtract(weight))
-                    .add(after_image.multiply(weight)))
-
+ 
+    # O'rtacha (midpoint) qiymat: Lambda = (before + after) / 2
+    # Ikki sahna orasidagi BARCHA kunlarga bir xil qiymat beriladi
+    # (chiziqli og'irlik EMAS -- pog'onali/qadam funksiyasi)
+    interpolated = (before_image.add(after_image)).multiply(0.5)
+ 
     # Agar faqat bir tomoni bor bo'lsa — eng yaqinini olish
     result = ee.Image(ee.Algorithms.If(
         has_before.And(has_after),
         interpolated,
         ee.Algorithms.If(has_before, before_image, after_image)
     ))
-
+ 
     return result.unmask(default_image)
-
-
 # ==============================================================
 # SEASONAL SUMMARY
 # ==============================================================

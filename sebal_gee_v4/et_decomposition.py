@@ -23,7 +23,7 @@ Manba: FAO-56 (Allen et al. 1998),
 
 import ee
 from . import config as cfg
-
+from . import ref_et
 
 # ==============================================================
 # CONSTANTS
@@ -93,52 +93,65 @@ def compute_vapor_pressure(image):
 # 2. ETref_24 — FAO-56 Penman-Monteith Reference ET
 # ==============================================================
 
-def compute_etref(image):
+# def compute_etref(image):
+#     """
+#     FAO-56 grass reference ET (mm/day).
+
+#     ETref = [0.408 × Δ × (Rn24 - G24) + γ × 900/(Ta+273) × u₂ × VPD]
+#             / [Δ + γ × (1 + 0.34 × u₂)]
+
+#     G24 ≈ 0 (kunlik uchun)
+#     u₂ — 2m balandlikdagi shamol tezligi
+#     Rn24 — 24 soatlik sof radiatsiya (W/m² → MJ/m²/day)
+
+#     Source: Allen et al. (1998) FAO Irrigation & Drainage Paper 56
+#     """
+#     rn24 = image.select('RN24')
+#     slope_es = image.select('SLOPE_ES')
+#     psychro = image.select('PSYCHRO')
+#     vpd = image.select('VPD')
+#     ta_c = image.select('AIR_TEMP').subtract(273.15)
+
+#     # Wind speed — ERA5 10m → 2m
+#     # u₂ = u₁₀ × 4.87 / ln(67.8 × 10 - 5.42)
+#     # u₂ = u₁₀ × 4.87 / 6.536 ≈ u₁₀ × 0.745
+#     wind_2m = image.select('WIND_SPEED_10M').multiply(0.745).max(0.5)
+
+#     # Rn24 W/m² → MJ/m²/day
+#     rn24_mj = rn24.multiply(0.0864)  # × 86400 / 1e6
+
+#     # G24 ≈ 0 kunlik uchun
+#     # FAO-56 formulasi
+#     numerator_rad = slope_es.multiply(0.408).multiply(rn24_mj)
+#     numerator_wind = (psychro.multiply(900.0)
+#                       .divide(ta_c.add(273.0))
+#                       .multiply(wind_2m)
+#                       .multiply(vpd))
+
+#     denominator = (slope_es
+#                    .add(psychro.multiply(wind_2m.multiply(0.34).add(1.0))))
+
+#     etref = (numerator_rad.add(numerator_wind)
+#              .divide(denominator)
+#              .max(0)
+#              .rename('ETREF_24'))
+
+#     return image.addBands(etref)
+
+def compute_etref(image, roi):
     """
-    FAO-56 grass reference ET (mm/day).
+    FAO-56/ASCE-EWRI grass reference ET (mm/day) — kunlik ERA5
+    agregatsiyadan, TO'LIQ ASCE-EWRI formula (Ra/Rso/Rnl astronomik
+    hisob, fiksativ referens albedo 0.23).
 
-    ETref = [0.408 × Δ × (Rn24 - G24) + γ × 900/(Ta+273) × u₂ × VPD]
-            / [Δ + γ × (1 + 0.34 × u₂)]
+    MUHIM: bu SEBAL'ning o'z RN24'idan (kuzatilgan yer yuzasi
+    albedosi bilan) MUSTAQIL — referens ET meteorologik bo'lishi
+    shart, real ekin/tuproq xususiyatidan qat'i nazar.
 
-    G24 ≈ 0 (kunlik uchun)
-    u₂ — 2m balandlikdagi shamol tezligi
-    Rn24 — 24 soatlik sof radiatsiya (W/m² → MJ/m²/day)
-
-    Source: Allen et al. (1998) FAO Irrigation & Drainage Paper 56
+    Source: ref_et.py — ASCE-EWRI (2005) Standardized Reference ET.
     """
-    rn24 = image.select('RN24')
-    slope_es = image.select('SLOPE_ES')
-    psychro = image.select('PSYCHRO')
-    vpd = image.select('VPD')
-    ta_c = image.select('AIR_TEMP').subtract(273.15)
-
-    # Wind speed — ERA5 10m → 2m
-    # u₂ = u₁₀ × 4.87 / ln(67.8 × 10 - 5.42)
-    # u₂ = u₁₀ × 4.87 / 6.536 ≈ u₁₀ × 0.745
-    wind_2m = image.select('WIND_SPEED_10M').multiply(0.745).max(0.5)
-
-    # Rn24 W/m² → MJ/m²/day
-    rn24_mj = rn24.multiply(0.0864)  # × 86400 / 1e6
-
-    # G24 ≈ 0 kunlik uchun
-    # FAO-56 formulasi
-    numerator_rad = slope_es.multiply(0.408).multiply(rn24_mj)
-    numerator_wind = (psychro.multiply(900.0)
-                      .divide(ta_c.add(273.0))
-                      .multiply(wind_2m)
-                      .multiply(vpd))
-
-    denominator = (slope_es
-                   .add(psychro.multiply(wind_2m.multiply(0.34).add(1.0))))
-
-    etref = (numerator_rad.add(numerator_wind)
-             .divide(denominator)
-             .max(0)
-             .rename('ETREF_24'))
-
-    return image.addBands(etref)
-
-
+    return ref_et.compute_etref_daily(image, roi)
+  
 # ==============================================================
 # 3. ETpot_24 — Potential ET (haqiqiy o'simlik uchun)
 # ==============================================================
@@ -202,6 +215,34 @@ def compute_etpot(image):
     etpot = etpot.max(eta)
 
     return image.addBands(etpot).addBands(rs_min.rename('RS_MIN'))
+
+
+# # ==============================================================
+# # 2-3. ETREF_24 (grass) + ETPOT_24 (alfalfa) — ASCE-EWRI
+# # ==============================================================
+
+# def compute_reference_ets(image, roi):
+#     """
+#     Ikkala referens ET'ni hisoblaydi:
+
+#       ETREF_24 — grass (FAO-56 ETo): meteorologik referens, ekin/tuproq
+#                  xususiyatidan MUSTAQIL (fiksativ albedo=0.23).
+#       ETPOT_24 — alfalfa (ASCE-EWRI ETr): "potensial" yuqori chegara —
+#                  to'liq sug'orilgan, baland, g'adir-budur ekin qancha
+#                  bug'latishi mumkinligi (METRIC/Allen an'anasi).
+
+#     Ikkalasi bitta kunlik ERA5 agregatsiyadan (ref_et.py) hisoblanadi.
+
+#     ETpot ≥ ETact bo'lishi shart (fizik cheklov) — shu yerda qo'llanadi.
+#     """
+#     image = ref_et.compute_reference_ets_daily(image, roi)
+
+#     # ETpot ≥ ETact (fizik cheklov)
+#     eta = image.select('ET_24')
+#     etpot_clamped = image.select('ETPOT_24').max(eta).rename('ETPOT_24')
+#     image = image.addBands(etpot_clamped, overwrite=True)
+
+#     return image
 
 
 # ==============================================================
@@ -366,7 +407,7 @@ def compute_et_separation(image):
 # MAIN: Compute all ET decomposition
 # ==============================================================
 
-def compute_all(image):
+def compute_all(image, roi):
     """
     Barcha ET decomposition analitikalarini hisoblash.
 
@@ -392,7 +433,7 @@ def compute_all(image):
       AIR_TEMP, DEWPOINT, PRESSURE, WIND_SPEED_10M, RHO_AIR
     """
     image = compute_vapor_pressure(image)
-    image = compute_etref(image)
+    image = compute_etref(image, roi)        
     image = compute_etpot(image)
     image = compute_advection_factor(image)
     image = compute_crop_coefficients(image)

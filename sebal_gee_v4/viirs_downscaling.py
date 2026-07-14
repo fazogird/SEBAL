@@ -797,15 +797,47 @@ def build_daily_viirs_downscaled_collection(
     return daily_et_imgs
 
 
+# def _daily_etref(anchors, date, roi):
+#     """KC mode uchun kunlik ETREF_24 — anchorlardan interpolyatsiya +
+#     ERA5 radiatsiya nisbati (monthly_analytics mantig'iga mos)."""
+#     col = ee.ImageCollection([a['image'] for a in anchors])
+#     interp = ma._interpolate_bands(col, ee.Date(date), ['ETREF_24', 'RN24'])
+#     etref_scene = interp.select('ETREF_24')
+#     rn_scene = interp.select('RN24').max(1)
+#     rs24 = ma._get_daily_rs24(date, roi)
+#     rad_ratio = rs24.divide(rn_scene).clamp(0, 1.5)
+#     return etref_scene.multiply(rad_ratio).rename('ETREF_24')
+
 def _daily_etref(anchors, date, roi):
-    """KC mode uchun kunlik ETREF_24 — anchorlardan interpolyatsiya +
-    ERA5 radiatsiya nisbati (monthly_analytics mantig'iga mos)."""
+    """
+    KC mode uchun kunlik ETREF_24 — anchorlardan interpolyatsiya +
+    ERA5 radiatsiya nisbati.
+
+    TUZATILDI: avval Rs24 (xom quyosh radiatsiyasi) to'g'ridan-to'g'ri
+    Rn24 (neto radiatsiya)ga bo'linardi — bular boshqa-boshqa fizik
+    miqdorlar. Endi monthly_analytics.py bilan AYNAN bir xil mantiq:
+    avval bugungi Rn24 albedo/tau_sw bilan qayta tiklanadi, keyin
+    Rn24(bugun)/Rn24(sahna o'rtacha) nisbati olinadi.
+    """
     col = ee.ImageCollection([a['image'] for a in anchors])
-    interp = ma._interpolate_bands(col, ee.Date(date), ['ETREF_24', 'RN24'])
+    interp = ma._interpolate_bands(
+        col, ee.Date(date), ['ETREF_24', 'RN24', 'ALBEDO', 'TAU_SW'])
+
     etref_scene = interp.select('ETREF_24')
     rn_scene = interp.select('RN24').max(1)
+    albedo = interp.select('ALBEDO')
+    tau_sw = interp.select('TAU_SW')
+
     rs24 = ma._get_daily_rs24(date, roi)
-    rad_ratio = rs24.divide(rn_scene).clamp(0, 1.5)
+
+    # Bugungi Rn24 — monthly_analytics.py bilan bir xil formula
+    rn24_actual = (
+        (ee.Image(1.0).subtract(albedo)).multiply(rs24)
+        .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
+        .max(0)
+    )
+
+    rad_ratio = rn24_actual.divide(rn_scene).clamp(0, 1.5)
     return etref_scene.multiply(rad_ratio).rename('ETREF_24')
 
 

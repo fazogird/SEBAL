@@ -193,14 +193,16 @@ ANCHOR = {
     # Selection method
     'method': 'median',             # 'median' yoki 'mean' — outlier himoyasi
 }
-
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration
 # ==============================================================
 
 ITERATION = {
-    'max_iter': 5,           # H-rah iteratsiya soni
-    'convergence': 0.01,     # H o'zgarish chegarasi (W/m²)
+    'max_iter': 8,        # xavfsizlik chegarasi (agar konvergensiya kelmasa)
+    'min_iter': 2,         # kamida shuncha iteratsiyadan keyin to'xtashga ruxsat
+                            # (juda erta "yolg'on konvergensiya"dan himoya)
+    'tol_dt': 0.01,        # dT_hot uchun mutlaq tolerantlik (K)
+    'tol_rah': 0.1,        # rah_hot uchun mutlaq tolerantlik (s/m)
 }
 
 # ==============================================================
@@ -230,7 +232,7 @@ ERA5 = {
         'strd':     'surface_thermal_radiation_downwards_hourly',
     },
     # ERA5 soat bilan ishlaydi — Landsat overpass vaqtiga moslashtirish
-    'overpass_hour_utc': 10,  # Landsat taxminiy o'tish vaqti ~10:00-10:30 UTC
+    'overpass_hour_utc': 11,  # Landsat taxminiy o'tish vaqti ~11:00-11:30 UTC
 }
 
 # ==============================================================
@@ -288,6 +290,31 @@ PIPELINE = {
     ],
 }
 
+# ==============================================================
+# 17. MONTEITH BIOMASS — Formula (1)-(12), crop-type'siz
+# ==============================================================
+
+MONTEITH = {
+    'par_fraction': 0.48,       # Formula (1): PAR = 0.48 × K↓24
+    'f_slope': 1.257,           # Formula (4): f = -0.161 + 1.257×NDVI
+    'f_intercept': -0.161,
+    'ndvi_bare_threshold': 0.13,  # NDVI < 0.13 → f = 0 (yalang'och tuproq)
+    'ndvi_full_threshold': 0.92,  # NDVI > 0.92 → f = 1 (to'liq qoplam)
+
+    # ⚠️ VAQTINCHA — ekin turi jadvali (Appendix A) hali yo'q.
+    # Bu — GENERIK (umumiy C3 ekinlar o'rtachasi) qiymat, sizning
+    # biomass.py dagi LUEMAX=2.5 bilan bir xil mantiq.
+    # Crop type xaritasi kelganda — FAQAT shu qatorni ekinga bog'liq
+    # lookup jadvaliga almashtirasiz, qolgan hammasi tayyor turadi.
+    'epsilon_max_generic': 2.5,   # g/MJ — TODO: Appendix A jadvali bilan almashtiring
+
+    # Formula (8): T1 = 0.8 + 0.02×Topt - 0.0005×Topt²
+    't1_a': 0.8, 't1_b': 0.02, 't1_c': 0.0005,
+
+    # Formula (9): T2 sigmoid parametrlari
+    't2_k1': 0.2, 't2_offset1': 10.0,
+    't2_k2': 0.3, 't2_offset2': 10.0,
+}
 
 
 
