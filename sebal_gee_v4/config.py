@@ -230,7 +230,7 @@ ERA5 = {
         'strd':     'surface_thermal_radiation_downwards_hourly',
     },
     # ERA5 soat bilan ishlaydi — Landsat overpass vaqtiga moslashtirish
-    'overpass_hour_utc': 10,  # Landsat taxminiy o'tish vaqti ~10:00-10:30 UTC
+    'overpass_hour_utc': 11,  # Landsat taxminiy o'tish vaqti ~11:00-11:30 UTC
 }
 
 # ==============================================================

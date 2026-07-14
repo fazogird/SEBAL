@@ -269,7 +269,7 @@ ee_utils.install_getinfo_retry()   # 429 "Too many concurrent" da avtomatik retr
 main.run(
     roi_type='gaul', name='Kashkadarya', level=1,
     date_start='2026-05-01', date_end='2026-05-31',
-    mode='pysebal',
+    mode='pysebal',  ## 'maqola' yoki 'pysebal'
     satellite='HLS',
     cloud_max=70,
     process_by_tile=True,
@@ -294,7 +294,7 @@ main.run(
     viirs_fill='linear',    # 'linear' | 'nearest'
 
     # ---- HLS S30 ETrF REGRESSIYA (ixtiyoriy, 30m — tavsiya) ----
-    use_s30_etrf=True,      # True → oylik ET HLS S30 ETrF regressiya bilan
+    use_s30_etrf=False,      # True → oylik ET HLS S30 ETrF regressiya bilan
     s30_model='multi6',    # 'ndvi'|'ndvi2'|'multi'|'multi6'(NDVI+SAVI+NDWI+LSWI+Albedo)
     s30_qa='lenient',       # 'lenient' | 'strict'
     s30_fill='linear',      # 'linear' | 'nearest' (per-pixel)
