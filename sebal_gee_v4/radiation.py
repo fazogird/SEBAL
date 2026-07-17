@@ -76,8 +76,23 @@ def compute_incoming_shortwave(image):
 
     # Server-side shart — ee.Algorithms.If bilan
     cos_theta_hls = image.select('SZA').multiply(math.pi / 180).cos()
+    # SUN_ELEVATION — Landsat sahna metadatasi (mosaic uni preprocessing'da
+    # copyProperties bilan SAQLAYDI). Landsat sahnada TOPILMASA — script
+    # ATAYLAB to'xtaydi (ee.Number(null).multiply → xato). Fake qiymat
+    # ISHLATILMAYDI: maqsad ishonchli, yuqori sifatli natija.
+    #
+    # HLS'da esa SZA bandi ishlatiladi va SUN_ELEVATION property yo'q; shu
+    # bois FAQAT SZA mavjud bo'lganda (ya'ni bu shox discard qilinadigan
+    # HLS holatida) crashning oldini olish uchun o'rin egasi (90°) beriladi
+    # — bu qiymat chiqishga umuman kirmaydi (ee.Algorithms.If SZA shoxini
+    # tanlaydi).
+    sun_elev = ee.Number(ee.Algorithms.If(
+        has_sza,
+        ee.Algorithms.If(image.get('SUN_ELEVATION'),
+                         image.get('SUN_ELEVATION'), 90),
+        image.get('SUN_ELEVATION')))
     cos_theta_landsat = ee.Image.constant(
-        ee.Number(image.get('SUN_ELEVATION')).multiply(math.pi / 180).sin()
+        sun_elev.multiply(math.pi / 180).sin()
     )
     cos_theta = ee.Image(
         ee.Algorithms.If(has_sza, cos_theta_hls, cos_theta_landsat)
@@ -248,74 +263,6 @@ def compute_net_radiation(image):
     return image.addBands(rn).addBands(rn_out_of_range)
 
 
-# ==============================================================
-# SOIL HEAT FLUX G₀ — Simplified Bastiaanssen (2000)
-# ==============================================================
-
-# def compute_soil_heat_flux(image):
-    """
-    Tuproq issiqlik oqimi — Bastiaanssen (2000) soddalashtirilgan.
-
-    G₀ = Q* × (T₀ - 273.15) / α × (0.0038α + 0.0074α²) × (1 - 0.978 × NDVI⁴)
-
-    Komponentlar:
-      - T₀/α termi: issiq va yorug' yuzalarda G₀ katta
-      - 0.0038α + 0.0074α²: albedo ta'siri
-      - (1 - 0.978×NDVI⁴): o'simlik ekstinksiyasi — zich
-        o'simlikda G₀ kichik (soya ta'siri)
-
-    Maxsus holatlar:
-      - Suv piksellar: G₀ = 0.5 × Q*
-      - NDVI < 0: G₀ = 0.5 × Q* (suv deb qabul qilish)
-
-    Natija: G0 (W/m²) — musbat = yer yuzasidan tuproqqa
-    """
-    rn = image.select('RN')
-    lst = image.select('LST')
-    albedo = image.select('ALBEDO')
-    ndvi = image.select('NDVI')
-    water_mask = image.select('WATER_MASK')
-
-    gcfg = cfg.SOIL_HEAT_FLUX
-
-    # T₀ ni Celsius ga (formula shuni talab qiladi)
-    t_celsius = lst.subtract(273.15)
-
-    # Albedo termlari
-    albedo_term = (albedo.multiply(gcfg['c1'])
-                   .add(albedo.pow(2).multiply(gcfg['c2'])))
-
-    # NDVI⁴ ekstinksiya
-    ndvi_term = (ee.Image(1.0)
-                 .subtract(
-                     ndvi.pow(gcfg['ndvi_power'])
-                     .multiply(gcfg['ndvi_extinction'])
-                 ))
-
-    # To'liq G₀ formulasi
-    # G₀ = Rn × (Ts/α) × albedo_term × ndvi_term
-    # Albedo = 0 bo'lganda division by zero — himoya
-    albedo_safe = albedo.max(0.01)
-
-    g0 = (rn
-          .multiply(t_celsius.divide(albedo_safe))
-          .multiply(albedo_term)
-          .multiply(ndvi_term))
-
-    # Suv piksellar uchun: G₀ = 0.5 × Q*
-    g0_water = rn.multiply(gcfg['water_fraction'])
-    g0 = g0.where(water_mask.eq(1), g0_water)
-
-    # NDVI < 0 (suv belgilari) ham suv sifatida
-    g0 = g0.where(ndvi.lt(0), g0_water)
-
-    # G₀ ni oqilona oralig'iga cheklash
-    # G₀ odatda Rn ning 5-50% oralig'ida
-    g0 = g0.min(rn.multiply(0.50)).max(rn.multiply(-0.10))
-
-    g0 = g0.rename('G0')
-
-    return image.addBands(g0)
 # ==============================================================
 # SOIL HEAT FLUX G₀ — Bastiaanssen (2000), SEBAL Manual Eq. 24
 # ==============================================================

@@ -18,6 +18,8 @@ from . import surface_props
 from . import radiation
 from . import energy_balance
 from . import daily_et
+from . import ref_et
+from . import et_decomposition, soil_moisture, biomass, irrigation
 
 
 # ==============================================================
@@ -101,17 +103,15 @@ def get_hls_tile_geometry(mgrs_tile, date_start='2024-01-01',
 # ==============================================================
 
 def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
-                 tile_label=''):
+                 tile_label='', anchor_method='default'):
     """
     Bitta ROI/tile uchun SEBAL pipeline.
     Returns: list of processed scene images
     """
     prefix = f"  [{tile_label}]" if tile_label else "  "
-
     # Tile label bo'lsa: P156_R032 kabi qiymatdan path/row ajratamiz
     if tile_label:
         is_hls = satellite == 'HLS'
- 
         if is_hls:
             # HLS: tile_label = 'T42TVK'
             mgrs_tile = tile_label
@@ -151,6 +151,11 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     collection = collection.map(surface_props.compute_all)
     collection = collection.map(radiation.compute_all)
 
+    # ---- Cropland mask — TILE uchun BIR MARTA (raster, vektor EMAS) ----
+    cropland_mask, is_viable = energy_balance.compute_tile_cropland_zone(roi)
+    if not is_viable:
+        cropland_mask = None
+
     # Energy balance — har sahna alohida
     image_list = collection.toList(collection.size())
     n = info['image_count']
@@ -161,16 +166,35 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         print(f"{prefix} Sahna {i + 1}/{n}...")
 
         img = ee.Image(image_list.get(i))
-        img = energy_balance.compute_all(img, roi)
+
+        # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
+        anchors = energy_balance.select_anchor_pixels(
+            img, roi, cropland_mask=cropland_mask, method=anchor_method)
+
+        if not anchors['valid'].getInfo():
+            print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor topilmadi — "
+                  f"O'TKAZIB YUBORILADI")
+            continue   # bu sahna scene_images ga QO'SHILMAYDI
+
+        img = energy_balance.compute_all(
+            img, roi, cropland_mask=cropland_mask, anchors=anchors)
         img = daily_et.compute_daily_et(img, roi)
 
         if mode == 'pysebal':
-            from . import et_decomposition, soil_moisture, biomass, irrigation
-
-            img = et_decomposition.compute_all(image=img, roi=roi)
+            img = et_decomposition.compute_all(img, roi)
             img = soil_moisture.compute_all(img)
             img = biomass.compute_all(img)
             img = irrigation.compute_all(img)
+        else:
+            # 'maqola' rejimida ham S30 ETrF va VIIRS(kc) ishlashi uchun
+            # ETREF_24 (grass, ASCE-EWRI) va KC har sahnaga qo'shiladi.
+            # pysebal'da bularni et_decomposition allaqachon beradi.
+
+            img = ref_et.compute_etref_daily(img, roi)
+            kc = (img.select('ET_24')
+                  .divide(img.select('ETREF_24').max(0.5))
+                  .clamp(0, 2.5).rename('KC'))
+            img = img.addBands(kc)
 
         scene_images.append(img)
 
@@ -181,7 +205,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 # EXPORT — kunlik
 # ==============================================================
 
-def _export_daily(scene_images, info, roi, mode, folder, scale, crs,
+def _export_daily(scene_images, roi, mode, folder, scale, crs,
                  tile_label=''):
     """Kunlik rasterlar — multi-band, har sahna alohida fayl."""
     bands = DAILY_BANDS_PYSEBAL if mode == 'pysebal' else DAILY_BANDS_MAQOLA
@@ -200,16 +224,13 @@ def _export_daily(scene_images, info, roi, mode, folder, scale, crs,
             print(f"  📊 ET: {et_min:.1f}-{et_max:.1f} mm/day | NDVI max: {ndvi_max:.2f}")
         except:
             pass
-        
         d = (ee.Date(img.get('system:time_start'))
              .format('YYYY-MM-dd').getInfo())
 
         name = f'SEBAL_day_{d}'
         if tile_label:
             name = f'SEBAL_day_{d}_{tile_label}'
-            
         available_bands = img.bandNames().getInfo()
-
         existing_bands = [b for b in bands if b in available_bands]
         missing_bands = [b for b in bands if b not in available_bands]
 
@@ -346,7 +367,7 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
                     w.writeheader()
                     w.writerows(vrows)
                 print(f"  💾 {vname}")
-    except Exception as e:
+    except (ee.EEException, OSError, csv.Error) as e:
         print(f"  ⚠️ S30 ET {month_key}: {e}")
 
 
@@ -431,7 +452,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
 # ==============================================================
 
 def run(roi_type='gaul', date_start=None, date_end=None,
-        mode='maqola', satellite='BOTH', cloud_max=20, validate=False,
+        mode='maqola', satellite='BOTH', cloud_max=70, validate=False,
 
         # Export sozlamalari
         export_daily=True,
@@ -448,17 +469,28 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         tiles=None,          # [(156,32), (156,33)] yoki None=auto
         process_by_tile=False, # True=har tile alohida
 
+        # Anchor tanlash strategiyasi (beton kaskad):
+        #   'default' (hozirgi) | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal'
+        #   | 'cascade'. Nomlangan metod birinchi sinaladi, keyin qolganlari,
+        #   avval ekin zonasida, so'ng ROI'da; hech biri chiqmasa 'default'
+        #   fallback. Har qadam log'da chiqadi.
+        anchor_method='default',
+
         # Export sozlamalari
         folder='SEBAL_Output',
         scale=30,
         crs='EPSG:4326',
 
         # VIIRS downscaling (ixtiyoriy qatlam — SEBAL o'zgarmaydi)
-        use_viirs=True,            # True → oylik ET VIIRS bilan kuchaytiriladi
+        use_viirs=False,            # True → oylik ET VIIRS bilan kuchaytiriladi
         viirs_mode='lambda',        # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
         viirs_model='ndvi',         # 'ndvi' | 'ndvi2' | 'multi'
         viirs_qa='lenient',         # 'lenient' | 'strict'
         viirs_fill='linear',        # 'linear' | 'nearest'
+        viirs_crs=None,             # 30m fine grid CRS (aggregate/holdout uchun).
+                                    # None → asosiy `crs` ishlatiladi (xavfsiz).
+                                    # Har hudud uchun to'g'ri UTM zona bering,
+                                    # masalan Idaho='EPSG:32611', UZB='EPSG:32642'.
 
         # HLS S30 ETrF regressiya (ixtiyoriy qatlam — SEBAL o'zgarmaydi)
         use_s30_etrf=False,         # True → oylik ET HLS S30 (30m) ETrF bilan
@@ -479,10 +511,20 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     """
     roi = cfg.build_roi(roi_type, **roi_kwargs)
 
+    # VIIRS/S30 downscaling 30m fine-grid CRS. Berilmasa → asosiy export
+    # `crs`. Bu ilgari viirs_downscaling.DCFG da hardcode ('EPSG:32642',
+    # faqat O'zbekiston UTM) edi — boshqa hududda (masalan Idaho) noto'g'ri
+    # natija berardi. Endi hudud CRS'i bilan sinxron.
+    viirs_crs = viirs_crs or crs
+    from . import viirs_downscaling as _vds
+    _vds.DCFG['fine_crs'] = viirs_crs
+
     print(f"\n{'='*60}")
     print(f"  SEBAL-GEE v4 | Mode: {mode}")
     print(f"  ROI: {roi_type} | {date_start} → {date_end}")
     print(f"  Tile mode: {process_by_tile}")
+    print(f"  VIIRS fine CRS: {viirs_crs}")
+    print(f"  Anchor metod: {anchor_method}")
     print(f"{'='*60}")
 
     all_tasks = []
@@ -532,13 +574,14 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 
             scenes, info = process_tile(
                 tile_roi, date_start, date_end, mode,
-                satellite, cloud_max, tile_label)
+                satellite, cloud_max, tile_label,
+                anchor_method=anchor_method)
 
             if not scenes:
                 continue
 
             if export_daily:
-                tasks = _export_daily(scenes, info, tile_roi, mode,
+                tasks = _export_daily(scenes, tile_roi, mode,
                                         folder, scale, crs, tile_label)
                 all_tasks.extend(tasks)
 
@@ -620,11 +663,11 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     else:
         scenes, info = process_tile(
             roi, date_start, date_end, mode,
-            satellite, cloud_max)
+            satellite, cloud_max, anchor_method=anchor_method)
 
         if scenes:
             if export_daily:
-                tasks = _export_daily(scenes, info, roi, mode,
+                tasks = _export_daily(scenes, roi, mode,
                                         folder, scale, crs)
                 all_tasks.extend(tasks)
 
@@ -729,8 +772,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     print(f"\n{'='*60}")
     print(f"  ✅ Tayyor! {len(all_tasks)} ta export task")
     print(f"  📁 Drive → {folder}/")
-    print(f"  🔗 https://code.earthengine.google.com/tasks")
+    print("  🔗 https://code.earthengine.google.com/tasks")
     print(f"{'='*60}")
-
     return {'tasks': all_tasks}
 

@@ -297,9 +297,9 @@ def _best_per_date_factory(collection):
         actual_time = ee.Image(daily.first()).get('system:time_start')
         return (daily.mosaic()
                 .set('system:time_start', actual_time)
-                .copyProperties(daily.first(), 
+                .copyProperties(daily.first(),
                                 ['CLOUD_COVERAGE', 'CLOUD_COVER',
-                                 'WRS_PATH', 'WRS_ROW']))
+                                 'WRS_PATH', 'WRS_ROW', 'SUN_ELEVATION']))
     return best_per_date
 
 
@@ -416,7 +416,8 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
             return (daily.mosaic()
                     .set('system:time_start', actual_time)
                     .copyProperties(daily.first(),
-                                    ['CLOUD_COVERAGE', 'CLOUD_COVER']))
+                                    ['CLOUD_COVERAGE', 'CLOUD_COVER',
+                                     'SUN_ELEVATION']))
 
         clean_collection = ee.ImageCollection(
             distinct_dates.map(mosaic_by_date))

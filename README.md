@@ -15,7 +15,8 @@ Google Earth Engine (Python API) asosida qurilgan, Landsat 8/9 va HLS (Harmonize
 5. [Ikkita rejim: `maqola` vs `pysebal`](#ikkita-rejim-maqola-vs-pysebal)
 6. [Qo'shimcha quyi-tizimlar](#qoshimcha-quyi-tizimlar)
 7. [Ma'lum cheklovlar va ochiq masalalar](#malum-cheklovlar-va-ochiq-masalalar)
-8. [Manbalar](#manbalar)
+8. [O'zgartirishlar jurnali](#ozgartirishlar-jurnali-2026-07--bug-fix-va-yaxshilanishlar)
+9. [Manbalar](#manbalar)
 
 ---
 
@@ -370,10 +371,121 @@ Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qili
 - `SOIL_HEAT_FLUX['ndvi_extinction']` konfiguratsiyada `0.978`, ko'p manbada standart qiymat `0.98`.
 - `radiation.py`dagi `compute_rn24()` funksiyasi hech qayerda chaqirilmaydi — `daily_et.py` xuddi shu formulani mustaqil qayta hisoblaydi (duplikat kod).
 - `ETrF` va `EVAP_FRAC` — bir xil formuladan (`λE/(Rn−G₀)`), faqat clamp chegarasi farqli (1.5 vs 1.0).
-- `et_decomposition.py`dagi `compute_etref()` — referens ET'ni SEBAL'ning o'z (kuzatilgan albedo bilan hisoblangan) `RN24`sidan chiqaradi; klassik FAO-56 referens ET meteorologik, yer yuzasidan mustaqil bo'lishi kerak.
+- ~~`et_decomposition.py`dagi `compute_etref()` — referens ET'ni SEBAL'ning o'z `RN24`sidan chiqaradi~~ **✅ HAL QILINDI** (O'zgartirishlar jurnali #10 — ASCE-EWRI `ref_et` ga o'tkazildi).
 - Kunlik/oylik ET'da yuqori chegaraviy `.clamp()` yo'q, faqat `.max(0)` — g'ayrioddiy yuqori qiymatlarga qarshi QA filtri yo'q.
-- `energy_balance.py`da anchor pixel tanlashda ESA WorldCover cropland maskasi ishlatilganda, agar hudud butunlay bo'sh chiqsa — oxirgi fallback yo'q (potensial "silent failure").
+- ~~`energy_balance.py`da anchor tanlashda hudud bo'sh chiqsa — oxirgi fallback yo'q (silent failure)~~ **✅ HAL QILINDI** (O'zgartirishlar jurnali #8 — beton kaskad + `default` fallback + null-xavfsizlik).
 - Interpolyatsiya mantig'i (`daily_et.py`, `monthly_analytics.py`, `hls_s30_etrf.py`) — uchta alohida, biroz farqli implementatsiya.
+
+---
+
+## O'zgartirishlar jurnali (2026-07 — bug-fix va yaxshilanishlar)
+
+Ushbu bosqichda pipeline to'liq ishga tushirildi va bir qator crash, timeout,
+nomuvofiqlik hamda sifat masalalari hal qilindi. Har bir o'zgarish quyida:
+**nima → qayerda → nega** tarzida keltirilgan.
+
+### A. Crash / to'xtash xatolari
+
+1. **`SUN_ELEVATION` mozaikada saqlanadi**
+   `preprocessing.py` → `_best_per_date_factory()`, `mosaic_by_date()`.
+   `daily.mosaic()` metadatani yo'qotardi; `copyProperties(...)` ro'yxatiga
+   `'SUN_ELEVATION'` qo'shildi. **Nega:** tile mozaikasidan keyin
+   `radiation.py` `ee.Number(image.get('SUN_ELEVATION'))` = null → *"Number.multiply:
+   left null"* crash berardi.
+
+2. **`SUN_ELEVATION` topilmasa — ATAYLAB to'xtaydi (fake YO'Q)**
+   `radiation.py` → `compute_incoming_shortwave()`.
+   Landsat sahnada `SUN_ELEVATION` bo'lmasa script to'xtaydi (default qiymat
+   ishlatilmaydi). HLS'da `SZA` bandi ishlatiladi — o'sha (discard qilinadigan)
+   shoxga xavfsiz o'rin egasi beriladi. **Nega:** maqsad — ishonchli, yuqori
+   sifatli natija; yetishmagan ma'lumotni yashirmaslik.
+
+3. **Anchor persentil / stat `.get()` — null-xavfsiz**
+   `energy_balance.py` → `_pn()`, `_safe_num()` va barcha metodlar.
+   `reduceRegion(percentile)` bo'sh zonada (a) kalitni umuman qaytarmaydi yoki
+   (b) kalitni null qiymat bilan qaytaradi — ikkovi ham `ee.Number(null)` →
+   *"Image.constant: value null"* / *"Dictionary does not contain key"* crash
+   berardi. Endi sentinel (`_HI/_LO`) bilan mask bo'sh bo'ladi (metod
+   "topilmadi" deb keyingisiga o'tadi).
+
+4. **Bitta-persentil kalit nomi tuzatildi**
+   `energy_balance.py` → `_anchor_cimec()`, `_anchor_pysebal()`.
+   `ee.Reducer.percentile([80])` (BITTA qiymat) natija kaliti — band nomi
+   (`'NDVI'`), `'NDVI_p80'` EMAS (`_pXX` faqat 2+ persentilda qo'shiladi).
+
+### B. Timeout (Computation timed out) — arxitektura
+
+5. **Cropland: vektor → RASTER mask**
+   `energy_balance.py` → `compute_tile_cropland_zone()`.
+   Ilgari 791k cropland piksel `reduceToVectors()+dissolve()` bilan ulkan
+   murakkab ko'pburchakka aylanardi; `reduceRegion` o'sha geometriyada
+   *"Computation timed out"* berardi. Endi **raster mask** qaytariladi,
+   `reduceRegion` oddiy `roi` to'rtburchak + `updateMask` bilan ishlaydi.
+
+6. **Sezuvchan issiqlik H — IKKI SIKLLI hisob (asosiy timeout yechimi)**
+   `energy_balance.py` → `compute_sensible_heat_flux()`, `_stability_scalar()`.
+   **Muammo:** coupled per-piksel iteratsiya + har qadam `getInfo` → GEE hisob
+   grafi to'planib borardi (natija cache'lanmaydi), 7–9-iteratsiyaga borib
+   interaktiv compute limitidan oshardi.
+   **Yechim (klassik SEBAL "hot-pixel calibration"):**
+   - **(A) skalyar sikl** — hot-piksel skalyar kirishlarini BIR MARTA olib
+     (yagona `getInfo`), iteratsiyani sof Python'da (server chaqiruvisiz)
+     konvergensiyagacha aylantiradi → har qadam `c4_i, c5_i` va konvergent `N_A`.
+   - **(B) raster sikl** — aynan `N_A` qadam, `c4_i` KONSTANTA sifatida inject
+     qilinadi (embedded `reduceRegion` yo'q → yengil graf), ichida `getInfo` YO'Q.
+   - **Oxirida BITTA `getInfo`** — yakuniy hot-piksel `dT/rah/H` va `N_A` print.
+   Natija: timeout butunlay yo'qoldi. Validatsiya: eski coupled usul bilan ET
+   farqi **MAE ≤ 0.03 mm/kun**, p95|Δ| ≤ 0.11 mm/kun (arzimas).
+
+7. **Monin–Obukhov iteratsiyasiga DAMPING (konvergensiya)**
+   `energy_balance.py` (A va B sikllarda).
+   `ψm, ψh` (va `u*`) ketma-ket IKKI iteratsiya o'rtachasi bilan so'ndiriladi —
+   "pendulum" tebranishini bartaraf qiladi. **Manba:** Dhungel et al. (2016),
+   *J. Appl. Remote Sens.* 10(2), 026033, DOI: 10.1117/1.JRS.10.026033.
+
+### C. Anchor tanlash — "beton" kaskad
+
+8. **Ko'p-metodli anchor kaskadi + diagnostika**
+   `config.py` (`ANCHOR_METHODS`, `ANCHOR_CASCADE`), `energy_balance.py`
+   (`select_anchor_pixels` dispatcher, `_anchor_cimec/_plan_a/_plan_b/_pysebal`,
+   `_finalize_anchor`), `main.py`/`run_sebal.py` (`anchor_method` parametri).
+   Tanlangan metod birinchi sinaladi → qolganlari → avval ekin zonasida, keyin
+   butun ROI'da → hech biri chiqmasa `default` persentil fallback (KAFOLAT).
+   Har qadam log'da: qaysi metod, qaysi zona, `dT/ΔT` yoki nega topilmadi.
+   **Nega:** avvalgi "anchor topilmadi → silent failure" cheklovini yopadi.
+
+9. **Anchor persentillari `scale=30`** (original aniqlik)
+   Kaskad va default persentil/median `reduceRegion`lari 30m'ga qaytarildi
+   (piksel-sanoq tekshiruvlari 100/120'da qoldi — bular persentil emas).
+
+### D. Rejim / konfiguratsiya nomuvofiqliklari
+
+10. **ETPOT — hamma joyda ASCE-EWRI alfalfa**
+    `et_decomposition.py` → `compute_all()` endi `ref_et.compute_reference_ets_daily()`
+    ishlatadi (eski Penman-Monteith aerodinamik `compute_etpot()` chaqirilmaydi).
+    **Nega:** kunlik `ETPOT_24` va oylik `ETPOT_MONTHLY` bir xil formula bo'lishi.
+    (Bu ilgarigi "compute_etref referens ET" cheklovini ham to'g'irlaydi.)
+
+11. **`maqola` rejimida ham `ETREF_24`/`KC`**
+    `main.py` → `process_tile()` (else shoxi).
+    S30 ETrF va VIIRS(kc) qatlamlari maqola rejimida ham crashsiz ishlashi uchun
+    har sahnaga `ETREF_24` (ASCE-EWRI grass) va `KC` qo'shiladi.
+
+12. **VIIRS 30m fine-grid CRS — sozlanadigan**
+    `main.py` → `run()` (`viirs_crs` parametri), `viirs_downscaling.DCFG`.
+    Ilgari hardcoded `'EPSG:32642'` (faqat O'zbekiston UTM) edi — boshqa hududda
+    (Idaho) noto'g'ri natija berardi. Berilmasa asosiy `crs`ga tushadi.
+
+### E. Tozalash
+
+13. **O'lik `getInfo` bloki olib tashlandi**
+    `energy_balance.py` — H-iteratsiyada hech narsa qilmaydigan, har qadam
+    ortiqcha server so'rovi yuboradigan `anchor_check` bloki o'chirildi.
+
+### Config o'zgarishlari (`config.py`)
+- `ANCHOR_METHODS`, `ANCHOR_CASCADE` (yangi) — anchor kaskad sozlamalari.
+- `ITERATION`: `max_iter` 8 → **15**; yangi `tol_rel = 0.01` (1% NISBIY
+  konvergensiya — mutlaq 0.1K o'rniga masshtabdan mustaqil).
 
 ---
 
@@ -382,6 +494,7 @@ Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qili
 - Bastiaanssen, W.G.M. et al. (1998). *A remote sensing surface energy balance algorithm for land (SEBAL)*. Journal of Hydrology.
 - Bastiaanssen, W.G.M. (2000). *SEBAL-based sensible and latent heat fluxes in the irrigated Gediz Basin, Turkey*. Journal of Hydrology.
 - Allen, R.G., Tasumi, M., Trezza, R. (2007). *Satellite-Based Energy Balance for Mapping Evapotranspiration with Internalized Calibration (METRIC)*. ASCE J. Irrig. Drain. Eng.
+- Dhungel, R., Allen, R.G., Trezza, R., Kilic, A. (2016). *Improving iterative surface energy balance convergence for remote sensing based flux calculation*. J. Applied Remote Sensing 10(2), 026033. DOI: 10.1117/1.JRS.10.026033. — H-iteratsiya damping (ψ va u* o'rtachalash).
 - Allen, R.G. et al. (1998). *Crop Evapotranspiration — FAO Irrigation and Drainage Paper 56*.
 - Huete, A.R. (1988). *A soil-adjusted vegetation index (SAVI)*. Remote Sensing of Environment.
 - Van de Griend, A.A., Owe, M. (1992). *On the relationship between thermal emissivity and NDVI*.
@@ -391,4 +504,4 @@ Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qili
 
 ---
 
-*Ushbu README loyihaning `scripts_v3` bosqichidagi manba kodidan (`sebal_gee_v4/` moduli) to'g'ridan-to'g'ri chiqarilgan — barcha formula va konstantalar kod ichidan tasdiqlangan.*
+*Ushbu README loyihaning `D:\Cloud_comp\Sebal\scripts` bosqichidagi manba kodidan (`sebal_gee_v4/` moduli) to'g'ridan-to'g'ri chiqarilgan — barcha formula va konstantalar kod ichidan tasdiqlangan.*

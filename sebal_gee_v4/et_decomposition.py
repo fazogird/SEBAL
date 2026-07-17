@@ -413,16 +413,17 @@ def compute_all(image, roi):
 
     Tartib muhim:
       1. Vapor pressure (esat, eact, VPD, psychro)
-      2. ETref (FAO-56 reference)
-      3. ETpot (potensial ET)
-      4. Advection factor
-      5. Crop coefficients (kc, kc_max, ET_deficit)
-      6. E/T separation (Tact, Eact, T_deficit, beneficial)
+      2. ETREF_24 (grass) + ETPOT_24 (alfalfa) — IKKALASI ham ASCE-EWRI
+         (ref_et), bitta ERA5 so'rovdan. ETPOT endi kunlik va oylik
+         (monthly_analytics) da AYNAN bir xil formula bilan hisoblanadi.
+      3. Advection factor
+      4. Crop coefficients (kc, kc_max, ET_deficit)
+      5. E/T separation (Tact, Eact, T_deficit, beneficial)
 
     Input:  Image with SEBAL results + ERA5 + surface props
-    Output: Image + 15 yangi band:
+    Output: Image + yangi bandlar:
       ESAT, EACT, VPD, SLOPE_ES, PSYCHRO,
-      ETREF_24, ETPOT_24, RS_MIN,
+      ETREF_24, ETPOT_24,
       ADV_FACTOR,
       KC, KC_MAX, ET_DEFICIT,
       TPOT_24, TACT_24, EACT_24, T_DEFICIT,
@@ -430,11 +431,20 @@ def compute_all(image, roi):
 
     Kerakli bandlar:
       RN24, ET_24, EVAP_FRAC, LAI, Z0M, LST,
-      AIR_TEMP, DEWPOINT, PRESSURE, WIND_SPEED_10M, RHO_AIR
+      AIR_TEMP, DEWPOINT, PRESSURE, WIND_SPEED_10M, RHO_AIR, DEM
     """
     image = compute_vapor_pressure(image)
-    image = compute_etref(image, roi)        
-    image = compute_etpot(image)
+
+    # ETREF_24 (grass) + ETPOT_24 (alfalfa) — ASCE-EWRI, bitta so'rov.
+    # (Eski compute_etpot() Penman-Monteith aerodinamik edi — kunlik/oylik
+    #  mos kelmasdi. Endi oylik monthly_analytics bilan bir xil.)
+    image = ref_et.compute_reference_ets_daily(image, roi)
+
+    # ETpot >= ETact (fizik cheklov)
+    eta = image.select('ET_24')
+    etpot_clamped = image.select('ETPOT_24').max(eta).rename('ETPOT_24')
+    image = image.addBands(etpot_clamped, overwrite=True)
+
     image = compute_advection_factor(image)
     image = compute_crop_coefficients(image)
     image = compute_et_separation(image)

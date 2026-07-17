@@ -193,16 +193,37 @@ ANCHOR = {
     # Selection method
     'method': 'median',             # 'median' yoki 'mean' — outlier himoyasi
 }
+
+# ── ANCHOR KASKAD (beton) — bir nechta metod ketma-ket ──────────
+# Anchor tanlash strategiyasi. run_sebal.py da `anchor_method` bilan
+# tanlanadi:
+#   'default' → hozirgi persentil + yumshoq fallback (bitta so'rov, tez)
+#   'cimec' | 'plan_a' | 'plan_b' | 'pysebal' → shu metod BIRINCHI sinaladi,
+#       keyin qolganlari; avval ekin zonasida, keyin butun ROI'da;
+#       hech biri chiqmasa — 'default' persentil fallback (KAFOLAT).
+#   'cascade' → cimec'dan boshlab to'liq zanjir.
+ANCHOR_METHODS = ('default', 'cimec', 'plan_a', 'plan_b', 'pysebal', 'cascade')
+
+ANCHOR_CASCADE = {
+    'ts_gap_min': 3.0,   # plan_b: issiq-sovuq LST farqi (K) yetarli deb hisoblash chegarasi
+    'min_dt':     1.0,   # anchorni qabul qilish uchun minimal (hot_LST - cold_LST), K
+}
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration
 # ==============================================================
 
 ITERATION = {
-    'max_iter': 8,        # xavfsizlik chegarasi (agar konvergensiya kelmasa)
+    'max_iter': 15,        # xavfsizlik chegarasi (Dhungel 2016 damping bilan
+                           #  yaqinlashish uchun joy — neytral start uzoq)
     'min_iter': 2,         # kamida shuncha iteratsiyadan keyin to'xtashga ruxsat
                             # (juda erta "yolg'on konvergensiya"dan himoya)
-    'tol_dt': 0.01,        # dT_hot uchun mutlaq tolerantlik (K)
-    'tol_rah': 0.1,        # rah_hot uchun mutlaq tolerantlik (s/m)
+    # NISBIY konvergensiya: |dT_hot(i) - dT_hot(i-1)| / dT_hot < tol_rel.
+    # Mutlaq 0.1K o'rniga foizli — bahorda kichik dT, yozda katta dT'ga
+    # BIR XIL mos (masshtabdan mustaqil). LST aniqligi ~0.5K bo'lgani uchun
+    # 1% (~0.05-0.2K) fizik jihatdan mazmunli; standart SEBAL/METRIC amaliyoti.
+    'tol_rel': 0.01,       # 1% nisbiy tolerantlik (dT_hot va rah_hot uchun)
+    'tol_dt': 0.01,        # (eski, mutlaq — endi ishlatilmaydi)
+    'tol_rah': 0.1,        # (eski, mutlaq — endi ishlatilmaydi)
 }
 
 # ==============================================================
@@ -263,7 +284,7 @@ GAUL = {
 
 PIPELINE = {
     'satellite': 'BOTH',           # 'L8', 'L9', 'BOTH'
-    'cloud_max_percent': 60,       # maximum cloud cover %
+    'cloud_max_percent': 70,       # maximum cloud cover %
     'et_mode': 'monthly',          # 'daily' yoki 'monthly'
     'interpolation': 'linear',     # Λ interpolyatsiya: 'linear', 'nearest'
 
@@ -372,9 +393,7 @@ def build_roi(roi_type, **kwargs):
 # ==============================================================
 # 16. HLS — Harmonized Landsat Sentinel-2
 # ==============================================================
- 
 HLS_COLLECTION = 'NASA/HLS/HLSL30/v002'
- 
 HLS_BAND_NAMES = {
     'blue':    'B2',
     'green':   'B3',
@@ -385,7 +404,6 @@ HLS_BAND_NAMES = {
     'thermal': 'B10',
     'qa':      'Fmask',
 }
- 
 HLS_QA_BITMASK = {
     'cirrus':       1 << 0,
     'cloud':        1 << 1,
