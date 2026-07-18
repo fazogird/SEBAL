@@ -104,25 +104,21 @@ def compute_daily_et(image, roi):
 
     image = image.addBands(rn24)
 
-    # 3. ET₂₄ (mm/day)
-    # ET₂₄ = Λ × Rn24 × 86400 / λ 
-    # = Λ × Rn24 × 86400 / 2.45e9
-    # = Λ × Rn24 × 3.5265e-5
-    conversion = cfg.DAILY_ET['seconds_per_day'] / (cfg.LAMBDA_V )      # * 1000  o'chirdim 
-    
+    # 3. ET₂₄ (mm/day) — SEBAL_B
+    # λ HAROTARGA BOG'LIQ (Tasumi Eq. 3.48): (2.501 − 0.00236·(Ts−273))·10⁶ J/kg
+    # (doimiy 2.45e6 EMAS — per-piksel LST'dan).
+    lam = (image.select('LST').subtract(273.0).multiply(-0.00236)
+           .add(2.501).multiply(1e6).rename('LAMBDA_HV'))
+    spd = cfg.DAILY_ET['seconds_per_day']
+
     # Lahzali ET (mm/hour) — debug uchun
-    et_inst = (image.select('LAMBDA_E')
-               .multiply(3600.0)
-               .divide(cfg.LAMBDA_V)
+    et_inst = (image.select('LAMBDA_E').multiply(3600.0).divide(lam)
                .rename('ET_INST_MM_HR'))
-    
     image = image.addBands(et_inst)
 
-    et_24 = (evap_frac.multiply(rn24)
-             .multiply(conversion)
-             .max(0)
-             .rename('ET_24'))
-
+    # ET₂₄ = EF × Rn24 × 86400 / λ
+    et_24 = (evap_frac.multiply(rn24).multiply(spd).divide(lam)
+             .max(0).rename('ET_24'))
     image = image.addBands(et_24)
 
     return image
@@ -168,7 +164,7 @@ def compute_monthly_et(image_list, roi, year, month):
     # Bu server-side ishlashi uchun ImageCollection ga o'giramiz
 
     lambda_collection = ee.ImageCollection(image_list).select(
-        ['EVAP_FRAC', 'ALBEDO', 'TAU_SW']
+        ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST']
     )
 
     # Agar oyda bitta ham tasvir bo'lmasa — None qaytarish
@@ -199,12 +195,14 @@ def compute_monthly_et(image_list, roi, year, month):
                 )
                 .max(0))
 
-        # ET_kun (mm/day)
+        # ET_kun (mm/day) — λ haroratga bog'liq (Tasumi 3.48)
         evap_frac = lambda_interp.select('EVAP_FRAC')
-        conversion = cfg.DAILY_ET['seconds_per_day'] / (cfg.LAMBDA_V )  # * 1000 o'chirdim
+        lam = (lambda_interp.select('LST').subtract(273.0).multiply(-0.00236)
+               .add(2.501).multiply(1e6))
+        spd = cfg.DAILY_ET['seconds_per_day']
 
         et_day = (evap_frac.multiply(rn24)
-                  .multiply(conversion)
+                  .multiply(spd).divide(lam)
                   .max(0))
 
         return et_day

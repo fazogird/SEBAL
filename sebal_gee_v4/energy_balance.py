@@ -23,6 +23,62 @@ from . import config as cfg
 # TILE-DARAJASIDA CROPLAND ZONASI — bir marta hisoblanadi
 # ==============================================================
 
+def _landcover_mask(classes):
+    """ESA WorldCover'dan berilgan klasslar uchun 0/1 mask (masklamagan)."""
+    wc = ee.ImageCollection('ESA/WorldCover/v200').first().select('Map')
+    m = wc.eq(classes[0])
+    for c in classes[1:]:
+        m = m.Or(wc.eq(c))
+    return m
+
+
+def compute_tile_anchor_zones(tile_roi, min_pixel_count=20):
+    """
+    ESA WorldCover'dan COLD va HOT anchor RASTER zonalarini ajratadi —
+    TILE uchun BIR MARTA (klassik SEBAL: cold va hot AYRIM land-cover).
+
+      cold = cfg.ANCHOR_LANDCOVER['cold']  (40 Cropland) — sug'orilgan, nam
+      hot  = cfg.ANCHOR_LANDCOVER['hot']   (60 Bare + 20 Shrub) — doim quruq
+
+    MUHIM: hot cropland'dan EMAS — to'liq sug'orilgan mavsumda (iyul-sentyabr)
+    cropland ichidagi "eng issiq" piksel ham transpiratsiya qiladi (lambdaE!=0)
+    -> dT_hot oshadi -> ET past baholanadi (kuzatilgan +44% iyul biasining sababi).
+
+    Returns
+    -------
+    (cold_mask, hot_mask) : (ee.Image yoki None, ee.Image yoki None)
+        Har biri selfMask (1=zona, qolgani masked). Shu zonada
+        <min_pixel_count piksel bo'lsa -> None (chaqiruvchi ROI'ga tushadi).
+    """
+    cold_r = _landcover_mask(cfg.ANCHOR_LANDCOVER['cold'])
+    hot_r = _landcover_mask(cfg.ANCHOR_LANDCOVER['hot'])
+
+    counts = ee.Dictionary({
+        'cold': cold_r.reduceRegion(
+            ee.Reducer.sum(), tile_roi, 100, maxPixels=1e10,
+            bestEffort=True).get('Map', 0),
+        'hot': hot_r.reduceRegion(
+            ee.Reducer.sum(), tile_roi, 100, maxPixels=1e10,
+            bestEffort=True).get('Map', 0),
+    }).getInfo()
+    cold_px = counts.get('cold') or 0
+    hot_px = counts.get('hot') or 0
+
+    print(f"  Cold(cropland {cfg.ANCHOR_LANDCOVER['cold']}) px: {cold_px:.0f}"
+          f"  |  Hot(bare+shrub {cfg.ANCHOR_LANDCOVER['hot']}) px: {hot_px:.0f}")
+
+    cold_mask = (cold_r.selfMask().rename('COLD_LC')
+                 if cold_px >= min_pixel_count else None)
+    hot_mask = (hot_r.selfMask().rename('HOT_LC')
+                if hot_px >= min_pixel_count else None)
+    if cold_mask is None:
+        print(f"  ! Cold zona <{min_pixel_count} px -> cold cheklovsiz (ROI)")
+    if hot_mask is None:
+        print(f"  ! Hot zona <{min_pixel_count} px -> hot cheklovsiz (ROI)")
+
+    return cold_mask, hot_mask
+
+
 def compute_tile_cropland_zone(tile_roi, min_pixel_count=20):
     """
     Tile va ESA WorldCover cropland (class 40) kesishmasini GEOMETRIYA
@@ -226,7 +282,7 @@ def compute_tile_cropland_zone(tile_roi, min_pixel_count=20):
 
 #     return anchors
 
-def _select_anchor_default(image, roi, cropland_mask=None):
+def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None):
     """
     Klassik persentil anchor tanlash — RASTER cropland mask bilan.
 
@@ -248,48 +304,41 @@ def _select_anchor_default(image, roi, cropland_mask=None):
     valid = image.mask().reduce(ee.Reducer.allNonZero())
     base_flat = flat_mask.And(valid)
 
-    # ---- 2. Cropland cheklovi — RASTER mask (geometriya emas!) ----
-    if cropland_mask is not None:
-        base_crop = base_flat.And(cropland_mask.gt(0))
-    else:
-        base_crop = base_flat
+    # ---- 2. AYRIM zonalar: cold=cropland_lc, hot=bare+shrub_lc (raster) ----
+    def _zone_base(lc):
+        if lc is None:
+            return base_flat
+        b = base_flat.And(lc.gt(0))
+        px = ee.Number(b.rename('M').reduceRegion(
+            ee.Reducer.sum(), roi, 120, maxPixels=1e9,
+            bestEffort=True).get('M', 0))
+        px = ee.Number(ee.Algorithms.If(px, px, 0))
+        # <20 valid piksel (bulut) bo'lsa shu sahnada cheklovsiz (butun roi)
+        return ee.Image(ee.Algorithms.If(px.gt(20), b, base_flat))
 
-    # Shu sahnada cropland zonasida yetarli valid piksel bormi (bulut?)
-    px = base_crop.rename('M').reduceRegion(
-        reducer=ee.Reducer.sum(), geometry=roi, scale=120,
-        maxPixels=1e9, bestEffort=True).get('M', 0)
-    px = ee.Number(ee.Algorithms.If(px, px, 0))
-    # <20 bo'lsa cropland cheklovini olib tashlaymiz (butun roi, shu sahna)
-    base_mask = ee.Image(ee.Algorithms.If(px.gt(20), base_crop, base_flat))
+    cold_base = _zone_base(cold_lc)
+    hot_base = _zone_base(hot_lc)
+    search_geom = roi   # reduceRegion HAR DOIM oddiy roi (tez)
 
-    # reduceRegion geometriyasi HAR DOIM oddiy roi (tez)
-    search_geom = roi
+    # ---- 3. Percentile — cold cold_base'dan, hot hot_base'dan (scale=30) ----
+    # DIQQAT: bitta percentile so'ralsa kalit = band nomi ('NDVI'/'LST').
+    cold_np = ndvi.updateMask(cold_base).reduceRegion(
+        ee.Reducer.percentile([acfg['cold_ndvi_percentile']]),
+        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+    cold_tp = lst.updateMask(cold_base).reduceRegion(
+        ee.Reducer.percentile([acfg['cold_lst_percentile']]),
+        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+    hot_np = ndvi.updateMask(hot_base).reduceRegion(
+        ee.Reducer.percentile([acfg['hot_ndvi_percentile']]),
+        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+    hot_tp = lst.updateMask(hot_base).reduceRegion(
+        ee.Reducer.percentile([acfg['hot_lst_percentile']]),
+        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
 
-    masked_ndvi = ndvi.updateMask(base_mask)
-    masked_lst = lst.updateMask(base_mask)
-
-    # ---- 3. Percentile — roi ustida, scale=30 (original aniqlik) ----
-    ndvi_stats = masked_ndvi.reduceRegion(
-        reducer=ee.Reducer.percentile(
-            [acfg['hot_ndvi_percentile'], acfg['cold_ndvi_percentile']]),
-        geometry=search_geom, scale=30, maxPixels=1e9, bestEffort=True,
-        tileScale=4)
-
-    lst_stats = masked_lst.reduceRegion(
-        reducer=ee.Reducer.percentile(
-            [acfg['cold_lst_percentile'], acfg['hot_lst_percentile']]),
-        geometry=search_geom, scale=30, maxPixels=1e9, bestEffort=True,
-        tileScale=4)
-
-    # Kalit yo'q (bo'sh zona) bo'lsa sentinel → mask bo'sh bo'ladi (crash emas).
-    ndvi_p_hot = ee.Number(ndvi_stats.get(
-        f'NDVI_p{acfg["hot_ndvi_percentile"]}', _LO))     # lte → bo'sh
-    ndvi_p_cold = ee.Number(ndvi_stats.get(
-        f'NDVI_p{acfg["cold_ndvi_percentile"]}', _HI))    # gte → bo'sh
-    lst_p_cold = ee.Number(lst_stats.get(
-        f'LST_p{acfg["cold_lst_percentile"]}', _LO))      # lte → bo'sh
-    lst_p_hot = ee.Number(lst_stats.get(
-        f'LST_p{acfg["hot_lst_percentile"]}', _HI))       # gte → bo'sh
+    ndvi_p_cold = ee.Number(cold_np.get('NDVI', _HI))   # gte -> yo'q bo'lsa bo'sh
+    lst_p_cold = ee.Number(cold_tp.get('LST', _LO))     # lte -> bo'sh
+    ndvi_p_hot = ee.Number(hot_np.get('NDVI', _LO))     # lte -> bo'sh
+    lst_p_hot = ee.Number(hot_tp.get('LST', _HI))       # gte -> bo'sh
 
     def _ensure_nonempty(mask, fallback):
         mask = mask.rename('M')
@@ -299,20 +348,22 @@ def _select_anchor_default(image, roi, cropland_mask=None):
         cnt = ee.Number(ee.Algorithms.If(cnt, cnt, 0))
         return ee.Image(ee.Algorithms.If(cnt.gt(0), mask, fallback.rename('M')))
 
-    cold_mask = (base_mask.And(ndvi.gte(ndvi_p_cold))
+    # Cold — cold_base (cropland) ichida: yuqori NDVI + past LST
+    cold_mask = (cold_base.And(ndvi.gte(ndvi_p_cold))
                  .And(lst.lte(lst_p_cold))
                  .And(albedo.lt(acfg['cold_albedo_max'])))
-    cold_fallback = base_mask.And(lst.lte(lst_p_cold))
+    cold_fallback = cold_base.And(lst.lte(lst_p_cold))
     cold_mask = _ensure_nonempty(cold_mask, cold_fallback)
 
     cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
         reducer=ee.Reducer.median(), geometry=search_geom, scale=30,
         maxPixels=1e9, bestEffort=True, tileScale=4).get('LST', -999))
 
-    hot_mask = (base_mask.And(ndvi.lte(ndvi_p_hot))
+    # Hot — hot_base (bare+shrub) ichida: past NDVI + yuqori LST
+    hot_mask = (hot_base.And(ndvi.lte(ndvi_p_hot))
                 .And(lst.gte(lst_p_hot))
                 .And(albedo.gt(acfg['hot_albedo_min'])))
-    hot_fallback = base_mask.And(lst.gte(lst_p_hot))
+    hot_fallback = hot_base.And(lst.gte(lst_p_hot))
     hot_mask = _ensure_nonempty(hot_mask, hot_fallback)
 
     hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
@@ -566,7 +617,7 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose):
     return None
 
 
-def select_anchor_pixels(image, roi, cropland_mask=None,
+def select_anchor_pixels(image, roi, cold_mask=None, hot_mask=None,
                          method='default', verbose=True):
     """
     Anchor tanlash DISPATCHER (beton kaskad).
@@ -585,28 +636,36 @@ def select_anchor_pixels(image, roi, cropland_mask=None,
     Har qadam va metod almashinuvi print qilinadi.
     """
     if method == 'default':
-        return _select_anchor_default(image, roi, cropland_mask)
+        return _select_anchor_default(image, roi, cold_mask, hot_mask)
 
     base_flat = _base_mask(image)             # tekis + valid
     order = _cascade_order(method)
 
-    # Zonalar: (nom, shu zona uchun base). reduceRegion geom = roi (tez).
-    zones = []
-    if cropland_mask is not None:
-        zones.append(('cropland', base_flat.And(cropland_mask.gt(0))))
-    zones.append(('ROI', base_flat))
+    # AYRIM zonalar: cold=cropland, hot=bare+shrub (updateMask base'ga kiritiladi).
+    cold_base = (base_flat.And(cold_mask.gt(0))
+                 if cold_mask is not None else base_flat)
+    hot_base = (base_flat.And(hot_mask.gt(0))
+                if hot_mask is not None else base_flat)
 
-    for zone_name, zbase in zones:
-        for m in order:
-            cold_mask, hot_mask = _ANCHOR_METHODS[m](image, roi, zbase)
-            res = _finalize_anchor(image, roi, cold_mask, hot_mask,
-                                   m, zone_name, verbose)
-            if res is not None:
-                return res
+    # 1) Land-cover zonalari: cold_mask cold_base'dan, hot_mask hot_base'dan.
+    #    Metod ikki marta chaqiriladi — keraksiz yarmi (lazy) baholanmaydi.
+    for m in order:
+        cm, _ = _ANCHOR_METHODS[m](image, roi, cold_base)
+        _, hm = _ANCHOR_METHODS[m](image, roi, hot_base)
+        res = _finalize_anchor(image, roi, cm, hm, m, 'lc', verbose)
+        if res is not None:
+            return res
+
+    # 2) ROI (cheklovsiz) — bulutli kunlarda zona bo'sh bo'lsa zaxira.
+    for m in order:
+        cm, hm = _ANCHOR_METHODS[m](image, roi, base_flat)
+        res = _finalize_anchor(image, roi, cm, hm, m, 'ROI', verbose)
+        if res is not None:
+            return res
 
     if verbose:
-        print("    ⚠️ Barcha metod bo'sh — 'default' persentil fallback")
-    return _select_anchor_default(image, roi, cropland_mask)
+        print("    ! Barcha metod bo'sh — 'default' persentil fallback")
+    return _select_anchor_default(image, roi, cold_mask, hot_mask)
 
 
 # ==============================================================
@@ -631,17 +690,19 @@ def compute_friction_velocity(image):
     wcfg = cfg.WIND
 
     wind_10 = image.select('WIND_SPEED_10M')
-    z0m = image.select('Z0M')
+    z0m = image.select('Z0M')             # 0.018·LAI — u* uchun
+    z0m_wind = image.select('Z0M_WIND')   # 0.123·h(NDVI) — shamol ekstrapolyatsiyasi
 
     z_ref = wcfg['z_ref_era5']       # 10m
     z_blend = wcfg['z_blending']     # 200m
-    z0m_ws = wcfg['z0m_weather']     # 0.12m (grass)
     k = cfg.VON_KARMAN               # 0.41
 
-    # 1. 10m → 200m extrapolyatsiya (neytral, log profile)
+    # 1. 10m → 200m extrapolyatsiya (neytral, log profile).
+    #    z₀m,wind = 0.123·h(NDVI) — PER-PIKSEL (uniform-blending farazidan chetlashadi;
+    #    foydalanuvchi tanlovi bilan). u_200 = u_10 × ln(200/z₀m,w)/ln(10/z₀m,w)
     u_200 = wind_10.multiply(
-        ee.Number(z_blend / z0m_ws).log().divide(
-            ee.Number(z_ref / z0m_ws).log()
+        ee.Image(z_blend).divide(z0m_wind).log().divide(
+            ee.Image(z_ref).divide(z0m_wind).log()
         )
     ).rename('U_200')
 
@@ -661,10 +722,9 @@ def compute_rah_neutral(image):
     """
     Aerodinamik qarshilik — neytral sharoit (1-iteratsiya).
 
-    rah = ln(z₁/z₂) / (k × u*)
+    rah = ln(z2_rah/z1) / (k × u*)   [SEBAL_B: z1=0.1m, z2_rah=0.2m → ln(2)]
 
-    z₁ = 2.0m  (yuqori integratsiya chegarasi)
-    z₂ = 0.1m  (pastki integratsiya chegarasi)
+    DIQQAT: rah uchun z2_rah=0.2m; stability ψ uchun ALOHIDA z2=2.0m (boshqa).
 
     Bu faqat boshlang'ich qiymat — iteratsiyada ψh bilan tuzatiladi.
     """
@@ -673,7 +733,7 @@ def compute_rah_neutral(image):
 
     ustar = image.select('USTAR')
 
-    ln_ratio = ee.Number(wcfg['z1'] / wcfg['z2']).log()
+    ln_ratio = ee.Number(wcfg['z2_rah'] / wcfg['z1']).log()   # ln(0.2/0.1)=ln(2)
 
     rah = (ee.Image(ln_ratio)
            .divide(ustar.multiply(k))
@@ -701,14 +761,14 @@ def _stability_scalar(L, z_blend, z1, z2):
         psi_m = (2.0 * math.log((1.0 + x200) / 2.0)
                  + math.log((1.0 + x200 ** 2) / 2.0)
                  - 2.0 * math.atan(x200) + math.pi / 2.0)
-        x2 = max(1.0 - 16.0 * z1 / L, 0.001) ** 0.25
-        psi_h2 = 2.0 * math.log((1.0 + x2 ** 2) / 2.0)
-        x01 = max(1.0 - 16.0 * z2 / L, 0.001) ** 0.25
-        psi_h01 = 2.0 * math.log((1.0 + x01 ** 2) / 2.0)
-        psi_h = psi_h2 - psi_h01
-    else:       # barqaror (L > 0) — z1 (Allen 2007)
-        psi_m = -5.0 * z1 / L
-        psi_h = (-5.0 * z1 / L) - (-5.0 * z2 / L)
+        x_z1 = max(1.0 - 16.0 * z1 / L, 0.001) ** 0.25   # z1=0.1 (past)
+        x_z2 = max(1.0 - 16.0 * z2 / L, 0.001) ** 0.25   # z2=2.0 (stability)
+        psi_h_z1 = 2.0 * math.log((1.0 + x_z1 ** 2) / 2.0)
+        psi_h_z2 = 2.0 * math.log((1.0 + x_z2 ** 2) / 2.0)
+        psi_h = psi_h_z2 - psi_h_z1        # ψh(z2) - ψh(z1)
+    else:       # barqaror (L > 0): ψm z=2m (Allen 2007), ψh=-5(z2-z1)/L
+        psi_m = -5.0 * 2.0 / L
+        psi_h = -5.0 * (z2 - z1) / L
     psi_m = max(min(psi_m, 10.0), -10.0)
     psi_h = max(min(psi_h, 10.0), -10.0)
     return psi_m, psi_h
@@ -761,8 +821,9 @@ def compute_sensible_heat_flux(image, anchors, roi):
     g = cfg.GRAVITY
     cp = cfg.CP_AIR
     z_blend = wcfg['z_blending']
-    z1 = wcfg['z1']
-    z2 = wcfg['z2']
+    z1 = wcfg['z1']            # past balandlik (rah + stability)
+    z2_rah = wcfg['z2_rah']    # rah LOG hadi (0.2m)
+    z2 = wcfg['z2']            # STABILITY ψ yuqori balandligi (2.0m)
 
     max_iter = cfg.ITERATION['max_iter']
     min_iter = cfg.ITERATION['min_iter']
@@ -802,10 +863,10 @@ def compute_sensible_heat_flux(image, anchors, roi):
     #     Skalyar bo'lgani uchun bir zumda ishlaydi — graf o'smaydi.
     # ==========================================================
     ln_zb_z0m = math.log(z_blend / z0m_h)
-    ln_z1_z2 = math.log(z1 / z2)
+    ln_z2_z1 = math.log(z2_rah / z1)   # rah log hadi: ln(0.2/0.1)=ln(2)
 
     ustar_h = max(k * u200_h / ln_zb_z0m, 0.02)          # neytral boshlang'ich
-    rah_h = max(ln_z1_z2 / (k * ustar_h), 1.0)
+    rah_h = max(ln_z2_z1 / (k * ustar_h), 1.0)
 
     c4_list, c5_list, dta_list = [], [], []
     prev_dt = prev_rah = None
@@ -857,7 +918,7 @@ def compute_sensible_heat_flux(image, anchors, roi):
             ustar_h = ustar_c
         prev_ustar = ustar_c
 
-        rah_h = max((ln_z1_z2 - psi_h) / (k * ustar_h), 1.0)
+        rah_h = max((ln_z2_z1 - psi_h) / (k * ustar_h), 1.0)
 
     N_A = converged_at if converged_at is not None else max_iter
     if converged_at is None:
@@ -929,7 +990,7 @@ def compute_sensible_heat_flux(image, anchors, roi):
             ustar = ustar_calc
         prev_ustar_img = ustar_calc
 
-        rah = (ee.Image(z1 / z2).log().subtract(psi_h)
+        rah = (ee.Image(z2_rah / z1).log().subtract(psi_h)
                .divide(ustar.multiply(k)).rename('RAH')).max(1.0)
 
     # Yakuniy bandlar
@@ -973,7 +1034,7 @@ def _stability_corrections(L_mo, z_blend, z1, z2):
     import math
 
     # --- Nobarqaror (L < 0) ---
-    # z_blend (200m) uchun x_200
+    # z_blend (200m) uchun x_200 — ψm(200) uchun
     x_200 = (ee.Image(1.0)
              .subtract(ee.Image(16.0 * z_blend).divide(L_mo))
              .max(0.001)  # manfiy bo'lmasligi uchun
@@ -986,33 +1047,22 @@ def _stability_corrections(L_mo, z_blend, z1, z2):
         .add(math.pi / 2)
     )
 
-    # z1 (2m) uchun x_2
-    x_2 = (ee.Image(1.0)
-           .subtract(ee.Image(16.0 * z1).divide(L_mo))
-           .max(0.001)
-           .pow(0.25))
+    # z1 (0.1m, past) va z2 (2.0m, stability) uchun x — ψh uchun (Eq. 3.36-3.40)
+    x_z1 = (ee.Image(1.0).subtract(ee.Image(16.0 * z1).divide(L_mo))
+            .max(0.001).pow(0.25))
+    x_z2 = (ee.Image(1.0).subtract(ee.Image(16.0 * z2).divide(L_mo))
+            .max(0.001).pow(0.25))
+    psi_h_z1 = x_z1.pow(2).add(1).divide(2).log().multiply(2)
+    psi_h_z2 = x_z2.pow(2).add(1).divide(2).log().multiply(2)
 
-    psi_h_2_unstable = x_2.pow(2).add(1).divide(2).log().multiply(2)
+    # rah = [ln(z2/z1) - ψh(z2) + ψh(z1)]/(u*k)  →  psi_h = ψh(z2) - ψh(z1)
+    psi_h_unstable = psi_h_z2.subtract(psi_h_z1)
 
-    # z2 (0.1m) uchun
-    x_01 = (ee.Image(1.0)
-            .subtract(ee.Image(16.0 * z2).divide(L_mo))
-            .max(0.001)
-            .pow(0.25))
-
-    psi_h_01_unstable = x_01.pow(2).add(1).divide(2).log().multiply(2)
-
-    # ψh = ψh(z1) - ψh(z2) — ikki balandlik orasidagi farq
-    psi_h_unstable = psi_h_2_unstable.subtract(psi_h_01_unstable)
-
-    # --- Barqaror (L > 0), Eq. 38-39 ---
-    # MUHIM: Allen et al. (2007, ASCE) ga ko'ra, bandning nomi "200m" bo'lsa
-    # ham, STABLE sharoitda formulada ATAYLAB z=2m ishlatiladi (200m emas),
-    # chunki barqaror chegara qatlami juda yupqa va 200m ishlatilsa
-    # raqamli beqarorlik (numerical instability) paydo bo'ladi.
-    psi_m_200_stable = ee.Image(-5.0 * z1).divide(L_mo)   # z1 = 2.0m (config.WIND)
-    psi_h_stable = (ee.Image(-5.0 * z1).divide(L_mo)
-                    .subtract(ee.Image(-5.0 * z2).divide(L_mo)))
+    # --- Barqaror (L > 0), Eq. 3.41-3.42 ---
+    # Allen et al. (2007): STABLE'da ψm uchun z=2m ishlatiladi (200m emas —
+    # raqamli beqarorlikdan himoya). ψh = -5(z2-z1)/L (yupqa qatlam).
+    psi_m_200_stable = ee.Image(-5.0 * 2.0).divide(L_mo)
+    psi_h_stable = ee.Image(-5.0 * (z2 - z1)).divide(L_mo)
 
     # --- Shartli tanlash ---
     is_unstable = L_mo.lt(0)
@@ -1087,7 +1137,7 @@ def compute_evaporative_fraction(image):
 # MAIN: Full energy balance
 # ==============================================================
 
-def compute_all(image, roi, cropland_mask=None, anchors=None,
+def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
                 anchor_method='default'):
     """
     To'liq energiya balansini hisoblash.
@@ -1112,8 +1162,8 @@ def compute_all(image, roi, cropland_mask=None, anchors=None,
 
     # M5: Anchor selection
     if anchors is None:
-        anchors = select_anchor_pixels(image, roi, cropland_mask=cropland_mask,
-                                       method=anchor_method)
+        anchors = select_anchor_pixels(image, roi, cold_mask=cold_mask,
+                                       hot_mask=hot_mask, method=anchor_method)
 
     # M7: Sensible heat flux (iterativ)
     image = compute_sensible_heat_flux(image, anchors, roi)

@@ -186,10 +186,10 @@ def compute_monthly_et(scene_images, roi, year, month):
     """
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
-    conversion = cfg.DAILY_ET['seconds_per_day'] / cfg.LAMBDA_V
+    spd = cfg.DAILY_ET['seconds_per_day']
 
     scene_col = ee.ImageCollection(scene_images)
-    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW']
+    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST']
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
@@ -206,7 +206,10 @@ def compute_monthly_et(scene_images, roi, year, month):
                 .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
                 .max(0))
 
-        et_day = evap_frac.multiply(rn24).multiply(conversion).max(0)
+        # λ haroratga bog'liq (Tasumi 3.48): (2.501-0.00236·(Ts-273))·10⁶
+        lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+               .add(2.501).multiply(1e6))
+        et_day = evap_frac.multiply(rn24).multiply(spd).divide(lam).max(0)
         return et_day
 
     day_offsets = ee.List.sequence(0, days - 1)
@@ -290,7 +293,7 @@ def compute_monthly_et_components(scene_images, roi, year, month):
 
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
-    conversion = cfg.DAILY_ET['seconds_per_day'] / cfg.LAMBDA_V
+    spd = cfg.DAILY_ET['seconds_per_day']
 
     scene_col = ee.ImageCollection(scene_images)
 
@@ -298,7 +301,7 @@ def compute_monthly_et_components(scene_images, roi, year, month):
 
     # ETREF_24/ETPOT_24 ENDI shu ro'yxatda YO'Q — Landsat'dan
     # interpolyatsiya qilinmaydi, alohida, to'g'ridan-to'g'ri hisoblanadi
-    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW',
+    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST',
                     'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION']
 
     def compute_day(day_offset):
@@ -316,9 +319,11 @@ def compute_monthly_et_components(scene_images, roi, year, month):
 
         rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
 
-        # ET (haqiqiy) — Landsat/SEBAL asosli, o'zgarmadi
+        # ET (haqiqiy) — λ haroratga bog'liq (Tasumi 3.48)
+        lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+               .add(2.501).multiply(1e6))
         et_day = (interp.select('EVAP_FRAC')
-                  .multiply(rn24_actual).multiply(conversion).max(0))
+                  .multiply(rn24_actual).multiply(spd).divide(lam).max(0))
 
         # ETREF, ETPOT — ENDI to'g'ridan-to'g'ri, mustaqil, aniq hisob
         refs = ref_et.compute_reference_ets_for_date(current_date, roi)

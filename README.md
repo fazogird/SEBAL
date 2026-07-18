@@ -12,7 +12,7 @@ Google Earth Engine (Python API) asosida qurilgan, Landsat 8/9 va HLS (Harmonize
 2. [Ishga tushirish](#ishga-tushirish)
 3. [To'liq chaqiruv zanjiri](#toliq-chaqiruv-zanjiri)
 4. [Modul-modul: formulalar va konstantalar](#modul-modul-formulalar-va-konstantalar)
-5. [Ikkita rejim: `maqola` vs `pysebal`](#ikkita-rejim-maqola-vs-pysebal)
+5. [Rejimlar: `SEBAL_B` / `pysebal` / `yangiliklar`](#rejimlar-sebal_b--pysebal--yangiliklar)
 6. [Qo'shimcha quyi-tizimlar](#qoshimcha-quyi-tizimlar)
 7. [Ma'lum cheklovlar va ochiq masalalar](#malum-cheklovlar-va-ochiq-masalalar)
 8. [O'zgartirishlar jurnali](#ozgartirishlar-jurnali-2026-07--bug-fix-va-yaxshilanishlar)
@@ -66,7 +66,7 @@ ee_utils.install_getinfo_retry()
 main.run(
     roi_type='gaul', name='Kashkadarya', level=1,
     date_start='2026-05-01', date_end='2026-05-31',
-    mode='pysebal',              # 'maqola' yoki 'pysebal'
+    mode='pysebal',              # 'SEBAL_B' | 'pysebal' | 'yangiliklar'
     satellite='HLS',             # 'L8' | 'L9' | 'BOTH' | 'HLS'
     cloud_max=70,
     process_by_tile=True,
@@ -110,9 +110,9 @@ process_tile(roi, date_start, date_end, mode, satellite, cloud_max)
 │    ├─ compute_savi
 │    ├─ compute_albedo
 │    ├─ compute_emissivity
-│    ├─ compute_z0m
-│    ├─ compute_transmissivity
-│    └─ compute_lai
+│    ├─ compute_lai            (L=0.1 SAVI'dan — z₀m'dan OLDIN)
+│    ├─ compute_z0m            (0.018 × LAI)
+│    └─ compute_transmissivity
 │
 ├─ collection.map(radiation.compute_all)
 │    ├─ compute_incoming_shortwave      (K↓)
@@ -152,7 +152,7 @@ Keyin `main.run()` darajasida:
 ```
 _export_daily()        — agar export_daily=True
 _export_monthly()      — mode='pysebal' → monthly_analytics.compute_all_monthly()
-                          mode='maqola'  → daily_et.compute_monthly_et()
+                          mode='SEBAL_B' → daily_et.compute_monthly_et()
 _viirs_export_month()  — agar use_viirs=True (ixtiyoriy)
 _s30_export_month()    — agar use_s30_etrf=True (ixtiyoriy)
 validation.validate()  — agar validate=True (OpenET bilan solishtirish)
@@ -191,21 +191,35 @@ Albedo = 0.246×B2 + 0.146×B3 + 0.191×B4 + 0.304×B5
      0 ≤ NDVI < 0.16     → ε₀ = 0.960  (yalang'och tuproq)
      NDVI > 0.74         → ε₀ = 0.985  (zich o'simlik)
 
-z₀m = exp(−5.809 + 5.62 × SAVI)            [Bastiaanssen et al. 2001, Gediz]
-      clamp(0.0002, 1.0)
+SAVI(0.1) = 1.1 × (NIR − Red) / (NIR + Red + 0.1)              L = 0.1  [SEBAL_ID]
+LAI = −ln((0.69 − SAVI) / 0.59) / 0.91     [SAVI < 0.687]      cap 6.0
+
+z₀m = 0.018 × LAI                          [SEBAL_ID; Tasumi 2003]
+      clamp(0.005, 1.0)                    z0m_min 0.005 (Table 4.11)
 z₀h = z₀m / exp(kB⁻¹)                      kB⁻¹ = 2.3
 
-τsw = 0.75 + 2×10⁻⁵ × elevation            [Allen et al. 2007]
+# Shamol ekstrapolyatsiyasi uchun ALOHIDA z₀m (vegetatsiya balandligidan):
+h        = 2.0 × (NDVI − 0.20) / (0.85 − 0.20)
+z₀m,wind = 0.123 × h                       [Brutsaert 1982]
 
-LAI = −ln((0.69 − SAVI) / 0.59) / 0.91     [0.1 ≤ SAVI < 0.687]
-      SAVI ≥ 0.687 → LAI = 6.0
+τsw = 0.75 + 2×10⁻⁵ × elevation            [Allen et al. 2007]
 ```
+
+> **Eslatma:** eski Gediz `z₀m = exp(−5.809 + 5.62×SAVI)` (Bastiaanssen 2001)
+> va umumiy `L=0.5` li SAVI konfigda zaxira sifatida qoldi, lekin ishlatilmaydi.
 
 ### 3. `radiation.py`
 
 ```
 K↓ = (ERA5_SSRD / 3600) × (τsw / 0.75)
-L↓ = ERA5_STRD / 3600
+
+L↓  (rejimga bog'liq):
+  mode='yangiliklar'      → L↓ = ERA5_STRD / 3600           [o'lchangan]
+  mode ∈ {SEBAL_B,pysebal}→ L↓ = 1.08 × σ × [−ln(τsw)]^0.265 × Tref⁴
+                             Tref = cold anchor yuza harorati (cropland p10 LST;
+                             cold_mask yo'q bo'lsa ERA5 AIR_TEMP mediana zaxira)
+                             τsw ∈ [0.01, 0.99]              [Tasumi 2003]
+
 L↑ = ε₀ × σ × T₀⁴                          σ = 5.67×10⁻⁸ W/m²/K⁴
 
 Rn = (1 − α)×K↓ + L↓ − L↑ − (1 − ε₀)×L↓    [Bastiaanssen F.5]
@@ -220,17 +234,19 @@ Rn−G₀ = mavjud energiya (H va λE ga taqsimlanadi)
 
 ### 4. `energy_balance.py` — SEBAL'ning yuragi
 
-**Anchor pixel tanlash** (Bastiaanssen 1998, p.206):
-- Cold: NDVI top 5%, LST bottom 20%, albedo < 0.20, slope < 5°
-- Hot: NDVI bottom 10%, LST top 5%, albedo ≥ 0.18, slope < 5°
-- Ixtiyoriy: faqat ESA WorldCover cropland (class 40) ustida
+**Anchor pixel tanlash** (ikki-zonali, ESA WorldCover v200):
+- **Cold** = cropland (class 40): NDVI yuqori, LST past → H ≈ 0
+- **Hot** = bare/sparse (60) + shrubland (20): doim quruq → λE ≈ 0
+  *(hot ekindan EMAS — sug'orilgan mavsumda ekin ham transpiratsiya qiladi)*
+- Tanlash: beton kaskad (`cimec/plan_a/plan_b/pysebal`) → ROI fallback →
+  `default` persentil kafolati. `anchor_method` bilan boshqariladi.
 
-**Shamol va ishqalanish tezligi:**
+**Shamol va ishqalanish tezligi** (per-piksel z₀m):
 ```
-u_200 = u_10 × ln(200/0.12) / ln(10/0.12)              [z0m_weather = 0.12m, grass]
-u*    = k × u_200 / ln(200/z0m)                          k = 0.41 (Von Karman)
+u_200 = u_10 × ln(200/z₀m,wind) / ln(10/z₀m,wind)       z₀m,wind = 0.123×h
+u*    = k × u_200 / ln(200/z₀m)                          k = 0.41; z₀m=0.018·LAI
         clamp min 0.02
-rah_neutral = ln(2.0/0.1) / (k×u*)                       clamp min 1.0
+rah_neutral = ln(z₂_rah/z₁) / (k×u*) = ln(0.2/0.1)/(k·u*)   clamp min 1.0
 ```
 
 **δTa kalibratsiya (F.30):**
@@ -248,16 +264,22 @@ H = ρ × cp × dTa / rah
 
 L_MO = −ρ × cp × u*³ × T₀ / (k × g × H)        g = 9.81 m/s²
 
+Barqarorlik tuzatmalari z₁=0.1m va z₂=2.0m da (rah'ning 0.2m dan BOSHQA!):
+
 Nobarqaror (L < 0), Paulson (1970):
   x = (1 − 16z/L)^0.25
   ψm = 2ln((1+x)/2) + ln((1+x²)/2) − 2·arctan(x) + π/2
-  ψh = 2ln((1+x²)/2)
+  ψh(z) = 2ln((1+x²)/2);   psi_h = ψh(2.0) − ψh(0.1)
 
 Barqaror (L > 0), Webb (1970):
-  ψm = ψh = −5z/L
+  ψm = −5×2.0/L;   ψh = −5×(2.0−0.1)/L
 ```
 
-Iteratsiya 5 marta takrorlanadi (`max_iter=5`), har safar `u*` va `rah` yangilanadi.
+**Iteratsiya — ikki siklli** (`config.py` `ITERATION`: `max_iter=15`,
+`tol_rel=0.01` = 1% nisbiy): (A) hot-piksel skalyarlarida sof-Python sikl
+konvergensiyagacha → `c4_i, c5_i, N_A`; (B) aynan `N_A` raster qadam
+(`getInfo`siz). Har qadam ψ va u* Dhungel (2016) damping bilan so'ndiriladi.
+Batafsil — O'zgartirishlar jurnali #6, #7.
 
 **Yakuniy oqimlar:**
 ```
@@ -272,10 +294,13 @@ EVAP_FRAC Λ = λE / (Rn−G₀)     clamp(0, 1.0)
 ```
 Rs24 = ERA5_SSRD.sum(24 soat) / 86400          [W/m², o'rtacha]
 Rn24 = (1 − α) × Rs24 − 110 × τsw               [110 = De Bruin 1987 konstanta]
-ET₂₄ = Λ × Rn24 × 86400 / λ                      λ = 2.45×10⁶ J/kg   [mm/kun]
+λ    = (2.501 − 0.00236 × (LST − 273)) × 10⁶    [J/kg, haroratga bog'liq; Tasumi 3.48]
+ET₂₄ = Λ × Rn24 × 86400 / λ                                            [mm/kun]
 ```
 
-**Oylik ekstrapolyatsiya:** Λ, albedo, τsw — Landsat sahnalar orasida **chiziqli interpolyatsiya**; Rs24 — ERA5'dan har kun uchun alohida (interpolyatsiyasiz). `ET_MONTHLY = Σ ET_kun`.
+**Oylik ekstrapolyatsiya:** Λ, albedo, τsw, **LST** — Landsat sahnalar orasida
+**chiziqli interpolyatsiya** (LST → haroratga bog'liq λ uchun); Rs24 — ERA5'dan
+har kun uchun alohida (interpolyatsiyasiz). `ET_MONTHLY = Σ ET_kun`.
 
 ### 6. `et_decomposition.py` (faqat `pysebal` rejimida)
 
@@ -340,16 +365,23 @@ Sug'orish chuqurligi (mm) = max(0.5 − wetness, 0) × 300.0
 
 ---
 
-## Ikkita rejim: `maqola` vs `pysebal`
+## Rejimlar: `SEBAL_B` / `pysebal` / `yangiliklar`
 
-| | `mode='maqola'` | `mode='pysebal'` |
+| | `mode='SEBAL_B'` | `mode='pysebal'` |
 |---|---|---|
 | Fayl | `daily_et.py` | `monthly_analytics.py` |
 | Asosiy ET | `ET_24 / ET_MONTHLY` | `ET_24 / ET_MONTHLY` — **bir xil formula** |
+| L↓ | empirik (Tref, Tasumi) | empirik (Tref, Tasumi) |
 | Qo'shimcha chiqish | Yo'q | `ETREF, ETPOT, DEFICIT, TACT, EACT, KC, Biomass, Sug'orish klassi` |
-| Interpolyatsiya | Chiziqli (butun-tasvir) | Chiziqli (butun-tasvir), **10 ta band** |
+| Interpolyatsiya | Chiziqli (butun-tasvir) | Chiziqli (butun-tasvir), **10+ band** |
 
-Ikkala rejimda ham **oylik ET yig'indisining asosiy formulasi bir xil** — farq faqat `pysebal` rejimi qo'shimcha 7 ta dekompozitsiya bandini (ETref, ETpot, T/E ajratish va h.k.) hisoblashida.
+> `mode='maqola'` — eski nom, endi **`SEBAL_B`** deb ataladi (O'zgartirishlar
+> jurnali #14). Ikkala rejimda ham **oylik ET yig'indisining asosiy formulasi
+> bir xil** — farq faqat `pysebal` qo'shimcha dekompozitsiya bandlarini
+> (ETref, ETpot, T/E ajratish va h.k.) hisoblashida.
+
+**L↓ rejim varianti:** `mode='yangiliklar'` — L↓ uchun o'lchangan ERA5 STRD
+ishlatiladi (empirik formula o'rniga). Qolgan hamma narsa `SEBAL_B` bilan bir xil.
 
 ---
 
@@ -489,11 +521,120 @@ nomuvofiqlik hamda sifat masalalari hal qilindi. Har bir o'zgarish quyida:
 
 ---
 
+## O'zgartirishlar jurnali (2026-07 — Tasumi tezisiga blok-ma-blok moslashtirish)
+
+Iyuldan boshlab SEBAL ET OpenET 6-model konvertidan pastga chiqa boshladi.
+Sababni topish uchun pipeline **Tasumi (2003) tezisi**dagi SEBAL_ID formulalari
+bilan blok-ma-blok solishtirildi (Surface roughness, LAI, emissivity, shamol,
+`rah`, barqarorlik, radiatsiya, Monin–Obukhov `L`, 24-soatlik ET). Aniqlangan
+farqlar quyida tuzatildi. **Muhim printsip:** har bir formula MANBAGA asoslangan
+— o'zboshimcha "fake" fallback yo'q.
+
+### F. Rejim nomi va yangi rejim tizimi
+
+14. **`maqola` → `SEBAL_B` deb qayta nomlandi**
+    `main.py`, `run_sebal.py` (`mode='SEBAL_B'` — eski `'maqola'`),
+    `config.py` band ro'yxati `DAILY_BANDS_MAQOLA → DAILY_BANDS_SEBAL_B`.
+    **Nega:** rejim aslida Bastiaanssen (SEBAL_B) formulasi — "maqola" nomi
+    chalkash edi. `pysebal` rejimi o'zgarmadi.
+
+15. **L↓ (kirish uzun to'lqin) — REJIMGA BOG'LIQ tizim**
+    `radiation.py` → `compute_incoming_longwave(image, mode, roi, cold_mask)`,
+    `compute_all(..., mode, roi, cold_mask)`.
+    - `mode='yangiliklar'` → `L↓ = ERA5_STRD / 3600` (o'lchangan, o'zgarmadi —
+      **comment/o'chirilmadi**, saqlab qolindi).
+    - `mode ∈ {SEBAL_B, pysebal}` → empirik formula (Tasumi/Bastiaanssen):
+      ```
+      L↓ = 1.08 × σ × [−ln(τsw)]^0.265 × Tref⁴          [W/m²]
+      ```
+      bu yerda `Tref` — **cold anchor** yuzasi harorati (cropland p10 LST;
+      cold_mask bo'lmasa ERA5 `AIR_TEMP` mediana zaxira). `τsw` ∈ [0.01, 0.99].
+    **Nega:** SEBAL_B/pysebal fizik jihatdan yaxlit bo'lishi uchun L↓ ham
+    yuzadan (Tref) chiqarilishi kerak; ERA5 STRD faqat `yangiliklar` rejimi
+    variantida qoldirildi.
+
+16. **Yashirin issiqlik λ — HARORATGA BOG'LIQ**
+    `daily_et.py` (`compute_daily_et`, `compute_monthly_et`),
+    `monthly_analytics.py` (`compute_monthly_et`, `compute_monthly_et_components`).
+    Konstanta `λ = 2.45×10⁶` o'rniga (Tasumi Eq. 3.48):
+    ```
+    λ = (2.501 − 0.00236 × (LST − 273)) × 10⁶          [J/kg]
+    ```
+    Buning uchun interpolyatsiya band ro'yxatiga `LST` qo'shildi; `ET = EF ×
+    Rn24 × 86400 / λ` endi har piksel haroratiga mos λ ishlatadi.
+    **Nega:** issiq pikselda λ ~2% kichik → ET yuqoriroq; fizik jihatdan aniq.
+
+### G. SEBAL_ID yuza parametrlari (Tasumi Table 4.11, Bastiaanssen liniyasi — METRIC EMAS)
+
+17. **z₀m — endi LAI'dan, SAVI-exp EMAS**
+    `surface_props.py` → `compute_z0m()`, `config.py` `Z0M_LAI_COEF=0.018`.
+    ```
+    z₀m = 0.018 × LAI          clamp(0.005, 1.0)        [SEBAL_ID]
+    z₀h = z₀m / exp(2.3)
+    ```
+    Eski Gediz `exp(−5.809 + 5.62×SAVI)` ishlatilmaydi (konfigda zaxira sifatida
+    qoldi). `z0m_min`: **0.0002 → 0.005** (Tasumi Table 4.11, agriculture).
+    **Nega:** SEBAL_ID standarti; juda kichik z₀m `rah` log hadini beqaror
+    qilardi.
+
+18. **LAI — L=0.1 li SAVI'dan**
+    `surface_props.py` → `compute_lai()`, `config.py` `SAVI_L_LAI=0.1`.
+    ```
+    SAVI(0.1) = 1.1 × (NIR−Red) / (NIR+Red+0.1)
+    LAI = −ln((0.69 − SAVI) / 0.59) / 0.91             cap 6.0
+    ```
+    Ilgari umumiy `L=0.5` li SAVI ishlatilardi. `compute_all` tartibi: LAI
+    z₀m'dan OLDIN hisoblanadi (z₀m=0.018·LAI unga bog'liq).
+    **Nega:** SEBAL_ID LAI'ni L=0.1 li SAVI orqali aniqlaydi.
+
+19. **Shamol ekstrapolyatsiyasi uchun ALOHIDA z₀m**
+    `surface_props.py`, `config.py` `WIND_ROUGHNESS`.
+    10→200m shamol uchun z₀m vegetatsiya balandligidan (momentum z₀m=0.018·LAI
+    dan boshqa):
+    ```
+    h = h_max × (NDVI − 0.20) / (0.85 − 0.20)          h_max = 2.0m
+    z₀m,wind = 0.123 × h                                [Brutsaert 1982]
+    ```
+    `u*` hisobida u_200 uchun `z₀m,wind`, ishqalanish uchun momentum z₀m
+    (=0.018·LAI) ishlatiladi.
+
+### H. rah va barqarorlik — IKKI XIL z₂
+
+20. **`rah` va stability uchun z₂ AJRATILDI**
+    `energy_balance.py` → `compute_rah_neutral`, `_stability_corrections`,
+    `_stability_scalar`; `config.py` `WIND` (`z1=0.1`, `z2_rah=0.2`, `z2=2.0`).
+    ```
+    rah (log had):     z₁ = 0.1m,  z₂_rah = 0.2m  → rah = ln(0.2/0.1)/(u*·k)
+    stability (ψ):     z₁ = 0.1m,  z₂     = 2.0m  (L<0 va L>0 uchun ham)
+    ```
+    **Nega:** avval ikkovi ham xato bir xil z₂ ga o'rnatilgan edi. Tasumi
+    tezisida `rah` log hadi 0.1→0.2m oralig'ida, ψ tuzatmalari esa 0.1→2.0m
+    oralig'ida hisoblanadi — bular BOSHQA-BOSHQA. Bu METRIC emas, SEBAL_B usuli.
+
+### I. Ikki-zonali anchor land-cover
+
+21. **Cold = cropland, Hot = bare+shrub (ekindan EMAS)**
+    `config.py` `ANCHOR_LANDCOVER = {'cold': (40,), 'hot': (60, 20)}`,
+    `energy_balance.py` → `compute_tile_anchor_zones()` (cold_mask, hot_mask).
+    ```
+    cold = 40 (Cropland)             — sug'orilgan, nam → λE≈max, H≈0
+    hot  = 60 (Bare/sparse) + 20 (Shrubland) — doim quruq → λE≈0, H≈max
+    ```
+    **Nega:** iyul–sentyabr to'liq sug'orilgan mavsumda "eng issiq ekin" ham
+    aslida transpiratsiya qiladi (July hot NDVI≈0.29, λE≠0) → `dT_hot` oshib
+    ketardi → ET past baholanardi. Hot anchorni doim quruq yuzadan (bare/shrub)
+    olish bu tizimli xatoni yopadi. (30 Grassland ATAYLAB kiritilmadi — Idaho'da
+    sug'orilgan yaylov ham 30-klass bo'lishi mumkin.)
+
+---
+
 ## Manbalar
 
 - Bastiaanssen, W.G.M. et al. (1998). *A remote sensing surface energy balance algorithm for land (SEBAL)*. Journal of Hydrology.
 - Bastiaanssen, W.G.M. (2000). *SEBAL-based sensible and latent heat fluxes in the irrigated Gediz Basin, Turkey*. Journal of Hydrology.
 - Allen, R.G., Tasumi, M., Trezza, R. (2007). *Satellite-Based Energy Balance for Mapping Evapotranspiration with Internalized Calibration (METRIC)*. ASCE J. Irrig. Drain. Eng.
+- Tasumi, M. (2003). *Progress in Operational Estimation of Regional Evapotranspiration Using Satellite Imagery*. PhD dissertation, University of Idaho. — SEBAL_ID formulalari: z₀m=0.018·LAI, L=0.1 SAVI'dan LAI, empirik L↓, ikki-xil z₂ (rah 0.2m / stability 2.0m), harroratga bog'liq λ (Eq. 3.48), Table 4.11 z₀m_min.
+- Brutsaert, W. (1982). *Evaporation into the Atmosphere*. — shamol z₀m = 0.123×h.
 - Dhungel, R., Allen, R.G., Trezza, R., Kilic, A. (2016). *Improving iterative surface energy balance convergence for remote sensing based flux calculation*. J. Applied Remote Sensing 10(2), 026033. DOI: 10.1117/1.JRS.10.026033. — H-iteratsiya damping (ψ va u* o'rtachalash).
 - Allen, R.G. et al. (1998). *Crop Evapotranspiration — FAO Irrigation and Drainage Paper 56*.
 - Huete, A.R. (1988). *A soil-adjusted vegetation index (SAVI)*. Remote Sensing of Environment.

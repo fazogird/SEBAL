@@ -138,36 +138,39 @@ def compute_emissivity(image):
 
 def compute_z0m(image):
     """
-    Momentum roughness length — SAVI asosida.
+    Momentum roughness length — SEBAL_ID (Tasumi & Allen 2003; Bastiaanssen liniyasi).
 
-    z₀m = exp(-5.809 + 5.62 × SAVI)
+    Per-piksel u* uchun:   z₀m = 0.018 × LAI   (LAI compute_lai'dan, L=0.1 SAVI)
+    Shamol ekstrapolyatsiyasi (10→200m) uchun ALOHIDA z₀m:
+        h        = h_max × (NDVI-NDVI_min)/(NDVI_max-NDVI_min)   [ekin balandligi]
+        z₀m,wind = 0.123 × h                                     [Brutsaert 1982]
 
-    Source: Bastiaanssen et al. (2001), Gediz basin, Turkey.
-    Paxta va uzum dalalarida kalibrlangan.
-
-    Clamp: z₀m_min=0.0002m (suv/tuproq) — z₀m_max=1.0m (baland daraxtlar)
-
-    z₀h = z₀m / exp(kB⁻¹)  [kB⁻¹ = 2.3, Bastiaanssen standard]
-
-    MUHIM: SAVI va DEM bir xil CRS da bo'lishi kerak!
-    Preprocessing modulida DEM reproject qilingan — shu yerda
-    qo'shimcha tekshiruv yo'q.
+    (Eski Gediz SAVI-exp formulasi olib tashlandi.)
+    z₀h = z₀m / exp(kB⁻¹).
     """
-    savi = image.select('SAVI')
     rcfg = cfg.ROUGHNESS
 
-    # z₀m = exp(a + b × SAVI)
-    z0m = (savi.multiply(rcfg['z0m_b'])
-           .add(rcfg['z0m_a'])
-           .exp()
+    # ---- Per-piksel z₀m = 0.018 × LAI ----
+    lai = image.select('LAI')
+    z0m = (lai.multiply(cfg.Z0M_LAI_COEF)
            .clamp(rcfg['z0m_min'], rcfg['z0m_max'])
            .rename('Z0M'))
 
-    # z₀h = z₀m / exp(kB⁻¹)
     z0h = (z0m.divide(ee.Number(rcfg['kB_inv']).exp())
            .rename('Z0H'))
 
-    return image.addBands(z0m).addBands(z0h)
+    # ---- Shamol z₀m,wind = 0.123 × h(NDVI) ----
+    wc = cfg.WIND_ROUGHNESS
+    ndvi = image.select('NDVI')
+    h = (ndvi.subtract(wc['ndvi_min'])
+         .divide(wc['ndvi_max'] - wc['ndvi_min'])
+         .clamp(0.0, 1.0)
+         .multiply(wc['h_max']))
+    z0m_wind = (h.multiply(wc['z0m_coef'])
+                .max(wc['z0m_min'])
+                .rename('Z0M_WIND'))
+
+    return image.addBands(z0m).addBands(z0h).addBands(z0m_wind)
 
 
 # ==============================================================
@@ -199,20 +202,24 @@ def compute_transmissivity(image):
 
 def compute_lai(image):
     """
-    LAI — SAVI dan empirik hisoblash.
+    LAI — SEBAL_ID (yangi SEBAL), L=0.1 li SAVI'dan.
 
+    SAVI(0.1) = (1+0.1)×(NIR-Red)/(NIR+Red+0.1)
     LAI = -ln((0.69 - SAVI) / 0.59) / 0.91
 
-    Source: Allen et al. (2007) METRIC.
-    SAVI > 0.687 → LAI = 6.0 (maksimum)
-    SAVI < 0.1   → LAI = 0.0
-
-    Bu optional — z₀m ni SAVI dan hisoblaganimiz uchun
-    LAI alohida kerak emas, lekin validatsiya uchun foydali.
+    MUHIM: SEBAL_ID LAI uchun SAVI L=0.1 ishlatiladi (umumiy SAVI L=0.5 EMAS).
+    z₀m = 0.018×LAI shu LAI'dan hisoblanadi (compute_z0m).
+    SAVI ≥ 0.687 → LAI = 6.0 (maks);  SAVI < 0.1 → LAI = 0.
     """
-    savi = image.select('SAVI')
+    nir = image.select(cfg.BAND_NAMES['nir'])
+    red = image.select(cfg.BAND_NAMES['red'])
+    L = cfg.SAVI_L_LAI   # 0.1
 
-    # LAI formula — SAVI 0.1–0.687 oralig'ida
+    savi = (nir.subtract(red)
+            .divide(nir.add(red).add(L))
+            .multiply(1.0 + L)
+            .rename('SAVI_LAI'))
+
     lai_formula = (ee.Image(0.69).subtract(savi)
                    .divide(0.59)
                    .log().multiply(-1.0)
@@ -239,14 +246,14 @@ def compute_all(image):
     Output: Image + NDVI, SAVI, ALBEDO, EMISSIVITY, Z0M, Z0H,
             TAU_SW, LAI bands
 
-    Tartib muhim — SAVI → z₀m, NDVI → emissivity
+    Tartib muhim — LAI → z₀m (0.018·LAI), NDVI → emissivity/z₀m,wind
     """
     image = compute_ndvi(image)
     image = compute_savi(image)
     image = compute_albedo(image)
     image = compute_emissivity(image)
-    image = compute_z0m(image)
+    image = compute_lai(image)        # z₀m LAI'ga bog'liq → OLDIN
+    image = compute_z0m(image)        # 0.018·LAI + z₀m,wind(NDVI)
     image = compute_transmissivity(image)
-    image = compute_lai(image)
 
     return image

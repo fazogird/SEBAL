@@ -137,12 +137,30 @@ SOIL_HEAT_FLUX = {
 # SAVI = ((NIR - Red) / (NIR + Red + L)) × (1 + L)
 
 ROUGHNESS = {
-    'z0m_a': -5.809,         # intercept coefficient
-    'z0m_b':  5.62,          # SAVI coefficient
-    'savi_L': 0.5,           # soil adjustment factor (Huete 1988)
+    'z0m_a': -5.809,         # intercept coefficient (eski Gediz — endi ishlatilmaydi)
+    'z0m_b':  5.62,          # SAVI coefficient (eski Gediz)
+    'savi_L': 0.5,           # soil adjustment factor (Huete 1988) — SAVI (umumiy)
     'kB_inv': 2.3,           # kB⁻¹ = ln(z₀m/z₀h) — Bastiaanssen standard
-    'z0m_min': 0.0002,       # minimum roughness (bare soil/water)
+    'z0m_min': 0.005,        # min roughness — SEBAL_ID agriculture (Tasumi Table 4.11)
     'z0m_max': 1.0,          # maximum roughness (tall vegetation)
+}
+
+# ── SEBAL_ID (yangi SEBAL) z₀m va LAI — Bastiaanssen liniyasi, METRIC EMAS ──
+# Per-piksel momentum roughness — LAI dan (Gediz SAVI-exp o'rniga):
+#   z₀m = 0.018 × LAI
+# LAI esa L=0.1 li SAVI dan (SEBAL_ID; umumiy SAVI L=0.5 emas):
+#   SAVI(0.1) = 1.1×(NIR-Red)/(NIR+Red+0.1),  LAI = -ln((0.69-SAVI)/0.59)/0.91
+Z0M_LAI_COEF = 0.018
+SAVI_L_LAI = 0.1
+
+# Shamol ekstrapolyatsiyasi (10→200m) uchun z₀m — vegetatsiya balandligidan:
+#   h = h_max × (NDVI-NDVI_min)/(NDVI_max-NDVI_min),  z₀m,wind = 0.123 × h  [Brutsaert 1982]
+WIND_ROUGHNESS = {
+    'z0m_coef': 0.123,
+    'h_max':    2.0,         # maks ekin balandligi (m)
+    'ndvi_min': 0.20,        # yalang'och tuproq
+    'ndvi_max': 0.85,        # to'liq qoplam
+    'z0m_min':  0.001,       # ln himoyasi (juda kichik z₀m'dan)
 }
 
 # ==============================================================
@@ -163,9 +181,14 @@ TRANSMISSIVITY = {
 WIND = {
     'z_ref_era5': 10.0,      # ERA5 wind measurement height (m)
     'z_blending': 200.0,     # blending height (Allen/METRIC standard)
-    'z0m_weather': 0.12,     # weather station roughness (grass, m)
-    'z1': 2.0,               # rah upper integration height (m)
-    'z2': 0.1,               # rah lower integration height (m)
+    'z0m_weather': 0.12,     # (eski — endi shamol z₀m WIND_ROUGHNESS'dan)
+    # SEBAL_B (Bastiaanssen; Tasumi tezisi) — IKKI XIL z2:
+    #   rah uchun:        z1=0.1m, z2_rah=0.2m → rah = ln(0.2/0.1)/(u*·k) = ln(2)
+    #   stability (ψ) uchun: z1=0.1m, z2=2.0m (L<0 va L>0 uchun ham)
+    # Bular BOSHQA-BOSHQA — chalkashtirmaslik.
+    'z1':     0.1,           # past balandlik (rah + stability, umumiy)
+    'z2_rah': 0.2,           # rah LOG hadi uchun yuqori balandlik
+    'z2':     2.0,           # STABILITY (Monin-Obukhov ψ) yuqori balandligi
 }
 
 # ==============================================================
@@ -207,6 +230,22 @@ ANCHOR_METHODS = ('default', 'cimec', 'plan_a', 'plan_b', 'pysebal', 'cascade')
 ANCHOR_CASCADE = {
     'ts_gap_min': 3.0,   # plan_b: issiq-sovuq LST farqi (K) yetarli deb hisoblash chegarasi
     'min_dt':     1.0,   # anchorni qabul qilish uchun minimal (hot_LST - cold_LST), K
+}
+
+# ── ANCHOR LAND-COVER ZONALARI (ESA WorldCover v200) ────────────
+# Cold va hot anchor AYRIM land-cover zonalaridan qidiriladi (klassik
+# SEBAL/METRIC). MUHIM: hot anchor cropland'dan EMAS — aks holda to'liq
+# sug'orilgan mavsumda (iyul–sentyabr) "eng issiq ekin" ham aslida
+# transpiratsiya qiladi → λE≠0 → dT_hot oshib ketadi → ET past baholanadi.
+#   cold = 40 (Cropland)         — sug'orilgan, nam, to'liq ET (λE≈max, H≈0)
+#   hot  = 60 (Bare/sparse) + 20 (Shrubland) — doim quruq (λE≈0, H≈max)
+#     (30 Grassland ATAYLAB kiritilmadi — Idaho'da sug'orilgan yaylov ham
+#      30-klass bo'lib, nam pikselni hot deb olish xavfi bor.)
+# ESA WorldCover: 10 daraxt, 20 buta, 30 o't, 40 ekin, 50 qurilma,
+#   60 yalang'och, 70 qor, 80 suv, 90 nam yer, 95 mangr, 100 moss.
+ANCHOR_LANDCOVER = {
+    'cold': (40,),        # Cropland
+    'hot':  (60, 20),     # Bare/sparse + Shrubland
 }
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration

@@ -26,7 +26,7 @@ from . import et_decomposition, soil_moisture, biomass, irrigation
 # DAILY BAND SETS
 # ==============================================================
 
-DAILY_BANDS_MAQOLA = [
+DAILY_BANDS_SEBAL_B = [
     'ET_24', 'LAMBDA_E', 'H', 'RN', 'G0', 'EVAP_FRAC', 'NDVI', 'LST','LAI',
 ]
 
@@ -147,14 +147,16 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         print(f"{prefix} ⚠️ Tasvir yo'q, o'tkazildi")
         return [], info
 
-    # Surface props + radiation
+    # Surface props
     collection = collection.map(surface_props.compute_all)
-    collection = collection.map(radiation.compute_all)
 
-    # ---- Cropland mask — TILE uchun BIR MARTA (raster, vektor EMAS) ----
-    cropland_mask, is_viable = energy_balance.compute_tile_cropland_zone(roi)
-    if not is_viable:
-        cropland_mask = None
+    # ---- Anchor zonalari — TILE uchun BIR MARTA (cold=cropland, hot=bare+shrub) ----
+    # (radiation'dan OLDIN — SEBAL_B L↓ Tref cold_mask'ga bog'liq.)
+    cold_mask, hot_mask = energy_balance.compute_tile_anchor_zones(roi)
+
+    # Radiation — mode L↓ usulini tanlaydi (SEBAL_B empirik Tref, yangiliklar ERA5)
+    collection = collection.map(
+        lambda im: radiation.compute_all(im, mode, roi, cold_mask))
 
     # Energy balance — har sahna alohida
     image_list = collection.toList(collection.size())
@@ -169,7 +171,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         anchors = energy_balance.select_anchor_pixels(
-            img, roi, cropland_mask=cropland_mask, method=anchor_method)
+            img, roi, cold_mask=cold_mask, hot_mask=hot_mask,
+            method=anchor_method)
 
         if not anchors['valid'].getInfo():
             print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor topilmadi — "
@@ -177,7 +180,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             continue   # bu sahna scene_images ga QO'SHILMAYDI
 
         img = energy_balance.compute_all(
-            img, roi, cropland_mask=cropland_mask, anchors=anchors)
+            img, roi, cold_mask=cold_mask, hot_mask=hot_mask, anchors=anchors)
         img = daily_et.compute_daily_et(img, roi)
 
         if mode == 'pysebal':
@@ -186,7 +189,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             img = biomass.compute_all(img)
             img = irrigation.compute_all(img)
         else:
-            # 'maqola' rejimida ham S30 ETrF va VIIRS(kc) ishlashi uchun
+            # 'SEBAL_B' rejimida ham S30 ETrF va VIIRS(kc) ishlashi uchun
             # ETREF_24 (grass, ASCE-EWRI) va KC har sahnaga qo'shiladi.
             # pysebal'da bularni et_decomposition allaqachon beradi.
 
@@ -208,7 +211,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 def _export_daily(scene_images, roi, mode, folder, scale, crs,
                  tile_label=''):
     """Kunlik rasterlar — multi-band, har sahna alohida fayl."""
-    bands = DAILY_BANDS_PYSEBAL if mode == 'pysebal' else DAILY_BANDS_MAQOLA
+    bands = DAILY_BANDS_PYSEBAL if mode == 'pysebal' else DAILY_BANDS_SEBAL_B
     tasks = []
 
     for i, img in enumerate(scene_images):
@@ -452,7 +455,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
 # ==============================================================
 
 def run(roi_type='gaul', date_start=None, date_end=None,
-        mode='maqola', satellite='BOTH', cloud_max=70, validate=False,
+        mode='SEBAL_B', satellite='BOTH', cloud_max=70, validate=False,
 
         # Export sozlamalari
         export_daily=True,

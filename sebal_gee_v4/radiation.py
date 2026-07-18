@@ -142,9 +142,16 @@ def compute_incoming_shortwave(image):
 # "Bastiaanssen (1995) empirik εₐ=0.85×(-lnτsw)^0.09 formulasi Idaho alfalfa dalalari uchun kalibrlangan bo'lib, muallifning o'zi ta'kidlaganidek boshqa iqlim mintaqasi (G'arbiy Misr) uchun butunlay farqli koeffitsientlar (1.08, 0.265) talab qiladi — demak bu formula mahalliy kalibratsiyasiz Markaziy Osiyoga ko'chirib bo'lmaydi. Shu sababli ushbu pipeline'da ERA5-Land reanalysis (STRD bandi) ishlatiladi — bu yondashuv GEE-asosli SEBAL implementatsiyalarida standart amaliyot hisoblanadi (Laipelt et al., 2021; geeSSEBI, 2025) va ERA5'ning downward longwave radiation aniqligi mustaqil validatsiyalarda quruqlik yuzasida sun'iy yo'ldosh mahsulotlaridan (CERES) yuqori ekani ko'rsatilgan (Wang et al., 2021)."
 #
 
-def compute_incoming_longwave(image):
+def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=None):
     """
     Tushuvchi uzun to'lqin radiatsiyasi L↓ (W/m²) — atmosferadan yerga.
+
+    MODE-ga bog'liq (ikki usul — ikkalasi ham SAQLANGAN):
+      'yangiliklar'          → ERA5-Land STRD/3600 (reanalysis)  [pastda, o'chirilmagan]
+      'SEBAL_B' / boshqa      → empirik (Bastiaanssen 1995; Tasumi Eq. 3.13):
+          L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
+          Tref = cold (well-watered) referens SURFACE temp — cropland'ning eng
+          sovuq (past LST, p10) piksellari (cold anchor mantig'i).
 
     2 ta usul mavjud (pySEBAL/METRIC an'anasi):
 
@@ -181,13 +188,39 @@ def compute_incoming_longwave(image):
     (solishtiring: L_UP'da clamp bor, chunki u LST^4 dan hisoblanadi).
     Faqat fizik minimum himoyasi (.max(0)) qoldiriladi.
     """
-    # ERA5 strd — hourly accumulated (J/m²) → W/m²
-    strd = image.select('STRD').divide(3600.0)
+    sigma = cfg.STEFAN_BOLTZMANN
 
-    l_down = strd.rename('L_DOWN')
+    # ---- 'yangiliklar' MODE: ERA5-Land STRD/3600 (O'CHIRILMAGAN) ----
+    if mode == 'yangiliklar':
+        # ERA5 strd — hourly accumulated (J/m²) → W/m²
+        strd = image.select('STRD').divide(3600.0)
+        l_down = strd.rename('L_DOWN').max(0)
+        return image.addBands(l_down)
 
-    # Xavfsizlik: L↓ > 0
-    l_down = l_down.max(0)
+    # ---- SEBAL_B (va boshqa): empirik Bastiaanssen 1995 (Tasumi 3.13) ----
+    # L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
+    tau_sw = image.select('TAU_SW').clamp(0.01, 0.99)
+    lst = image.select('LST')
+
+    # Tref — cold (well-watered) referens SURFACE temp: cropland'ning past-
+    # percentil (p10) LST. (Referens: "Tref approximated from surface temp of
+    # a water/well-watered pixel".)
+    base = lst.mask()
+    if cold_mask is not None:
+        base = base.And(cold_mask.gt(0))
+    tref = lst.updateMask(base).reduceRegion(
+        ee.Reducer.percentile([10]), roi, 100, maxPixels=1e9,
+        bestEffort=True, tileScale=4).get('LST')
+    # fallback (bo'sh zona): ERA5 AIR_TEMP median
+    tref_fb = image.select('AIR_TEMP').reduceRegion(
+        ee.Reducer.median(), roi, 1000, maxPixels=1e9,
+        bestEffort=True).get('AIR_TEMP', 293.0)
+    tref = ee.Number(ee.Algorithms.If(tref, tref, tref_fb))
+
+    emiss_a = tau_sw.log().multiply(-1).pow(0.265).multiply(1.08)   # εa
+    l_down = (emiss_a.multiply(sigma)
+              .multiply(ee.Image.constant(tref).pow(4))
+              .rename('L_DOWN').max(0))
 
     return image.addBands(l_down)
 
@@ -359,25 +392,19 @@ def compute_net_available_energy(image):
 # MAIN: Compute all radiation components
 # ==============================================================
 
-def compute_all(image):
+def compute_all(image, mode='yangiliklar', roi=None, cold_mask=None):
     """
     Barcha radiatsiya va tuproq issiqlik oqimini hisoblash.
 
-    Tartib muhim:
-      1. K↓ (incoming shortwave)
-      2. L↓ (incoming longwave)
-      3. L↑ (outgoing longwave) — LST va ε₀ kerak
-      4. Q* (net radiation) — K↓, L↓, L↑, α kerak
-      5. G₀ (soil heat flux) — Q*, T₀, α, NDVI kerak
-      6. Rn-G₀ (net available energy)
-
-    Rn24 bu yerda hisoblanMAYDI — daily_et.py da Rs24 bilan birga.
+    mode → L↓ usulini tanlaydi (compute_incoming_longwave):
+      'yangiliklar' → ERA5 STRD; boshqa (SEBAL_B/pysebal) → empirik (Tref).
+    roi, cold_mask → SEBAL_B L↓ Tref (cold referens LST) uchun.
 
     Input:  Image with surface properties
     Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
     """
     image = compute_incoming_shortwave(image)
-    image = compute_incoming_longwave(image)
+    image = compute_incoming_longwave(image, mode, roi, cold_mask)
     image = compute_outgoing_longwave(image)
     image = compute_net_radiation(image)
     image = compute_soil_heat_flux(image)

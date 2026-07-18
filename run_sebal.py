@@ -27,7 +27,7 @@ ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2
 #     date_end='2026-03-31',
 
 #     # Mode
-#     mode='pysebal',        # 'maqola' yoki 'pysebal'
+#     mode='pysebal',        # 'SEBAL_B' yoki 'pysebal'
 #     satellite='BOTH',
 #     cloud_max=20,
 
@@ -234,14 +234,14 @@ ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2
 main.run(
     roi_type='gaul', name='Idaho', level=1,
     date_start='2025-03-01', date_end='2025-11-01',
-    mode='pysebal', satellite='BOTH', cloud_max=70,
+    mode='SEBAL_B', satellite='BOTH', cloud_max=70,
     process_by_tile=True,
     tiles=[(40, 30)],
     export_daily=False, export_monthly=True,
-    save_et=True, save_biomass=True,
-    save_etref=True, save_tact=True, save_eact=True,
+    save_et=True, save_biomass=False,
+    save_etref=False, save_tact=False, save_eact=False,
     validate=False,
-    folder='SEBAL_Idaho_covergent_2025',
+    folder='SEBAL_B_Idaho_2025',
     scale=30, crs='EPSG:32611',
 
     # ---- ANCHOR TANLASH (beton kaskad) ----
@@ -299,7 +299,7 @@ main.run(
 # main.run(
 #     roi_type='gaul', name='Kashkadarya', level=1,
 #     date_start='2026-05-01', date_end='2026-05-31',
-#     mode='pysebal',  ## 'maqola' yoki 'pysebal'
+#     mode='pysebal',  ## 'SEBAL_B' yoki 'pysebal'
 #     satellite='HLS',
 #     cloud_max=70,
 #     process_by_tile=True,
