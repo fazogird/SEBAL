@@ -451,3 +451,98 @@ HLS_QA_BITMASK = {
     'snow':         1 << 4,
     'water':        1 << 5,
 }
+
+
+# ==============================================================
+# 18. REGION PRESETS — hududга/ekinга bog'liq kalibratsiya (MA'LUMOTNOMA)
+# ==============================================================
+# ⚠️ MUHIM: Bu tuzilma FAQAT MA'LUMOTNOMA — pipeline kodi uni O'QIMAYDI.
+#    Uni qo'shish hozirgi natijalarga UMUMAN ta'sir qilmaydi. Aktiv qiymatlar
+#    yuqoridagi ROUGHNESS / WIND_ROUGHNESS / TRANSMISSIVITY / DAILY_ET /
+#    ANCHOR_LANDCOVER / OLMEDO_COEFFICIENTS bloklaridan olinadi (o'zgarmagan).
+#
+#    SEBAL'ning anchor kalibratsiyasi (dT=c4·Ts+c5) energiya balansini HAR
+#    SAHNA uchun avtomatik rostlaydi — shu sabab ko'p narsa o'z-o'zidan
+#    kalibrlanadi. Quyidagilar esa AVTOMATIK moslashmaydigan, hududга/ekinга
+#    bog'liq qo'lda sozlanadigan parametrlar (ma'lumot uchun bir joyга yig'ilgan).
+#
+#    QANDAY QO'LLASH (kelajakda, IXTIYORIY): tegishli qiymatni yuqoridagi
+#    aktiv config kalitiga QO'LDA ko'chiring (masalan turkey_gediz uchun
+#    DAILY_ET['rn24_constant'] ni o'zgartiring). Avtomatik wiring ATAYLAB
+#    qo'shilmagan — natijalar tasodifan o'zgarib ketmasligi uchun.
+#
+# Manbalar: SEBAL_ID z0m (Tasumi 2003), Gediz z0m (Bastiaanssen 2001, Turkey),
+#           De Bruin 1987 (rn24), Olmedo 2016 (albedo), Allen 2007 (τsw).
+
+REGION_PRESETS = {
+    # ── IDAHO — hozirgi AKTIV konfiguratsiyaning AYNAN nusxasi ──────────
+    # (dala ekinlari, sug'oriladigan; SEBAL_ID z0m; ET + validatsiya OpenET)
+    'idaho': {
+        'description': "Idaho (AQSh) — sug'oriladigan dala ekinlari, SEBAL_ID",
+        'crs': 'EPSG:32611',                 # UTM 11N
+        # z0m usuli: SEBAL_ID  →  z0m = Z0M_LAI_COEF × LAI
+        'z0m_method':       'sebal_id_lai',
+        'Z0M_LAI_COEF':     0.018,           # config.Z0M_LAI_COEF
+        'SAVI_L_LAI':       0.1,             # config.SAVI_L_LAI (LAI uchun SAVI L)
+        'roughness_z0m_min': 0.005,          # config.ROUGHNESS['z0m_min']
+        # Shamol z0m (vegetatsiya balandligi)
+        'h_max':            2.0,             # WIND_ROUGHNESS['h_max'] — dala ekini
+        'wind_ndvi_min':    0.20,            # WIND_ROUGHNESS['ndvi_min']
+        'wind_ndvi_max':    0.85,            # WIND_ROUGHNESS['ndvi_max']
+        # Radiatsiya / iqlim
+        'transmissivity_base': 0.75,         # TRANSMISSIVITY['base'] (arid, ochiq osmon)
+        'rn24_constant':    110.0,           # DAILY_ET['rn24_constant'] (De Bruin)
+        # Anchor land-cover (ESA WorldCover v200 klasslari)
+        'anchor_cold_classes': (40,),        # Cropland
+        'anchor_hot_classes':  (60, 20),     # Bare/sparse + Shrubland
+        # Biomassa (ekin turi)
+        'lue_max':          2.5,             # biomass.LUEMAX / MONTEITH C3 o'rtacha
+    },
+
+    # ── TURKEY (Gediz havzasi) — SHABLON, mahalliy kalibratsiya kerak ──
+    # ⚠️ Quyidagi qiymatlar BOSHLANG'ICH NUQTA. Faqat manbali (sourced)
+    #    farqlar qat'iy: (1) Gediz z0m koeffitsientlari (Bastiaanssen 2001,
+    #    aynan shu havza uchun), (2) UTM zonasi. Qolganlarини MAHALLIY
+    #    ma'lumot bilan tekshiring — taxminiy qiymatga tayanmang.
+    'turkey_gediz': {
+        'description': "Turkey — Gediz havzasi (paxta/makkajo'xori); z0m Gediz SAVI",
+        'crs': 'EPSG:32635',                 # UTM 35N (Gediz ~27–28°E)
+        # z0m usuli: Gediz  →  z0m = exp(z0m_a + z0m_b × SAVI)
+        # ⚠️ Bu usul hozircha compute_z0m'да WIRE QILINMAGAN (config'да
+        #    ROUGHNESS['z0m_a/z0m_b'] zaxira sifatida turibdi). Qo'llash uchun
+        #    surface_props.compute_z0m'га Gediz shoxini qo'shish kerak.
+        'z0m_method':       'gediz_savi',
+        'z0m_a':            -5.809,           # ROUGHNESS['z0m_a'] — Bastiaanssen 2001 Gediz
+        'z0m_b':             5.62,            # ROUGHNESS['z0m_b'] — Gediz SAVI koeff
+        'roughness_z0m_min': 0.005,
+        # Shamol z0m — Gediz'да paxta/makkajo'xori ~1.5–2.5m (mahalliy tekshiring)
+        'h_max':            2.0,             # ⚠️ asosiy ekin balandligiga moslang
+        'wind_ndvi_min':    0.20,            # ⚠️ tuproq foniga qarab tekshiring
+        'wind_ndvi_max':    0.85,
+        # Radiatsiya / iqlim — Egey iqlimi (yozда quruq). Mahalliy kalibratsiya
+        # bo'lmasa De Bruin standart 110 qoladi (taxminiy son o'ylab topmang).
+        'transmissivity_base': 0.75,         # ⚠️ nam mavsumда pasaytiring
+        'rn24_constant':    110.0,           # ⚠️ mahalliy ma'lumot bilan kalibrlang
+        # Anchor land-cover — Gediz landshaftiга qarab (bare tuproq bormi?)
+        'anchor_cold_classes': (40,),
+        'anchor_hot_classes':  (60, 20),     # ⚠️ hududда bare kam bo'lsa qayta ko'ring
+        # Biomassa — paxta (C3, ~2.5) yoki makkajo'xori (C4, ~4.0) ga qarab
+        'lue_max':          2.5,             # ⚠️ ekin turiga qarab (C4 uchun ~4.0)
+    },
+}
+
+
+def get_region_preset(name):
+    """
+    Hudud preset'ini QAYTARADI (faqat o'qish — nusxa). Hech qanday config
+    qiymatini o'zgartirmaydi, pipeline'га ta'sir qilmaydi. Ma'lumotnoma uchun.
+
+    >>> cfg.get_region_preset('idaho')['h_max']
+    2.0
+    """
+    if name not in REGION_PRESETS:
+        raise ValueError(
+            f"REGION_PRESETS'да '{name}' yo'q. "
+            f"Variantlar: {list(REGION_PRESETS.keys())}"
+        )
+    return dict(REGION_PRESETS[name])   # sayoz nusxa — asl o'zgarmaydi

@@ -14,9 +14,10 @@ Google Earth Engine (Python API) asosida qurilgan, Landsat 8/9 va HLS (Harmonize
 4. [Modul-modul: formulalar va konstantalar](#modul-modul-formulalar-va-konstantalar)
 5. [Rejimlar: `SEBAL_B` / `pysebal` / `yangiliklar`](#rejimlar-sebal_b--pysebal--yangiliklar)
 6. [Qo'shimcha quyi-tizimlar](#qoshimcha-quyi-tizimlar)
-7. [Ma'lum cheklovlar va ochiq masalalar](#malum-cheklovlar-va-ochiq-masalalar)
-8. [O'zgartirishlar jurnali](#ozgartirishlar-jurnali-2026-07--bug-fix-va-yaxshilanishlar)
-9. [Manbalar](#manbalar)
+7. [Hududга-bog'liq kalibratsiya (REGION_PRESETS)](#hududга-bogliq-kalibratsiya-region_presets)
+8. [Ma'lum cheklovlar va ochiq masalalar](#malum-cheklovlar-va-ochiq-masalalar)
+9. [O'zgartirishlar jurnali](#ozgartirishlar-jurnali-2026-07--bug-fix-va-yaxshilanishlar)
+10. [Manbalar](#manbalar)
 
 ---
 
@@ -396,6 +397,79 @@ ishlatiladi (empirik formula o'rniga). Qolgan hamma narsa `SEBAL_B` bilan bir xi
 
 ---
 
+## Hududга-bog'liq kalibratsiya (REGION_PRESETS)
+
+Model **global**, lekin ba'zi parametrlar hududга/ekinга bog'liq. SEBAL'ning
+kuchi shундаki — **anchor kalibratsiyasi (`dT = c4·Ts + c5`) energiya balansini
+HAR SAHNA uchun avtomatik rostlaydi**, shu sabab `Rn`, `H`, `EF` katta darajада
+o'z-o'zini kalibrlaydi. Faqat **yuza-parametr formulalari** va **iqlim
+konstantalari** avtomatik moslashmaydi — ularni joy o'zgarganда qo'lда
+sozlaysiz.
+
+> **⚠️ `config.py` `REGION_PRESETS` — FAQAT MA'LUMOTNOMA.** Pipeline kodi uni
+> O'QIMAYDI; qo'shilishi hozirgi natijalarga ta'sir qilmaydi. `'idaho'` preset —
+> hozirgi aktiv konfiguratsiyaning aynan nusxasi. Boshqa hududга o'tish uchun
+> tegishli qiymatni **qo'lда** aktiv config kalitiga ko'chiring (avtomatik wiring
+> ATAYLAB yo'q — natijalar tasodifan o'zgarmasligi uchun). O'qish:
+> `cfg.get_region_preset('idaho')`.
+
+### 1. HECH QACHON o'zgartirmang — universal fizika
+`STEFAN_BOLTZMANN`, `VON_KARMAN`, `GRAVITY`, `CP_AIR`, `GSC`, λ formulasi,
+Monin–Obukhov / Paulson–Webb barqarorlik, FAO-56 Penman–Monteith tuzilishi.
+
+### 2. HUDUD / IQLIM o'zgарganда
+
+| Parametr | Config joyi | Nimaga bog'liq | Manba |
+|---|---|---|---|
+| `rn24_constant = 110` | `DAILY_ET` | Iqlim — Rn24 net-uzun-to'lqin proksi; arid ≈100–140 | De Bruin 1987 |
+| Albedo koeffitsientlari | `OLMEDO_COEFFICIENTS` | Atmosfera — Kimberly, Idaho (SMARTS) | Olmedo 2016 |
+| `TRANSMISSIVITY['base']=0.75` | `TRANSMISSIVITY` | Iqlim — nam hududда pastroq | Allen 2007 |
+| Anchor land-cover klasslari | `ANCHOR_LANDCOVER` | Landshaft (pastда) | ESA WorldCover |
+| `crs` | run_sebal.py | UTM zonasi (Idaho 32611, Gediz 32635) | — |
+
+> `overpass_hour_utc` ([config.py](sebal_gee_v4/config.py)) **hech qayerда
+> ishlatilmaydi** (o'lik config — ERA5 haqiqiy sahna vaqtini oladi). O'zgartirish
+> shart emas.
+
+### 3. EKIN / o'simlik turi o'zgарganда
+
+| Parametr | Config joyi | Nimaga bog'liq |
+|---|---|---|
+| `h_max = 2.0` | `WIND_ROUGHNESS` | **To'g'ridan-to'g'ri ekin:** bug'doy ~1m, makkajo'xori ~2–3m, bog' ~4m |
+| `Z0M_LAI_COEF = 0.018` | `config.py` | Qoplam tuzilishi (dala ekini ~0.018; o'rmon/bog' boshqача) |
+| `ndvi_min/max = 0.20/0.85` | `WIND_ROUGHNESS` | Yalang'och tuproq va to'liq qoplam NDVI |
+| LAI `0.69, 0.59, 0.91` | `surface_props.compute_lai` | SAVI→LAI empirik, ekinга kalibrlangan |
+| `SAVI_L_LAI=0.1`, `savi_L=0.5` | `config.py`, `ROUGHNESS` | Tuproq tuzatmasi (zichlik) |
+| `LUEMAX = 2.5` | `biomass.py` | **⚠️ Eng ekinга bog'liq:** C3 (bug'doy 2.5) vs C4 (makkajo'xori ~4.0) |
+| FPAR `1.257, -0.161`, T_opt, k_vpd | `MONTEITH`, `biomass.py` | Ekin fotosintez parametrlari |
+| SMAP depletion `p = 0.4` | `soil_moisture.py` | FAO-56 — ekinга qarab 0.3–0.7 |
+
+### z0m usuli — hudud tanlovi
+Eski **Gediz (Turkey)** formulasi `z0m = exp(−5.809 + 5.62·SAVI)` config'да
+`ROUGHNESS['z0m_a/z0m_b']` sifatida turibdi (hozir ishlatilmaydi). Hozirgi
+aktiv usul — **SEBAL_ID** `z0m = 0.018·LAI` (dala ekinlari). Turkey/Gediz uchun
+`turkey_gediz` preset Gediz koeffitsientlarini ko'rsatadi — lekin uni qo'llash
+`compute_z0m`'га Gediz shoxini qo'shishни talab qiladi (hozir yo'q).
+
+### "Ekin turini bilishim kerakmi?"
+- **Faqat ET (`SEBAL_B`):** ekin xaritasi **shart emas** — anchor o'zi rostlaydi.
+  Lekin `h_max` ni asosiy ekin balandligiga qo'ying va anchor klasslarini
+  landshaftga moslang.
+- **Biomassa / dekompozitsiya (`pysebal`):** ekin turi **SHART** — `LUEMAX`,
+  FPAR, stress, depletion `p` ekinга kuchli bog'liq (`MONTEITH` config'да
+  `TODO: Appendix A jadvali` deb belgilangan).
+
+### Amaliy checklist: "Idaho → yangi hudud"
+1. `ANCHOR_LANDCOVER` — cold/hot uchun to'g'ri ESA klasslar (bare tuproq bormi?)
+2. `WIND_ROUGHNESS['h_max']` — asosiy ekin balandligi
+3. `DAILY_ET['rn24_constant']` — iqlim (nam/quruq)
+4. `TRANSMISSIVITY['base']` — nam iqlimда pasaytiring
+5. z0m usuli — Turkey uchun Gediz, dala ekinlari uchun 0.018·LAI
+6. (biomassa kerak bo'lsa) `biomass.LUEMAX` + ekin parametrlari
+7. `crs` — UTM zonasi
+
+---
+
 ## Ma'lum cheklovlar va ochiq masalalar
 
 Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qilingan joylar:
@@ -407,6 +481,35 @@ Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qili
 - Kunlik/oylik ET'da yuqori chegaraviy `.clamp()` yo'q, faqat `.max(0)` — g'ayrioddiy yuqori qiymatlarga qarshi QA filtri yo'q.
 - ~~`energy_balance.py`da anchor tanlashda hudud bo'sh chiqsa — oxirgi fallback yo'q (silent failure)~~ **✅ HAL QILINDI** (O'zgartirishlar jurnali #8 — beton kaskad + `default` fallback + null-xavfsizlik).
 - Interpolyatsiya mantig'i (`daily_et.py`, `monthly_analytics.py`, `hls_s30_etrf.py`) — uchta alohida, biroz farqli implementatsiya.
+
+### ⚠️ `rah` `z2_rah=0.2` nomuvofiqligi — ATAYLAB saqlangan (2026-07 diagnostika)
+
+`energy_balance.py` `rah` log hadi `ln(z2_rah/z1) = ln(0.2/0.1)` ishlatadi,
+lekin **barqarorlik** tuzatmasi `ψh(z2)−ψh(z1)` esa `z2 = 2.0 m` gача
+integrallanadi. Klassik SEBAL/METRIC'da (Allen et al. 2007; Tasumi 2003,
+Eq. 3.34–3.43) `rah` **bitta juft** balandlik orasida: `z1=0.1`, `z2=2.0` —
+ya'ni log hadida ham `z2=2.0` bo'lishi kerak. Demak hozirgi `z2_rah=0.2`
+jismonan noto'g'ri.
+
+**Diagnostika (July, tile P40/R30, 2025-07-10) topilmalari:**
+- Hot anchor SOG'LOM: NDVI_hot=0.179 (bare), `hot_LST−cold_LST = 24.2 K`,
+  `H_hot = Rn−G₀ = 377 W/m²`. Anchor tanlash muammo EMAS.
+- `z2_rah=0.2` da `ln(0.2/0.1)=0.693` shu qadar kichikki, beqaror sharoitda
+  `ψh > 0.693` bo'lganda `rah` numeratori manfiy → `rah` **clamp 1.0** ga
+  uriladi → `dT_hot` **11 K → 0.4 K** ga qulaydi (`c4 ≈ 0.016`, juda yumshoq).
+- Natijada cropland `EF = 0.88`, `ET_24 = 6.48 mm/kun` (July) — OpenET'ga
+  yaqinroq.
+
+**Nega TUZATILMADI:** `z2_rah=2.0` (kanonik) qilinsa `dT_hot ≈ 8–11 K`,
+`c4` ~20 baravar tikroq → cropland `H` keskin oshadi → `EF` pasayadi →
+**ET yanada kamayadi**, OpenET 6-model konvertidan **uzoqlashadi**. Ya'ni
+hozirgi nomuvofiq formula tasodifan advektsiyaga qisman kompensatsiya beryapti.
+Iyul–sentyabr kamomadining haqiqiy sababi **advektsiya/oazis effekti**
+(sug'orilgan maydonda `λE > Rn−G₀`, `EF > 1` kerak) — klassik SEBAL buni bera
+olmaydi (`EF ≤ 1`). Bu STRUKTURA masalasi; to'g'ri yechim — `rah` ni kanonik
+`2.0` ga qaytarish BILAN BIRGA advektsiyani manbali usulda qo'shish (masalan
+METRIC hot-piksel `λE≠0` yoki hisoblangan-ammo-qo'llanilmagan `ADV_FACTOR`).
+Shu ish qilinmaguncha `z2_rah=0.2` vaqtincha qoldirildi (foydalanuvchi qarori).
 
 ---
 
@@ -625,6 +728,62 @@ farqlar quyida tuzatildi. **Muhim printsip:** har bir formula MANBAGA asoslangan
     ketardi → ET past baholanardi. Hot anchorni doim quruq yuzadan (bare/shrub)
     olish bu tizimli xatoni yopadi. (30 Grassland ATAYLAB kiritilmadi — Idaho'da
     sug'orilgan yaylov ham 30-klass bo'lishi mumkin.)
+
+---
+
+## O'zgartirishlar jurnali (2026-07 — aniqlik va sifat tuzatishlari)
+
+Kod-audit davomida aniqlangan raqamli guard, crash va ishonchsiz maska
+masalalari. Har biri **"fake qiymat quymaslik"** printsipiга muvofiq tuzatildi.
+
+### J. Raqamli guardlar — soxta qiymat o'rniga maskalash
+
+22. **EF maxraji: `max(10)` → `gt(0)` maska**
+    `energy_balance.py` → `compute_evaporative_fraction()`.
+    Oldин `rn_g0.max(10)` — `Rn−G₀` kичик/manfiy joyга **soxta 10** quyardi
+    (EF past bias). Endi `updateMask(rn_g0.gt(0))` — nofizik (≤0) piksel
+    **nodata** bo'ladi. Cropland'ga ta'sir ≈ nol (`Rn−G₀≈400–600 ≫ 0`); faqat
+    bulut/suv/soya degenerat piksellar maskalanadi. **Diagnostika:** EF/H/dT/ET
+    aynan o'zgarmadi (0.882 / 54.4 / 0.128 / 6.48).
+
+23. **ψ (barqarorlik) clamp: ±10 → ±5**
+    `energy_balance.py` → `_stability_scalar()` (skalyar) va
+    `_stability_corrections()` (raster) — ikkovида ham.
+    ±10 manbали emas edi (ortiqcha); fizik ψm/ψh kunduzi (beqaror) **~0–5** dan
+    oshmaydi. ±5 — konservativroq guard, kunduzgi natijaга ta'siri deyarли nol.
+
+### K. Correctness / crash
+
+24. **L↓ Tref `getInfo` crash tuzatildi + fallback diagnostikasi**
+    `radiation.py` → `compute_incoming_longwave()`; `main.py` → `process_tile()`.
+    `tref.get('LST')` (`tref` = `ee.Number`, `.get` yo'q) `map()` trace'ида
+    crash berardi; bundan tashqari `map()` **ICHIDA** `getInfo`/`print` bo'lmaydi.
+    Endi: xom percentil alohида `tref_lst` o'zgaruvchисида; Tref manbai
+    (LST p10 vs ERA5 AIR_TEMP fallback) **xususiyat** (`LDOWN_TREF_SRC`) sifatида
+    yoziladi; `main.py` sahna sikli (map'дан tashqарида) uni o'qib
+    `"L↓ Tref: … = … K"` deb print qiladi. **Nega:** fallback ishlаганини ko'rish
+    + ikki-siklли dizaynning "map ичида getInfo yo'q" qoidасига rioya.
+
+### L. Ishonchsiz maskani olib tashlash
+
+25. **G₀ QOR maskasi olib tashlandi**
+    `radiation.py` → `compute_soil_heat_flux()`.
+    `is_snow = (LST<4°C) AND (albedo>0.45)` → `G/Rn=0.5` quyardi. Ammo **albedo
+    ham, LST ham piksel darajасида shubhали** → ishonchsiz detektsiya, xato joyга
+    0.5 quyish xavfi. Olib tashlandi; **SUV** (`NDVI<0` → 0.5) ishonchли belgi
+    sifatида qoldi. `clamp(0.0, 0.6)` o'z joyида.
+
+### M. Reference / diagnostika (pipeline'ga ta'sirsiz)
+
+26. **`REGION_PRESETS` (config.py)** — hududга/ekinга bog'liq kalibratsiya
+    parametrlari bir joyга yig'ildi (`idaho`, `turkey_gediz`). **FAQAT
+    MA'LUMOTNOMA:** pipeline o'qimaydi, natija o'zgarmaydi (batafsil:
+    "Hududга-bog'liq kalibratsiya" bo'limi).
+
+27. **`z2_rah=0.2` diagnostikasi** "Ma'lum cheklovlar" bo'limига qo'shildi.
+    Hot anchor sog'lom (ΔT=24.2K), lekin `rah` log hadi (`ln(0.2/0.1)`) kичик →
+    `rah` clamp 1.0 ga uriladi → `dT_hot` 11K→0.4K. Kanonik `z2_rah=2.0` esa ET
+    ni PASAYTIRАДИ (advektsiya sababли) — shu bois **hozircha 0.2 qoldirildi**.
 
 ---
 

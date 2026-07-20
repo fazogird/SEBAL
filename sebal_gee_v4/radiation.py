@@ -199,7 +199,7 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
 
     # ---- SEBAL_B (va boshqa): empirik Bastiaanssen 1995 (Tasumi 3.13) ----
     # L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
-    tau_sw = image.select('TAU_SW').clamp(0.01, 0.99)
+    tau_sw = image.select('TAU_SW') #.clamp(0.01, 0.99)
     lst = image.select('LST')
 
     # Tref — cold (well-watered) referens SURFACE temp: cropland'ning past-
@@ -208,21 +208,33 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
     base = lst.mask()
     if cold_mask is not None:
         base = base.And(cold_mask.gt(0))
-    tref = lst.updateMask(base).reduceRegion(
+    tref_lst = lst.updateMask(base).reduceRegion(
         ee.Reducer.percentile([10]), roi, 100, maxPixels=1e9,
         bestEffort=True, tileScale=4).get('LST')
     # fallback (bo'sh zona): ERA5 AIR_TEMP median
     tref_fb = image.select('AIR_TEMP').reduceRegion(
         ee.Reducer.median(), roi, 1000, maxPixels=1e9,
         bestEffort=True).get('AIR_TEMP', 293.0)
-    tref = ee.Number(ee.Algorithms.If(tref, tref, tref_fb))
+    # tref_lst null bo'lsa (cold zona bo'sh/bulutli) → ERA5 AIR_TEMP fallback
+    tref = ee.Number(ee.Algorithms.If(tref_lst, tref_lst, tref_fb))
+
+    # Tref manbai — LST p10 (cold anchor) yoki ERA5 AIR_TEMP fallback?
+    # DIQQAT: bu funksiya collection.map() ICHIDA ishlaydi — shu yerda
+    # getInfo/print QILIB BO'LMAYDI (map trace'da ishlamaydi, crash beradi).
+    # Manbani XUSUSIYAT sifatida yozamiz; main.py sahna sikli (map'dan tashqarida)
+    # uni bir marta o'qib PRINT qiladi ("fallback ishladimi yo LST dan olindimi").
+    tref_src = ee.Algorithms.If(tref_lst,
+                                'LST p10 (cold anchor)',
+                                "ERA5 AIR_TEMP fallback (bo'sh/bulutli cold zona)")
 
     emiss_a = tau_sw.log().multiply(-1).pow(0.265).multiply(1.08)   # εa
     l_down = (emiss_a.multiply(sigma)
               .multiply(ee.Image.constant(tref).pow(4))
               .rename('L_DOWN').max(0))
 
-    return image.addBands(l_down)
+    return (image.addBands(l_down)
+            .set('LDOWN_TREF_SRC', tref_src)
+            .set('LDOWN_TREF', tref))
 
 
 # ==============================================================
@@ -246,7 +258,7 @@ def compute_outgoing_longwave(image):
     l_up = (emissivity
             .multiply(sigma)
             .multiply(lst.pow(4))
-            .clamp(200, 700)
+        #    .clamp(200, 700) bu kerak emas hozircha 
             .rename('L_UP'))
 
     return image.addBands(l_up)
@@ -354,11 +366,13 @@ def compute_soil_heat_flux(image):
     veg_extinction = ee.Image(1.0).subtract(ndvi.pow(4).multiply(0.98))
     g_ratio = g_ratio.multiply(veg_extinction)
 
-    # ---- Manualdagi maxsus holatlar (spektral/termal, QA'dan mustaqil) ----
+    # ---- Maxsus holat: SUV (NDVI<0) → G/Rn ≈ 0.5 ----
+    # QOR maskasi OLIB TASHLANDI: u albedo>0.45 VA LST<4°C ga tayanardi, lekin
+    # albedo ham, LST ham piksel darajasida noaniq (shubhali) → ishonchsiz
+    # detektsiya, xato 0.5 quyish xavfi. Suv (NDVI<0) esa ishonchli belgi.
     is_water = ndvi.lt(0)
-    is_snow = t_celsius.lt(4).And(albedo.gt(0.45))
 
-    g_ratio = g_ratio.where(is_water.Or(is_snow), 0.5)
+    g_ratio = g_ratio.where(is_water, 0.5)
 
     # G/Rn fizik jihatdan mantiqiy oraliqqa cheklash
     # (manual Table 2: 0.04 dan 0.6 gacha kuzatilgan qiymatlar)

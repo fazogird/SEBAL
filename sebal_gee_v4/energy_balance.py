@@ -769,8 +769,10 @@ def _stability_scalar(L, z_blend, z1, z2):
     else:       # barqaror (L > 0): ψm z=2m (Allen 2007), ψh=-5(z2-z1)/L
         psi_m = -5.0 * 2.0 / L
         psi_h = -5.0 * (z2 - z1) / L
-    psi_m = max(min(psi_m, 10.0), -10.0)
-    psi_h = max(min(psi_h, 10.0), -10.0)
+    # ψ clamp ±5: fizik ψm/ψh kunduzi (beqaror) ~0–5 dan oshmaydi; ±10 manbali
+    # emas edi (ortiqcha). ±5 — fizik jihatdan yetarli, konservativroq guard.
+    psi_m = max(min(psi_m, 5.0), -5.0)
+    psi_h = max(min(psi_h, 5.0), -5.0)
     return psi_m, psi_h
 
 
@@ -1067,11 +1069,13 @@ def _stability_corrections(L_mo, z_blend, z1, z2):
     # --- Shartli tanlash ---
     is_unstable = L_mo.lt(0)
 
+    # ψ clamp ±5 (skalyar _stability_scalar bilan bir xil): fizik ψ kunduzi
+    # ~0–5; ±10 manbali emas edi. ±5 konservativroq, kunduzgi natijaga ta'siri kam.
     psi_m_200 = (psi_m_200_unstable.where(is_unstable.Not(), psi_m_200_stable)
-                 .clamp(-10, 10))
+                 .clamp(-5, 5))
 
     psi_h = (psi_h_unstable.where(is_unstable.Not(), psi_h_stable)
-             .clamp(-10, 10))
+             .clamp(-5, 5))
 
     return psi_m_200, psi_h
 
@@ -1124,9 +1128,13 @@ def compute_evaporative_fraction(image):
     lambda_e = image.select('LAMBDA_E')
     rn_g0 = image.select('RN_G0')
 
-    rn_g0_safe = rn_g0.max(10)
+    # Nofizik (Rn−G₀ ≤ 0) piksellar — tush payti bo'lmasligi kerak (bulut/suv/
+    # soya/xato). Soxta maxraj (max(10)) quyish o'rniga ularni MASKALAYMIZ →
+    # EVAP_FRAC o'sha yerda nodata (fake qiymat emas). Cropland'ga ta'sir ≈ nol
+    # (Rn−G₀ ≈ 400–600 W/m² ≫ 0). Kichik musbat maxrajni .clamp(0,1) ushlaydi.
+    rn_g0_pos = rn_g0.updateMask(rn_g0.gt(0))
 
-    evap_frac = (lambda_e.divide(rn_g0_safe)
+    evap_frac = (lambda_e.divide(rn_g0_pos)
                  .clamp(0, 1.0)
                  .rename('EVAP_FRAC'))
 

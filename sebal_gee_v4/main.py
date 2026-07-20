@@ -169,6 +169,14 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         img = ee.Image(image_list.get(i))
 
+        # ---- L↓ Tref manbai (SEBAL_B/pysebal empirik) — fallback ishladimi? ----
+        # radiation.compute_incoming_longwave xususiyat sifatida yozib qo'ygan;
+        # bu yerda (map'dan tashqarida) bir marta o'qib print qilamiz.
+        _tref_src = img.get('LDOWN_TREF_SRC').getInfo()
+        if _tref_src is not None:
+            _tref_val = img.get('LDOWN_TREF').getInfo()
+            print(f"{prefix}   L↓ Tref: {_tref_src} = {_tref_val:.2f} K")
+
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         anchors = energy_balance.select_anchor_pixels(
             img, roi, cold_mask=cold_mask, hot_mask=hot_mask,
