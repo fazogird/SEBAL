@@ -103,7 +103,8 @@ def get_hls_tile_geometry(mgrs_tile, date_start='2024-01-01',
 # ==============================================================
 
 def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
-                 tile_label='', anchor_method='default'):
+                 tile_label='', anchor_method='default',
+                 anchor_mode='median_anchor'):
     """
     Bitta ROI/tile uchun SEBAL pipeline.
     Returns: list of processed scene images
@@ -180,7 +181,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         anchors = energy_balance.select_anchor_pixels(
             img, roi, cold_mask=cold_mask, hot_mask=hot_mask,
-            method=anchor_method)
+            method=anchor_method, anchor_mode=anchor_mode)
 
         if not anchors['valid'].getInfo():
             print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor topilmadi — "
@@ -486,6 +487,12 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         #   avval ekin zonasida, so'ng ROI'da; hech biri chiqmasa 'default'
         #   fallback. Har qadam log'da chiqadi.
         anchor_method='default',
+        # anchor_mode: kandidatlardan qiymat olish qadami (anchor_method'dan
+        #   ALOHIDA emas — o'sha metod topgan kandidatlar ustida ishlaydi):
+        #   'median_anchor' (default) = kandidatlar medianasi (hozirgi holat);
+        #   'point_anchor' = kandidatlar ichidan BITTA ekstremal (hot=eng issiq,
+        #   cold=eng sovuq; Rn−G₀ hot pikseldan). Natijaga sezilarli ta'sir qiladi.
+        anchor_mode='median_anchor',
 
         # Export sozlamalari
         folder='SEBAL_Output',
@@ -535,7 +542,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     print(f"  ROI: {roi_type} | {date_start} → {date_end}")
     print(f"  Tile mode: {process_by_tile}")
     print(f"  VIIRS fine CRS: {viirs_crs}")
-    print(f"  Anchor metod: {anchor_method}")
+    print(f"  Anchor metod: {anchor_method}  | rejim: {anchor_mode}")
     print(f"{'='*60}")
 
     all_tasks = []
@@ -586,7 +593,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             scenes, info = process_tile(
                 tile_roi, date_start, date_end, mode,
                 satellite, cloud_max, tile_label,
-                anchor_method=anchor_method)
+                anchor_method=anchor_method, anchor_mode=anchor_mode)
 
             if not scenes:
                 continue
@@ -674,7 +681,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     else:
         scenes, info = process_tile(
             roi, date_start, date_end, mode,
-            satellite, cloud_max, anchor_method=anchor_method)
+            satellite, cloud_max, anchor_method=anchor_method,
+            anchor_mode=anchor_mode)
 
         if scenes:
             if export_daily:

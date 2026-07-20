@@ -785,6 +785,35 @@ masalalari. Har biri **"fake qiymat quymaslik"** printsipiга muvofiq tuzatildi
     `rah` clamp 1.0 ga uriladi → `dT_hot` 11K→0.4K. Kanonik `z2_rah=2.0` esa ET
     ni PASAYTIRАДИ (advektsiya sababли) — shu bois **hozircha 0.2 qoldirildi**.
 
+### N. Anchor rejimi — `median_anchor` / `point_anchor`
+
+28. **`anchor_mode` qo'shildi (median vs ekstremal bitta piksel)**
+    `config.py` (`ANCHOR_MODES`); `energy_balance.py` (`_reduce_anchor_values`
+    helper; `_finalize_anchor`, `_select_anchor_default`, `select_anchor_pixels`,
+    `compute_all`); `main.py` (`process_tile`, `run`).
+    `anchor_method` (cimec/plan_a/plan_b/pysebal/default — kandidatlarni topadi)
+    O'ZGARMAYDI; yangi `anchor_mode` **o'sha metod topgan kandidatlardan** qiymat
+    olish qadamini belgilaydi (alohida tizim EMAS):
+    - `'median_anchor'` (default) — kandidatlar bo'yicha MEDIAN (hozirgi holat;
+      natija o'zgarmagan, tekshirilgan).
+    - `'point_anchor'` — kandidatlar ichidan **BITTA ekstremal** piksel:
+      cold = eng SOVUQ (min LST), hot = eng ISSIQ (max LST), Rn−G₀ AYNI o'sha hot
+      pikseldan (`ee.Reducer.max(2)` argmax juftligi → izchil juft). Kitobdagi
+      qo'l-anchorga eng yaqin. **Diagnostika (July, tile 40/30):** median
+      ΔT=24.2K, hot_Rn−G₀=377; point ΔT=27.8K, hot_Rn−G₀=391.6.
+    **Ishlatish:** `main.run(..., anchor_method='cascade', anchor_mode='point_anchor')`.
+
+29. **`point_anchor` null-xavfsizligi (RN_G0 masked)**
+    `energy_balance.py` → `_reduce_anchor_values()`, `_select_anchor_default()`.
+    **Test topilmasi:** `ee.Reducer.max(2)` absolyut eng issiq LST pikselni oladi
+    va agar o'sha pikselda RN_G0 masked bo'lsa `max1=null` qaytaradi (keyingi
+    valid pikselga O'TMAYDI). **Tuzatish:** (a) point rejimda max(2)dan OLDIN
+    `updateMask(rn_g0.mask())` — eng issiq **RN_G0-valid** piksel olinadi,
+    hot_rn_g0 null BO'LMAYDI; (b) agar butun zonada bironta ham RN_G0-valid piksel
+    bo'lmasa → sentinel -999 → `_select_anchor_default` valid tekshiruvi (endi
+    `hot_rn_g0`ni ham tekshiradi) → sahna SKIP (crash/garbage EMAS). Kaskad
+    metodlarda (`_finalize_anchor`) bu himoya allaqachon bor edi.
+
 ---
 
 ## Manbalar

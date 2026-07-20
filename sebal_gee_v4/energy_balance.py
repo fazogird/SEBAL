@@ -282,7 +282,8 @@ def compute_tile_cropland_zone(tile_roi, min_pixel_count=20):
 
 #     return anchors
 
-def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None):
+def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
+                           anchor_mode='median_anchor'):
     """
     Klassik persentil anchor tanlash — RASTER cropland mask bilan.
 
@@ -355,10 +356,6 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None):
     cold_fallback = cold_base.And(lst.lte(lst_p_cold))
     cold_mask = _ensure_nonempty(cold_mask, cold_fallback)
 
-    cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
-        reducer=ee.Reducer.median(), geometry=search_geom, scale=30,
-        maxPixels=1e9, bestEffort=True, tileScale=4).get('LST', -999))
-
     # Hot — hot_base (bare+shrub) ichida: past NDVI + yuqori LST
     hot_mask = (hot_base.And(ndvi.lte(ndvi_p_hot))
                 .And(lst.gte(lst_p_hot))
@@ -366,16 +363,17 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None):
     hot_fallback = hot_base.And(lst.gte(lst_p_hot))
     hot_mask = _ensure_nonempty(hot_mask, hot_fallback)
 
-    hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
-        reducer=ee.Reducer.median(), geometry=search_geom, scale=30,
-        maxPixels=1e9, bestEffort=True, tileScale=4)
-    hot_lst = ee.Number(hot_stats.get('LST', -999))
-    hot_rn_g0 = ee.Number(hot_stats.get('RN_G0', -999))
+    # cold/hot skalyar — median (default) yoki bitta ekstremal piksel
+    cold_lst, hot_lst, hot_rn_g0 = _reduce_anchor_values(
+        image, search_geom, cold_mask, hot_mask, anchor_mode)
 
     # ---- YAKUNIY, HAQIQIY tekshiruv ----
-    # LST har doim Kelvin (>200); sentinel -999 → valid=0 (crash emas, toza skip).
+    # LST har doim Kelvin (>200); hot_rn_g0 fizik jihatdan musbat (yuzlab W/m²).
+    # sentinel/null (-999 yoki masked) → valid=0 (crash emas, toza skip).
+    # (point rejimda eng issiq piksel RN_G0-masked bo'lsa hot_rn_g0 null
+    #  bo'lishi mumkin — shu yerda ushlanadi; _finalize_anchor'da allaqachon bor.)
     anchors_valid = ee.Number(ee.Algorithms.If(
-        cold_lst.gt(200).And(hot_lst.gt(200)), 1, 0))
+        cold_lst.gt(200).And(hot_lst.gt(200)).And(hot_rn_g0.gt(-900)), 1, 0))
 
     return {
         'cold_lst': cold_lst,
@@ -573,21 +571,62 @@ def _cascade_order(method):
     return _CANON_ORDER   # 'cascade' yoki noma'lum → to'liq zanjir
 
 
-def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose):
+def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
+                          anchor_mode='median_anchor'):
     """
-    cold/hot mask'dan LST median'larni oladi, VALIDlikni bitta getInfo bilan
-    client-side tekshiradi. Ikkalasi ham topilib, ΔT yetarli bo'lsa —
-    anchor dict qaytaradi; aks holda None (keyingi metodga o'tiladi).
+    cold/hot mask'dan anchor SKALYARlarini (cold_lst, hot_lst, hot_rn_g0) oladi.
+
+    anchor_method (cimec/plan_a/... — kandidat ZONANI topadi) O'ZGARMAYDI; bu
+    faqat o'sha kandidatlardan QIYMAT olish qadamini belgilaydi:
+      'median_anchor' (default) — kandidatlar bo'yicha MEDIAN (hozirgi; shovqin
+          kamaytirilgan, (LST,Rn−G₀) juftligi band-bo'yicha alohida).
+      'point_anchor' — kandidatlar hammasi to'g'ri, ICHIDAN BITTA ekstremal (n=1):
+          cold = eng SOVUQ (min LST); hot = eng ISSIQ (max LST) va Rn−G₀ AYNI
+          o'sha hot pikseldan (ee.Reducer.max(2): 'max'=LST, 'max1'=Rn−G₀ —
+          izchil juft). Kitobdagi qo'l-anchor mantiqiga eng yaqin.
+    Bo'sh mask → sentinel -999 (valid-tekshiruvi skip qiladi).
     """
     lst = image.select('LST')
-    # mask BO'SH bo'lsa reduceRegion bo'sh dictionary qaytaradi → .get default'siz
-    # crash beradi. Shuning uchun sentinel (-999) beramiz; keyin >-900 tekshiruvi.
-    cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
-        ee.Reducer.median(), geom, 30, maxPixels=1e9, bestEffort=True).get('LST', -999))
-    hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
-        ee.Reducer.median(), geom, 30, maxPixels=1e9, bestEffort=True)
-    hot_lst = ee.Number(hot_stats.get('LST', -999))
-    hot_rn_g0 = ee.Number(hot_stats.get('RN_G0', -999))
+    if anchor_mode == 'point_anchor':
+        cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
+            ee.Reducer.min(), geom, 30, maxPixels=1e9,
+            bestEffort=True, tileScale=4).get('LST', -999))
+        # DIQQAT: max(2) absolyut eng issiq LST pikselni oladi va agar o'sha
+        # pikselda RN_G0 masked bo'lsa 'max1'=null qaytaradi (test bilan
+        # tasdiqlangan). Shuning uchun avval RN_G0-VALID pikselларga cheklaymiz —
+        # shunda eng issiq RN_G0-valid piksel olinadi, hot_rn_g0 null BO'LMAYDI
+        # (izchil juft). Umuman valid piksel bo'lmasa → key yo'q → sentinel -999.
+        rn_g0 = image.select('RN_G0')
+        hot_stats = (image.select(['LST', 'RN_G0'])
+                     .updateMask(hot_mask).updateMask(rn_g0.mask())
+                     .reduceRegion(ee.Reducer.max(2), geom, 30, maxPixels=1e9,
+                                   bestEffort=True, tileScale=4))
+        hot_lst = ee.Number(hot_stats.get('max', -999))       # eng issiq LST
+        hot_rn_g0 = ee.Number(hot_stats.get('max1', -999))    # o'sha pikselning Rn−G₀
+    else:  # 'median_anchor' (default — hozirgi bilan aynan bir xil natija)
+        cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
+            ee.Reducer.median(), geom, 30, maxPixels=1e9,
+            bestEffort=True, tileScale=4).get('LST', -999))
+        hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
+            ee.Reducer.median(), geom, 30, maxPixels=1e9,
+            bestEffort=True, tileScale=4)
+        hot_lst = ee.Number(hot_stats.get('LST', -999))
+        hot_rn_g0 = ee.Number(hot_stats.get('RN_G0', -999))
+    return cold_lst, hot_lst, hot_rn_g0
+
+
+def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
+                     anchor_mode='median_anchor'):
+    """
+    cold/hot mask'dan anchor qiymatlarini (_reduce_anchor_values — median yoki
+    ekstremal point) oladi, VALIDlikni bitta getInfo bilan client-side
+    tekshiradi. Ikkalasi ham topilib, ΔT yetarli bo'lsa — anchor dict qaytaradi;
+    aks holda None (keyingi metodga o'tiladi).
+    """
+    # cold/hot skalyar — median (default) yoki bitta ekstremal piksel.
+    # Bo'sh mask → sentinel -999; keyin >-900 tekshiruvi.
+    cold_lst, hot_lst, hot_rn_g0 = _reduce_anchor_values(
+        image, geom, cold_mask, hot_mask, anchor_mode)
 
     probe = ee.List([
         ee.Algorithms.If(cold_lst, cold_lst, -999),
@@ -618,7 +657,8 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose):
 
 
 def select_anchor_pixels(image, roi, cold_mask=None, hot_mask=None,
-                         method='default', verbose=True):
+                         method='default', verbose=True,
+                         anchor_mode='median_anchor'):
     """
     Anchor tanlash DISPATCHER (beton kaskad).
 
@@ -636,7 +676,7 @@ def select_anchor_pixels(image, roi, cold_mask=None, hot_mask=None,
     Har qadam va metod almashinuvi print qilinadi.
     """
     if method == 'default':
-        return _select_anchor_default(image, roi, cold_mask, hot_mask)
+        return _select_anchor_default(image, roi, cold_mask, hot_mask, anchor_mode)
 
     base_flat = _base_mask(image)             # tekis + valid
     order = _cascade_order(method)
@@ -652,20 +692,20 @@ def select_anchor_pixels(image, roi, cold_mask=None, hot_mask=None,
     for m in order:
         cm, _ = _ANCHOR_METHODS[m](image, roi, cold_base)
         _, hm = _ANCHOR_METHODS[m](image, roi, hot_base)
-        res = _finalize_anchor(image, roi, cm, hm, m, 'lc', verbose)
+        res = _finalize_anchor(image, roi, cm, hm, m, 'lc', verbose, anchor_mode)
         if res is not None:
             return res
 
     # 2) ROI (cheklovsiz) — bulutli kunlarda zona bo'sh bo'lsa zaxira.
     for m in order:
         cm, hm = _ANCHOR_METHODS[m](image, roi, base_flat)
-        res = _finalize_anchor(image, roi, cm, hm, m, 'ROI', verbose)
+        res = _finalize_anchor(image, roi, cm, hm, m, 'ROI', verbose, anchor_mode)
         if res is not None:
             return res
 
     if verbose:
         print("    ! Barcha metod bo'sh — 'default' persentil fallback")
-    return _select_anchor_default(image, roi, cold_mask, hot_mask)
+    return _select_anchor_default(image, roi, cold_mask, hot_mask, anchor_mode)
 
 
 # ==============================================================
@@ -1146,7 +1186,7 @@ def compute_evaporative_fraction(image):
 # ==============================================================
 
 def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
-                anchor_method='default'):
+                anchor_method='default', anchor_mode='median_anchor'):
     """
     To'liq energiya balansini hisoblash.
 
@@ -1171,7 +1211,8 @@ def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
     # M5: Anchor selection
     if anchors is None:
         anchors = select_anchor_pixels(image, roi, cold_mask=cold_mask,
-                                       hot_mask=hot_mask, method=anchor_method)
+                                       hot_mask=hot_mask, method=anchor_method,
+                                       anchor_mode=anchor_mode)
 
     # M7: Sensible heat flux (iterativ)
     image = compute_sensible_heat_flux(image, anchors, roi)

@@ -232,6 +232,16 @@ ANCHOR_CASCADE = {
     'min_dt':     1.0,   # anchorni qabul qilish uchun minimal (hot_LST - cold_LST), K
 }
 
+# ── ANCHOR REJIMI — kandidatlardan QIYMAT olish qadami ──────────
+# MUHIM: anchor_method (cimec/plan_a/plan_b/pysebal/default) o'zgarmaydi —
+# u kandidat piksellarni topadi. anchor_mode faqat o'sha kandidatlardan
+# skalyar (cold_lst, hot_lst, hot_rn_g0) ni QANDAY olishni belgilaydi:
+#   'median_anchor' (default) → kandidatlar bo'yicha MEDIAN (hozirgi holat).
+#   'point_anchor' → kandidatlar hammasi to'g'ri, ICHIDAN BITTA ekstremal:
+#       cold = eng SOVUQ (min LST), hot = eng ISSIQ (max LST) va Rn−G₀ AYNI
+#       o'sha hot pikseldan (izchil juft). Kitobdagi qo'l-anchorga yaqin.
+ANCHOR_MODES = ('median_anchor', 'point_anchor')
+
 # ── ANCHOR LAND-COVER ZONALARI (ESA WorldCover v200) ────────────
 # Cold va hot anchor AYRIM land-cover zonalaridan qidiriladi (klassik
 # SEBAL/METRIC). MUHIM: hot anchor cropland'dan EMAS — aks holda to'liq
