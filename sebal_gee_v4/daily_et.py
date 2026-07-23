@@ -23,13 +23,49 @@ Output: ET₂₄ (mm/day) yoki ET_monthly (mm/month)
 
 import ee
 from . import config as cfg
+from . import ref_et   # SEBAL_ID: kunlik alfalfa ETr24 (ETrF ekstrapolyatsiya)
+
+
+# ==============================================================
+# ETR24 — kunlik alfalfa referens ET (SEBAL_ID ETrF uchun)
+# ==============================================================
+
+GRIDMET = 'IDAHO_EPSCOR/GRIDMET'   # AQSh (CONUS) — ASCE etr/eto, 4 km
+
+
+def get_daily_etr24(date, roi, dem, ref_type='alfalfa', utc_offset=0,
+                    source='era5'):
+    """
+    Kunlik (24 soat) referens ET — SEBAL_ID: ET24 = ETrF · ETr24 (Eq 5.8).
+
+    source='era5'    — ASCE-EWRI FAO-56 PM, ERA5-Land agregatsiyasidan (default).
+    source='gridmet' — IDAHO_EPSCOR/GRIDMET tayyor `etr` (alfalfa) / `eto` (grass).
+        ⚠️ FAQAT AQSh (CONUS) — boshqa hududda rasm yo'q (null) → ishlamaydi.
+        Validatsiya (US-Ne1 2022, n=45): bizning ERA5 ETr24 GRIDMET'dan
+        alfalfa uchun −9.3%, grass uchun −5.5% past chiqadi.
+
+    MUHIM (era5): KALENDAR kun (yarim tundan) — overpass VAQTI emas. `utc_offset`
+    bilan MAHALLIY standart kunga bog'lanadi (Manual App.5-A; DST qo'llanmaydi).
+    """
+    day = ee.Date(ee.Date(date).format('YYYY-MM-dd'))   # yarim tun (kalendar kun)
+
+    if source == 'gridmet':
+        band = 'etr' if ref_type == 'alfalfa' else 'eto'
+        img = (ee.ImageCollection(GRIDMET)
+               .filterDate(day, day.advance(1, 'day')).first())
+        return ee.Image(img).select(band).rename('ETR24')
+
+    met = ref_et.get_daily_era5_aggregate(day, roi, utc_offset=utc_offset)
+    etr = (ref_et.RefETCalculator(ref_type=ref_type)
+           .calculate(met, ee.Image(dem), mode='daily').select('ETr'))
+    return etr.rename('ETR24')
 
 
 # ==============================================================
 # RS24 — 24-hour incoming solar radiation from ERA5
 # ==============================================================
 
-def get_daily_solar_radiation(date, roi):
+def get_daily_solar_radiation(date, roi, utc_offset=0):
     """
     ERA5 dan 24 soatlik quyosh radiatsiyasi olish.
 
@@ -49,7 +85,8 @@ def get_daily_solar_radiation(date, roi):
     -------
     ee.Image : Rs24 (W/m²)
     """
-    day_start = ee.Date(date)
+    # Mahalliy standart kalendar kun (App.5-A) — utc_offset=0 → eski UTC kun
+    day_start = ee.Date(date).advance(-utc_offset, 'hour')
     day_end = day_start.advance(1, 'day')
 
     ssrd_band = cfg.ERA5['bands']['ssrd']
@@ -72,28 +109,55 @@ def get_daily_solar_radiation(date, roi):
 # ET₂₄ — Kunlik ET (bitta sana uchun)
 # ==============================================================
 
-def compute_daily_et(image, roi):
+def utc_offset_from_roi(roi):
+    """
+    ROI markazidan MAHALLIY STANDART vaqt zonasi offseti (soat, butun son).
+
+    SEBAL Manual App.5-A: korreksiya = (vaqt zonasi MARKAZI boylami)/15.
+    Zona markazlari 15° ga karrali (−90 Central, −105 Mountain, ...), shuning
+    uchun sayt boylamini 15 ga bo'lib YAXLITLASH zona markazini beradi.
+    DST HECH QACHON qo'llanmaydi (qishki standart vaqt).
+
+    ⚠️ Bu TAXMIN — ba'zi davlatlarda zona quyosh vaqtidan siljigan
+    (masalan O'zbekiston: lon≈65 → −taxmin +4, ASLIDA UZT = +5).
+    Aniq qiymatni `utc_offset=` bilan qo'lda bering.
+    """
+    lon = ee.Number(ee.Geometry(roi).centroid(1).coordinates().get(0)).getInfo()
+    return int(round(lon / 15.0))
+
+
+def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=0,
+                     etr24_source='era5', sloping_terrain=False):
     """
     Kunlik ET hisoblash — bitta Landsat sahna uchun.
 
-    Jarayon:
-      1. Λ (evaporative fraction) — allaqachon hisoblangan
-      2. Rs24 — ERA5 dan shu kungi 24 soatlik quyosh radiatsiyasi
-      3. Rn24 = (1 - α) × Rs24 - 110 × τsw
-      4. ET₂₄ = Λ × Rn24 × 86400 / (λ)  [mm/day]
+    SEBAL_B (EF o'z-o'zini saqlash — Bastiaanssen 1998):
+      ET₂₄ = Λ × Rn24 × 86400 / λ    (Rn24 = (1-α)·Rs24 − 110·τsw)
 
-    λ = 2.45 × 10⁶ J/kg (suvning bug'lanish issiqligi)
-    1000 = kg/m³ → mm konversiya (1 kg/m² = 1 mm)
+    SEBAL_ID (ETrF o'z-o'zini saqlash — Tasumi 2003, Eq 5.6–5.8):
+      ETrF_inst = ET_inst / ETr_inst  (overpass)
+      ET₂₄ = ETrF_inst × ETr24        (ETr24 = kunlik alfalfa referens ET)
+      Advektiv muhitda (Idaho) ETr Rn−G'dan yaxshiroq umumiy bug'lanish indeksi.
 
-    Returns: Image with ET_24, RN24 bands added
+    λ = harorat bog'liq (Tasumi 3.48). 1 kg/m² = 1 mm.
+    Returns: Image with ET_24 (+ SEBAL_B: RN24; SEBAL_ID: ETRF_INST, ETR24) bands.
     """
     date = ee.Date(image.get('system:time_start'))
     evap_frac = image.select('EVAP_FRAC')
     albedo = image.select('ALBEDO')
     tau_sw = image.select('TAU_SW')
 
-    # 1. Rs24 — ERA5 dan
-    rs24 = get_daily_solar_radiation(date, roi)
+    # 1. Rs24 — ERA5 dan (mahalliy standart kun)
+    rs24 = get_daily_solar_radiation(date, roi, utc_offset=utc_offset)
+    # QIYA YUZA: sutkalik radiatsiya qiyalik/ekspozitsiyaga qarab o'zgaradi.
+    # Koeffitsientlar SAHNA BANDI sifatida saqlanadi ('RA24_RATIO', 'C_RAD') —
+    # oylik hisobda ular ETrF bilan birga interpolyatsiya qilinadi.
+    if sloping_terrain:
+        from . import sloping_terrain as slt
+        ra_ratio = slt.ra24_ratio(image)               # band 'RA24_RATIO'
+        image = image.addBands(ra_ratio)
+        if mode != 'SEBAL_ID':
+            rs24 = rs24.multiply(ra_ratio).rename('RS24')   # SEBAL_B: Rn24 orqali
     image = image.addBands(rs24)
 
     # 2. Rn24 — De Bruin/Slob
@@ -104,22 +168,50 @@ def compute_daily_et(image, roi):
 
     image = image.addBands(rn24)
 
-    # 3. ET₂₄ (mm/day) — SEBAL_B
     # λ HAROTARGA BOG'LIQ (Tasumi Eq. 3.48): (2.501 − 0.00236·(Ts−273))·10⁶ J/kg
-    # (doimiy 2.45e6 EMAS — per-piksel LST'dan).
     lam = (image.select('LST').subtract(273.0).multiply(-0.00236)
            .add(2.501).multiply(1e6).rename('LAMBDA_HV'))
     spd = cfg.DAILY_ET['seconds_per_day']
 
-    # Lahzali ET (mm/hour) — debug uchun
+    # Lahzali ET (mm/soat)
     et_inst = (image.select('LAMBDA_E').multiply(3600.0).divide(lam)
                .rename('ET_INST_MM_HR'))
     image = image.addBands(et_inst)
 
-    # ET₂₄ = EF × Rn24 × 86400 / λ
-    et_24 = (evap_frac.multiply(rn24).multiply(spd).divide(lam)
-             .max(0).rename('ET_24'))
-    image = image.addBands(et_24)
+    if mode == 'SEBAL_ID':
+        # ETrF_inst = ET_inst / ETr_inst (ikkalasi mm/soat)
+        # ref_type — EKSTRAPOLYATSIYA referensi (alfalfa default, grass sinov uchun).
+        # DIQQAT: cold anchor (ET_cp=1.05·ETr) HAR DOIM ALFALFA da qoladi
+        # (kitobning fizik ta'rifi) — u energy_balance'da 'ETR_INST' dan olinadi.
+        if ref_type == 'alfalfa':
+            etr_inst = image.select('ETR_INST').max(0.01)   # 0 ga bo'linishdan himoya
+        else:
+            etr_inst = (ref_et.compute_instant_etr(
+                image, ref_type=ref_type, band_name='ETR_INST_REF')
+                .select('ETR_INST_REF').max(0.01))
+        etrf_inst = (et_inst.divide(etr_inst)
+                     .clamp(0, 1.05)         # ET_cold=1.05·ETr → fizik chegara 1.05
+                     .rename('ETRF_INST'))
+        # ETr24 — kunlik referens ET (ref_type bo'yicha)
+        etr24 = get_daily_etr24(date, roi, image.select('DEM'),
+                                ref_type=ref_type, utc_offset=utc_offset,
+                                source=etr24_source)
+        # QIYA YUZA (Eq 5.17-5.19): ETrF24 = C_rad · ETrF_inst
+        etrf24 = etrf_inst
+        image = image.addBands(etrf_inst)
+        if sloping_terrain:
+            from . import sloping_terrain as slt
+            c_rad = slt.c_radiation(image)             # band 'C_RAD'
+            image = image.addBands(c_rad)
+            etrf24 = etrf_inst.multiply(c_rad).rename('ETRF24')
+        # ET₂₄ = ETrF24 · ETr24  (Eq 5.8 / 5.19)
+        et_24 = etrf24.multiply(etr24).max(0).rename('ET_24')
+        image = image.addBands(etr24).addBands(et_24)
+    else:
+        # SEBAL_B: ET₂₄ = EF × Rn24 × 86400 / λ
+        et_24 = (evap_frac.multiply(rn24).multiply(spd).divide(lam)
+                 .max(0).rename('ET_24'))
+        image = image.addBands(et_24)
 
     return image
 
@@ -128,7 +220,9 @@ def compute_daily_et(image, roi):
 # MONTHLY EXTRAPOLATION
 # ==============================================================
 
-def compute_monthly_et(image_list, roi, year, month):
+def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
+                       etrf_water_balance=False, ref_type='alfalfa',
+                       utc_offset=0, etr24_source='era5', sloping_terrain=False):
     """
     Oylik ET hisoblash — Λ interpolyatsiya + ERA5 kunlik radiatsiya.
 
@@ -156,6 +250,14 @@ def compute_monthly_et(image_list, roi, year, month):
     """
     import calendar
 
+    # SEBAL_ID + Appendix I: kunlik ETrF tuzatish (per-piksel suv balansi)
+    if mode == 'SEBAL_ID' and etrf_water_balance:
+        from . import etrf_water_balance as ewb
+        dem_img = ee.Image(image_list[0]).select('DEM')
+        return ewb.monthly_et_adjusted(image_list, roi, year, month, dem_img,
+                                       ref_type=ref_type, utc_offset=utc_offset,
+                                       etr24_source=etr24_source)
+
     days_in_month = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
 
@@ -163,9 +265,19 @@ def compute_monthly_et(image_list, roi, year, month):
     # Har bir image dan: sana, Λ, albedo, τsw
     # Bu server-side ishlashi uchun ImageCollection ga o'giramiz
 
-    lambda_collection = ee.ImageCollection(image_list).select(
-        ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST']
-    )
+    # SEBAL_ID: ETrF interpolyatsiya (Eq 5.9); SEBAL_B: EF interpolyatsiya
+    # QIYA YUZA: koeffitsientlar sahna bandi sifatida ETrF/EF bilan birga
+    # interpolyatsiya qilinadi (ular sahnaning o'z vaqti/geometriyasiga tegishli)
+    if mode == 'SEBAL_ID':
+        bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
+        interp_collection = ee.ImageCollection(image_list).select(bands)
+        dem_img = ee.Image(image_list[0]).select('DEM')
+    else:
+        bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST'] + \
+                (['RA24_RATIO'] if sloping_terrain else [])
+        interp_collection = ee.ImageCollection(image_list).select(bands)
+        dem_img = None
+    lambda_collection = interp_collection
 
     # Agar oyda bitta ham tasvir bo'lmasa — None qaytarish
     count = lambda_collection.size()
@@ -176,34 +288,36 @@ def compute_monthly_et(image_list, roi, year, month):
         day_offset = ee.Number(day_offset)
         current_date = month_start.advance(day_offset, 'day')
 
-        # Eng yaqin Landsat tasvirni topish va Λ ni olish
-        # Lineer interpolyatsiya: oldingi va keyingi tasvir orasida
-        lambda_interp = _interpolate_lambda(
-            lambda_collection, current_date
-        )
-
-        # Rs24 — ERA5 dan
-        rs24 = get_daily_solar_radiation(current_date, roi)
-
-        # Rn24
-        albedo_interp = lambda_interp.select('ALBEDO')
-        tau_sw = lambda_interp.select('TAU_SW')
-
-        rn24 = ((ee.Image(1.0).subtract(albedo_interp)).multiply(rs24)
-                .subtract(
-                    ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw)
-                )
-                .max(0))
-
-        # ET_kun (mm/day) — λ haroratga bog'liq (Tasumi 3.48)
-        evap_frac = lambda_interp.select('EVAP_FRAC')
-        lam = (lambda_interp.select('LST').subtract(273.0).multiply(-0.00236)
-               .add(2.501).multiply(1e6))
-        spd = cfg.DAILY_ET['seconds_per_day']
-
-        et_day = (evap_frac.multiply(rn24)
-                  .multiply(spd).divide(lam)
-                  .max(0))
+        if mode == 'SEBAL_ID':
+            # Eq 5.9: har tasvir ±8 kunni ifodalaydi → ENG YAQIN sahna hukmron
+            # (o'rtachalash YO'Q — SEBAL_B ning midpoint usulidan farqli)
+            interp = _nearest_scene(lambda_collection, current_date)
+            etrf_interp = interp.select('ETRF_INST')
+            # QIYA YUZA (Eq 5.18): ETrF24 = C_rad · ETrF_inst
+            if sloping_terrain:
+                etrf_interp = etrf_interp.multiply(interp.select('C_RAD'))
+            etr24 = get_daily_etr24(current_date, roi, dem_img,
+                                    ref_type=ref_type, utc_offset=utc_offset,
+                                    source=etr24_source)
+            et_day = etrf_interp.multiply(etr24).max(0)
+        else:
+            # SEBAL_B — o'zgarmagan: ikki sahna o'rtachasi (midpoint)
+            interp = _interpolate_lambda(lambda_collection, current_date)
+            # SEBAL_B: ET_kun = EF_interp × Rn24 × 86400 / λ
+            rs24 = get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
+            if sloping_terrain:
+                rs24 = rs24.multiply(interp.select('RA24_RATIO'))
+            albedo_interp = interp.select('ALBEDO')
+            tau_sw = interp.select('TAU_SW')
+            rn24 = ((ee.Image(1.0).subtract(albedo_interp)).multiply(rs24)
+                    .subtract(
+                        ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
+                    .max(0))
+            evap_frac = interp.select('EVAP_FRAC')
+            lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+                   .add(2.501).multiply(1e6))
+            spd = cfg.DAILY_ET['seconds_per_day']
+            et_day = (evap_frac.multiply(rn24).multiply(spd).divide(lam).max(0))
 
         return et_day
 
@@ -314,6 +428,25 @@ def compute_monthly_et(image_list, roi, year, month):
 #     ))
 
 #     return result.unmask(default_image)
+
+def _nearest_scene(collection, target_date):
+    """
+    SEBAL_ID (Tasumi Eq 5.9) — ENG YAQIN sahna (vaqt bo'yicha) hukmron.
+
+    "every image represents a period of about 16 days, with 8 days before and
+     8 days after the day of the processed image" → har kun o'ziga eng yaqin
+    sahnaning ETrF sini oladi (O'RTACHALASH YO'Q).
+    Masalan 8 va 24 mart sahnalari: 1–16 mart → 8-mart ETrF; 16–31 mart → 24-mart.
+    """
+    t = ee.Number(target_date.millis())
+
+    def _dt(img):
+        return img.set('dt', ee.Number(img.get('system:time_start'))
+                       .subtract(t).abs())
+
+    nearest = ee.Image(collection.map(_dt).sort('dt').first())
+    return nearest.unmask(collection.mean())   # bulutli piksel → kolleksiya o'rtachasi
+
 
 def _interpolate_lambda(lambda_collection, target_date):
     """

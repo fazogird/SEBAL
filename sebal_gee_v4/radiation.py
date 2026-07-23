@@ -59,7 +59,7 @@ from . import config as cfg
 
 #     return image.addBands(k_down)
 
-def compute_incoming_shortwave(image):
+def compute_incoming_shortwave(image, sloping_terrain=False):
     """
     Tushuvchi qisqa to'lqin radiatsiyasi K↓ (W/m²) — clear-sky astronomik formula.
 
@@ -97,6 +97,13 @@ def compute_incoming_shortwave(image):
     cos_theta = ee.Image(
         ee.Algorithms.If(has_sza, cos_theta_hls, cos_theta_landsat)
     )
+
+    # QIYA YUZA (Tasumi Eq 5.12-5.13): cosθ qiyalik+ekspozitsiyadan, keyin
+    # gorizontal ekvivalentga (÷cos s). Yassi yuzada bu sin(quyosh balandligi)
+    # ga teng bo'ladi — ya'ni sloping_terrain=False bilan mos.
+    if sloping_terrain:
+        from . import sloping_terrain as slt
+        cos_theta = slt.cos_theta_instant(image)
 
     # 2. dr — Yer-Quyosh masofasi (FAO-56 / Bastiaanssen)
     date = ee.Date(image.get('system:time_start'))
@@ -146,8 +153,14 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
     """
     Tushuvchi uzun to'lqin radiatsiyasi L↓ (W/m²) — atmosferadan yerga.
 
-    MODE-ga bog'liq (ikki usul — ikkalasi ham SAQLANGAN):
+    MODE-ga bog'liq (usullar — barchasi SAQLANGAN):
       'yangiliklar'          → ERA5-Land STRD/3600 (reanalysis)  [pastda, o'chirilmagan]
+      'SEBAL_ID'             → Eq. (4.13) — Tasumi (2003); koeffitsientlar
+          Allen et al. (2000) tomonidan Kimberly (Idaho) yaqinidagi "RAPID"
+          tadqiqot ma'lumotlaridan ishlab chiqilgan:
+              R_L↓ = 0.85 · σ · [-ln(τsw)]^0.09 · Tref^4
+          bu yerda Tref — referens nuqtadagi (odatda yaxshi sug'orilgan piksel,
+          yer va havo harorati o'xshash bo'lgan joy) yer yuzasi harorati.
       'SEBAL_B' / boshqa      → empirik (Bastiaanssen 1995; Tasumi Eq. 3.13):
           L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
           Tref = cold (well-watered) referens SURFACE temp — cropland'ning eng
@@ -197,8 +210,9 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
         l_down = strd.rename('L_DOWN').max(0)
         return image.addBands(l_down)
 
-    # ---- SEBAL_B (va boshqa): empirik Bastiaanssen 1995 (Tasumi 3.13) ----
-    # L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
+    # ---- Empirik L↓ = c1 · σ · [-ln(τsw)]^c2 · Tref^4 ----
+    #   SEBAL_ID → Eq. (4.13): c1=0.85, c2=0.09  (Allen et al. 2000, RAPID/Kimberly ID)
+    #   SEBAL_B  → Eq. (3.13): c1=1.08, c2=0.265 (Bastiaanssen 1995)
     tau_sw = image.select('TAU_SW') #.clamp(0.01, 0.99)
     lst = image.select('LST')
 
@@ -227,7 +241,9 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
                                 'LST p10 (cold anchor)',
                                 "ERA5 AIR_TEMP fallback (bo'sh/bulutli cold zona)")
 
-    emiss_a = tau_sw.log().multiply(-1).pow(0.265).multiply(1.08)   # εa
+    # mode bo'yicha koeffitsientlar (Eq. 4.13 vs 3.13)
+    c_mult, c_pow = (0.85, 0.09) if mode == 'SEBAL_ID' else (1.08, 0.265)
+    emiss_a = tau_sw.log().multiply(-1).pow(c_pow).multiply(c_mult)   # εa
     l_down = (emiss_a.multiply(sigma)
               .multiply(ee.Image.constant(tref).pow(4))
               .rename('L_DOWN').max(0))
@@ -406,18 +422,20 @@ def compute_net_available_energy(image):
 # MAIN: Compute all radiation components
 # ==============================================================
 
-def compute_all(image, mode='yangiliklar', roi=None, cold_mask=None):
+def compute_all(image, mode='yangiliklar', roi=None, cold_mask=None,
+                sloping_terrain=False):
     """
     Barcha radiatsiya va tuproq issiqlik oqimini hisoblash.
 
     mode → L↓ usulini tanlaydi (compute_incoming_longwave):
       'yangiliklar' → ERA5 STRD; boshqa (SEBAL_B/pysebal) → empirik (Tref).
     roi, cold_mask → SEBAL_B L↓ Tref (cold referens LST) uchun.
+    sloping_terrain → K↓ uchun qiyalik/ekspozitsiyali cosθ (Tasumi Eq 5.12-5.13).
 
     Input:  Image with surface properties
     Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
     """
-    image = compute_incoming_shortwave(image)
+    image = compute_incoming_shortwave(image, sloping_terrain=sloping_terrain)
     image = compute_incoming_longwave(image, mode, roi, cold_mask)
     image = compute_outgoing_longwave(image)
     image = compute_net_radiation(image)

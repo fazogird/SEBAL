@@ -96,20 +96,42 @@ def compute_albedo(image):
 # EMISSIVITY — Bastiaanssen F.6 + edge cases
 # ==============================================================
 
-def compute_emissivity(image):
+def compute_emissivity(image, mode='SEBAL_B'):
     """
-    Termal emissivitet — Bastiaanssen (1998) Formula 6.
+    Termal emissivitet.
 
-    ε₀ = 1.009 + 0.047 × ln(NDVI)   [NDVI: 0.16–0.74]
+    mode='SEBAL_ID' — Tasumi (2003) Eq. (4.28), LAI-asosli (NDVI > 0):
+        ε₀ = 0.95 + 0.01 × LAI     (LAI < 3 uchun o'rinli)
+        LAI ≥ 3                    → ε₀ = 0.98
+        suv va qor                → ε₀ = 0.985  (konstanta)
+      (LAI band OLDIN hisoblangan bo'lishi kerak — compute_all tartibi buni ta'minlaydi.)
 
-    Edge cases:
-      NDVI < 0         → ε₀ = 0.985  (suv)
-      0 ≤ NDVI < 0.16  → ε₀ = 0.960  (yalang'och tuproq)
-      NDVI > 0.74      → ε₀ = 0.985  (zich o'simlik)
+    mode boshqa (SEBAL_B) — Bastiaanssen (1998) Formula 6:
+        ε₀ = 1.009 + 0.047 × ln(NDVI)   [NDVI: 0.16–0.74]
+        NDVI < 0         → ε₀ = 0.985  (suv)
+        0 ≤ NDVI < 0.16  → ε₀ = 0.960  (yalang'och tuproq)
+        NDVI > 0.74      → ε₀ = 0.985  (zich o'simlik)
 
-    Source: Van de Griend & Owe (1992), Bastiaanssen (1998) Eq.6
+    Source: SEBAL_ID — Tasumi (2003) Eq. 4.28; SEBAL_B — Van de Griend & Owe
+    (1992), Bastiaanssen (1998) Eq.6.
     """
     ndvi = image.select('NDVI')
+
+    # ---- SEBAL_ID: Eq. (4.28) LAI-asosli ----
+    if mode == 'SEBAL_ID':
+        eid = cfg.EMISSIVITY_ID
+        lai = image.select('LAI')
+        emissivity = (
+            ee.Image(eid['water_snow'])      # default: suv/qor (0.985); NDVI<0 shu yerda
+            .where(ndvi.gt(0).And(lai.lt(eid['lai_max'])),
+                   lai.multiply(eid['b']).add(eid['a']))   # 0.95 + 0.01·LAI (LAI<3)
+            .where(lai.gte(eid['lai_max']),
+                   eid['dense'])             # LAI ≥ 3 → 0.98
+            .rename('EMISSIVITY')
+        )
+        return image.addBands(emissivity)
+
+    # ---- SEBAL_B: Bastiaanssen F.6 (NDVI-asosli) ----
     ecfg = cfg.EMISSIVITY
 
     # Formula diapazoni: 0.16 ≤ NDVI ≤ 0.74
@@ -151,9 +173,13 @@ def compute_z0m(image):
     rcfg = cfg.ROUGHNESS
 
     # ---- Per-piksel z₀m = 0.018 × LAI ----
+    # MAX chegara YO'Q: LAI ≤ 6 → z₀m ≤ 0.108 m (ekin uchun fizik: z₀m ≈ 0.1·h).
+    # Eski z0m_max=1.0 hech qachon faollashmasdi (Gediz SAVI-exp formulasidan
+    # qolgan o'lik qoldiq edi) — olib tashlandi. MIN 0.005 qoladi: u ln(200/z₀m)
+    # domenini himoya qiladi (LAI < 0.28 bo'lgan yalang'och piksellarda).
     lai = image.select('LAI')
     z0m = (lai.multiply(cfg.Z0M_LAI_COEF)
-           .clamp(rcfg['z0m_min'], rcfg['z0m_max'])
+           .max(rcfg['z0m_min'])
            .rename('Z0M'))
 
     z0h = (z0m.divide(ee.Number(rcfg['kB_inv']).exp())
@@ -238,22 +264,22 @@ def compute_lai(image):
 # MAIN: Compute all surface properties
 # ==============================================================
 
-def compute_all(image):
+def compute_all(image, mode='SEBAL_B'):
     """
     Barcha yer yuzasi parametrlarini ketma-ket hisoblash.
 
     Input:  Preprocessed image (SR, LST, DEM, ERA5)
-    Output: Image + NDVI, SAVI, ALBEDO, EMISSIVITY, Z0M, Z0H,
-            TAU_SW, LAI bands
+    Output: Image + NDVI, SAVI, ALBEDO, LAI, EMISSIVITY, Z0M, Z0H, TAU_SW bands
 
-    Tartib muhim — LAI → z₀m (0.018·LAI), NDVI → emissivity/z₀m,wind
+    Tartib muhim — LAI → z₀m (0.018·LAI) VA (SEBAL_ID) LAI → emissivity (Eq.4.28),
+    shuning uchun compute_lai emissivity'dan OLDIN chaqiriladi.
     """
     image = compute_ndvi(image)
     image = compute_savi(image)
     image = compute_albedo(image)
-    image = compute_emissivity(image)
-    image = compute_lai(image)        # z₀m LAI'ga bog'liq → OLDIN
-    image = compute_z0m(image)        # 0.018·LAI + z₀m,wind(NDVI)
+    image = compute_lai(image)             # OLDIN: z₀m VA SEBAL_ID emissivity LAI'ga bog'liq
+    image = compute_emissivity(image, mode) # SEBAL_ID → Eq.4.28 (LAI); SEBAL_B → F.6 (NDVI)
+    image = compute_z0m(image)             # 0.018·LAI + z₀m,wind(NDVI)
     image = compute_transmissivity(image)
 
     return image

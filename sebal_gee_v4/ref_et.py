@@ -124,6 +124,59 @@ class RefETCalculator:
             g_day, g_night = Rn.multiply(0.04), Rn.multiply(0.20)
         return g_day.where(Rn.lt(0), g_night)
 
+    # ---- Soatlik astronomiya + radiatsiya (SEBAL_ID instant ETr uchun) ----
+    #   Manba: D:\Cloud_comp\Idaho_project\script2\reference_et\penman_monteith.py
+    #   (FAO-56 Eq. 28/31/32/39 soatlik). K_DOWN o'rniga haqiqiy PM Rs ishlatiladi.
+
+    @staticmethod
+    def _seasonal_correction(doy):
+        """Mavsumiy vaqt tuzatmasi Sc [soat]. FAO-56 Eq 32."""
+        pi = math.pi
+        b = ee.Number(doy).subtract(81).multiply(2 * pi / 364.0)
+        return (b.multiply(2).sin().multiply(0.1645)
+                .subtract(b.cos().multiply(0.1255))
+                .subtract(b.sin().multiply(0.025)))
+
+    def _omega_mid_hour(self, lon_deg, doy, hour):
+        """Quyosh soat burchagi omega [rad], soat o'rtasi. FAO-56 Eq 31.
+        UTC + haqiqiy boylam (lon/15) orqali local solar vaqt."""
+        pi = math.pi
+        Sc = self._seasonal_correction(doy)
+        t_mid = ee.Number(hour).add(0.5)
+        sol_time = (ee.Image(lon_deg).multiply(1.0 / 15.0)
+                    .add(t_mid).add(Sc).subtract(12))
+        return sol_time.multiply(pi / 12.0)
+
+    def Ra_hourly(self, lat_rad, lon_deg, doy, hour, dr, dec):
+        """Extraterrestrial Radiation [MJ/m2/soat]. FAO-56 Eq 28."""
+        pi = math.pi
+        omega = self._omega_mid_hour(lon_deg, doy, hour)
+        omega1 = omega.subtract(pi / 24.0)
+        omega2 = omega.add(pi / 24.0)
+        ws = lat_rad.tan().multiply(-1).multiply(dec.tan()).acos()
+        omega1c = omega1.max(ws.multiply(-1)).min(ws)   # quyosh bor vaqt
+        omega2c = omega2.max(ws.multiply(-1)).min(ws)
+        term1 = (omega2c.subtract(omega1c)
+                 .multiply(lat_rad.sin()).multiply(dec.sin()))
+        term2 = (lat_rad.cos().multiply(dec.cos())
+                 .multiply(omega2c.sin().subtract(omega1c.sin())))
+        Ra = term1.add(term2).multiply(dr).multiply(12 * 60 / pi * self.Gsc)
+        return Ra.max(0)   # tun → 0
+
+    @staticmethod
+    def Rnl_hourly(T_k, ea_kPa, Rs, Rso):
+        """Net Longwave Radiation [MJ/m2/soat]. FAO-56 Eq 39 (soatlik).
+        Kechada (Rs≈0) fcd=1.0, kunduzi haqiqiy bulutlilik nisbatidan."""
+        Rso_safe = Rso.max(1e-6)
+        rs_rso = Rs.divide(Rso_safe).clamp(0.3, 1.0)
+        fcd_day = rs_rso.multiply(1.35).subtract(0.35)
+        fcd_night = ee.Image.constant(1.0)
+        is_day = Rs.gt(0.01)
+        fcd = fcd_day.where(is_day.Not(), fcd_night)
+        emiss = ea_kPa.sqrt().multiply(-0.14).add(0.34)
+        sb = T_k.pow(4).multiply(2.042e-10)   # Stefan-Boltzmann soatlik (=4.901e-9/24)
+        return sb.multiply(emiss).multiply(fcd)
+
     # ---- Asosiy hisoblash ----
 
     def calculate(self, img, dem, mode='daily'):
@@ -186,17 +239,24 @@ class RefETCalculator:
 # KUNLIK ERA5 AGREGATSIYA — ETref uchun (tez, bitta so'rov)
 # ==============================================================
 
-def get_daily_era5_aggregate(date, roi):
+def get_daily_era5_aggregate(date, roi, utc_offset=0):
     """
-    Butun kalendar kun (00:00-23:59 UTC) uchun ERA5-Land'dan
-    T_max/T_min/T_mean, kunlik o'rtacha u2/P/ea, kunlik yig'indi Rs.
+    Butun kalendar kun uchun ERA5-Land'dan T_max/T_min/T_mean,
+    kunlik o'rtacha u2/P/ea, kunlik yig'indi Rs.
+
+    utc_offset — MAHALLIY STANDART vaqt zonasi (soat; DST QO'LLANMAYDI).
+      SEBAL Manual Appendix 5 (A): kunlik oyna mahalliy standart kalendar kun
+      bo'lishi kerak (UTC kun EMAS). Mahalliy 00:00 = UTC (00:00 − utc_offset).
+      Masalan Nebraska (Central, −6): oyna 06:00 UTC dan boshlanadi.
+      utc_offset=0 → eski UTC-kun xatti-harakati.
 
     Bitta ImageCollection filtrlash + bir nechta reducer — tez ishlaydi
     (overpass-vaqtidagi ±1soatlik oynadan farqli, bu yerda 24 soatlik
     to'liq kun kerak, lekin barcha operatsiyalar server-side, bitta
     so'rov ichida).
     """
-    day_start = ee.Date(date)
+    # Mahalliy standart kalendar kun → UTC oynasi
+    day_start = ee.Date(date).advance(-utc_offset, 'hour')
     day_end = day_start.advance(1, 'day')
 
     hourly = (ee.ImageCollection(cfg.ERA5['collection'])
@@ -248,7 +308,7 @@ def get_daily_era5_aggregate(date, roi):
 # ETREF_24 — Landsat sahnaga qo'shish
 # ==============================================================
 
-def compute_etref_daily(image, roi):
+def compute_etref_daily(image, roi, utc_offset=0):
     """
     Landsat sahna sanasiga mos kunlik ETREF_24 (grass, mm/day) hisoblab,
     image'ga qo'shadi.
@@ -260,7 +320,7 @@ def compute_etref_daily(image, roi):
     day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
     day_start = ee.Date(day_str)
 
-    daily_met = get_daily_era5_aggregate(day_start, roi)
+    daily_met = get_daily_era5_aggregate(day_start, roi, utc_offset=utc_offset)
     dem = image.select('DEM')
 
     calc = RefETCalculator(ref_type='grass')
@@ -268,6 +328,71 @@ def compute_etref_daily(image, roi):
 
     etref = result.select('ETr').rename('ETREF_24')
     return image.addBands(etref)
+
+
+# ==============================================================
+# INSTANT (OVERPASS) ALFALFA ETr — SEBAL_ID anchor kalibratsiyasi uchun
+# ==============================================================
+
+def compute_instant_etr(image, ref_type='alfalfa', band_name='ETR_INST'):
+    """
+    Overpass momentidagi ASCE-EWRI SOATLIK referens ET [mm/soat] — FAO-56
+    Penman-Monteith (Tasumi 2003, Appendix B). SEBAL_ID cold piksel
+    (ET_cp = 1.05·ETr) va hot piksel suv balansi uchun.
+
+    Kirish (image, overpass-soatga mos ERA5 bandlari + DEM):
+      AIR_TEMP (K), PRESSURE (Pa), WIND_SPEED_10M (m/s), DEWPOINT (K),
+      SSRD (surface_solar_radiation_downwards_hourly, J/m²), DEM (m).
+    Rs = SSRD/1e6 (MJ/m²/soat). Chiqish: 'ETR_INST' band (mm/soat).
+
+    MUHIM: Rs uchun K_DOWN (SEBAL instant qisqa to'lqin) EMAS, aynan
+    haqiqiy quyosh radiatsiyasi (SSRD) ishlatiladi — ETr standart PM
+    tenglamasidan (o'z Rn=Rns−Rnl bilan) kelishi shart.
+    """
+    img = ee.Image(image)
+    calc = RefETCalculator(ref_type=ref_type)
+    dem = img.select('DEM')
+
+    ll = ee.Image.pixelLonLat()
+    lat_rad = ll.select('latitude').multiply(math.pi / 180.0)
+    lon_deg = ll.select('longitude')
+
+    date = ee.Date(img.get('system:time_start'))
+    doy = ee.Number(date.getRelative('day', 'year')).add(1)
+    hour = ee.Number(date.get('hour'))     # UTC soat (omega lon/15 bilan localga o'tadi)
+    dr, dec = calc._dr_decl(doy)
+
+    # --- Meteo kirishlar (bizning ERA5 bandlaridan) ---
+    T = img.select('AIR_TEMP').subtract(273.15)              # °C
+    P = img.select('PRESSURE').divide(1000.0)                # kPa
+    wind_2m = 4.87 / math.log(67.8 * 10 - 5.42)             # 10m→2m, ≈0.748
+    u2 = img.select('WIND_SPEED_10M').multiply(wind_2m)      # m/s
+    Td = img.select('DEWPOINT').subtract(273.15)
+    ea = calc._esat(Td)                                      # kPa
+    es = calc._esat(T)                                       # kPa
+    Rs = img.select('SSRD').divide(1e6)                      # MJ/m²/soat
+
+    Delta = calc._delta_svp(T, es)
+    Gamma = calc._gamma(P)
+
+    # --- Radiatsiya (soatlik) ---
+    Ra = calc.Ra_hourly(lat_rad, lon_deg, doy, hour, dr, dec)
+    Rso = calc.Rso(Ra, dem)
+    Rns = Rs.multiply(1.0 - calc.albedo)
+    Rnl = calc.Rnl_hourly(T.add(273.16), ea, Rs, Rso)
+    Rn = Rns.subtract(Rnl)
+    G = calc.soil_heat_flux(Rn, 'hourly')
+
+    # --- ASCE PM (alfalfa, kunduz koeffitsientlari — overpass doim kunduzi) ---
+    Cn, Cd = calc.Cn_hr_day, calc.Cd_hr_day
+    num1 = Delta.multiply(Rn.subtract(G)).multiply(0.408)
+    num2 = (Gamma.multiply(u2).multiply(es.subtract(ea).max(0))
+            .multiply(ee.Image.constant(Cn).divide(T.add(273.15))))
+    den = Delta.add(Gamma.multiply(u2.multiply(Cd).add(1.0)))
+    etr = num1.add(num2).divide(den).max(0).rename(band_name)   # mm/soat
+
+    return img.addBands(etr, overwrite=True)
+
 
 # ==============================================================
 # ETREF_24 (grass) + ETPOT_24 (alfalfa) — BITTA ERA5 so'rovdan

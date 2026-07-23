@@ -206,38 +206,59 @@ def get_era5_for_image(image, roi):
     # Bu ALLAQACHON to'g'ri UTC vaqt — 2024-07-07T17:30:00Z
     date = ee.Date(image.get('system:time_start'))
 
-    # ±1 soat oyna — overpass atrofida
-    era5_start = date.advance(-1, 'hour')
-    era5_end = date.advance(1, 'hour')
+    # ── SEBAL Manual, Appendix 5 (B qism): instant ob-havo overpass vaqtiga
+    #    CHIZIQLI INTERPOLYATSIYA qilinadi (±1 soatlik o'rtacha EMAS).
+    #    ERA5 vaqt konvensiyasi (empirik tasdiqlangan, quyosh chiqishi testi):
+    #      • INSTANT bandlar (T2m, dewpoint, bosim, u/v shamol) — yorliq vaqtida
+    #        AYNI QIYMAT   → Flag_period = 1 (nuqtaviy)
+    #      • AKKUMULYATIV (ssrd/strd _hourly) — yorliq `T` = [T−1h, T] oralig'i
+    #        → effektiv markazi T−0.5h   → Flag_period = 0 (davr OXIRI)
+    #    Shuning uchun ikki guruh ALOHIDA og'irlik bilan interpolyatsiya qilinadi.
+    day0 = ee.Date(date.format('YYYY-MM-dd'))
+    t_h = date.difference(day0, 'hour')        # yarim tundan soat (kasrli), UTC
 
-    # ERA5 collection filtr
-    era5 = (ee.ImageCollection(cfg.ERA5['collection'])
-            .filterDate(era5_start, era5_end)
-            .filterBounds(roi)
-            .mean())  # 2 soatlik oynada o'rtacha
+    col = (ee.ImageCollection(cfg.ERA5['collection']).filterBounds(roi))
 
-    # Wind speed hisoblash: u va v komponentlardan
-    u_wind = era5.select(cfg.ERA5['bands']['u_wind'])
-    v_wind = era5.select(cfg.ERA5['bands']['v_wind'])
+    def _at(h):
+        """h — day0 dan soat (ee.Number); shu yorliqli ERA5 rasmi."""
+        s = day0.advance(h, 'hour')
+        return ee.Image(col.filterDate(s, s.advance(1, 'hour')).first())
+
+    def _lerp(h1, w):
+        """h1 va h1+1 yorliqlari orasida chiziqli interpolyatsiya (og'irlik w)."""
+        a = _at(h1)
+        b = _at(ee.Number(h1).add(1))
+        return (a.multiply(ee.Number(1).subtract(w))
+                .add(b.multiply(ee.Number(w))))
+
+    # INSTANT: yorliqlar floor(t), floor(t)+1;  og'irlik = kasr qism
+    h_inst = t_h.floor()
+    era5_inst = _lerp(h_inst, t_h.subtract(h_inst))
+
+    # AKKUMULYATIV: markazlar T−0.5 → t ni qamrovchi juftlik
+    h_acc = t_h.subtract(0.5).floor().add(1)
+    era5_acc = _lerp(h_acc, t_h.subtract(h_acc.subtract(0.5)))
+
+    # ---- INSTANT bandlar (era5_inst dan) ----
+    u_wind = era5_inst.select(cfg.ERA5['bands']['u_wind'])
+    v_wind = era5_inst.select(cfg.ERA5['bands']['v_wind'])
     wind_speed = (u_wind.pow(2).add(v_wind.pow(2))
                   .sqrt()
                   .rename('WIND_SPEED_10M'))
 
     # Air temperature (K)
-    air_temp = era5.select(cfg.ERA5['bands']['air_temp']).rename('AIR_TEMP')
+    air_temp = era5_inst.select(cfg.ERA5['bands']['air_temp']).rename('AIR_TEMP')
 
     # Surface pressure (Pa)
-    pressure = era5.select(cfg.ERA5['bands']['pressure']).rename('PRESSURE')
+    pressure = era5_inst.select(cfg.ERA5['bands']['pressure']).rename('PRESSURE')
 
-    # Incoming solar radiation (W/m²)
-    # ERA5 ssrd — accumulated, soatlik farqni olish kerak
-    ssrd = era5.select(cfg.ERA5['bands']['ssrd']).rename('SSRD')
+    # Dewpoint temperature (K)
+    dewpoint = era5_inst.select(cfg.ERA5['bands']['dewpoint']).rename('DEWPOINT')
 
-    # Incoming longwave radiation (W/m²)
-    strd = era5.select(cfg.ERA5['bands']['strd']).rename('STRD')
-    
-    # Dewpoint temperature (K) — et_decomposition uchun
-    dewpoint = era5.select(cfg.ERA5['bands']['dewpoint']).rename('DEWPOINT')
+    # ---- AKKUMULYATIV bandlar (era5_acc dan — markazi T−0.5h) ----
+    # ssrd/strd _hourly: J/m² (bir soatlik yig'indi)
+    ssrd = era5_acc.select(cfg.ERA5['bands']['ssrd']).rename('SSRD')
+    strd = era5_acc.select(cfg.ERA5['bands']['strd']).rename('STRD')
 
     # Bitta image ga birlashtirish
     era5_combined = (wind_speed
@@ -306,7 +327,7 @@ def _best_per_date_factory(collection):
 def build_collection(roi, date_start, date_end, satellite='BOTH',
                      cloud_max=None, mosaic_same_date=True,
                      wrs_path=None, wrs_row=None,
-                     mgrs_tile=None):
+                     mgrs_tile=None, cloud_roi=None, cloud_use_cropland=True):
     '''
     Landsat yoki HLS ImageCollection qurish.
 
@@ -378,8 +399,11 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
     if wrs_row is not None:
         merged = merged.filter(ee.Filter.eq('WRS_ROW', wrs_row))
 
-    # Cropland cloud precheck
-    merged = filter_by_crop_cloud(merged, roi, cfg.CROP_CLOUD_MAX)
+    # Cloud precheck — default keng ROI cropland; polygon rejimida cloud_roi=dala
+    cloud_geom = cloud_roi if cloud_roi is not None else roi
+    cloud_scale = 100 if cloud_use_cropland else 30
+    merged = filter_by_crop_cloud(merged, cloud_geom, cfg.CROP_CLOUD_MAX,
+                                  cloud_use_cropland, cloud_scale)
 
     # Sana bo'yicha mosaic (per-date) — Landsat
     if wrs_path is not None:
@@ -582,9 +606,12 @@ def get_cropland_mask():
     return cropland
 
 
-def filter_by_crop_cloud(collection, roi, max_pct):
+def filter_by_crop_cloud(collection, roi, max_pct, use_cropland=True, scale=100):
     """
-    Cropland ustidagi bulut % bo'yicha precheck — har sahna KETMA-KET.
+    `roi` ustidagi bulut % bo'yicha precheck — har sahna KETMA-KET.
+
+    use_cropland / scale → add_crop_cloud_pct ga uzatiladi. Polygon rejimida
+    use_cropland=False (dala ustida tekshiruv), scale=30.
 
     Server-side variant (map + filter) GEE da barcha sahnalarning
     reduceRegion larini parallel ishlatib, "Too many concurrent
@@ -599,7 +626,8 @@ def filter_by_crop_cloud(collection, roi, max_pct):
     for img_id in ids:
         img = collection.filter(ee.Filter.eq('system:index', img_id)).first()
         pct = ee.Number(
-            add_crop_cloud_pct(img, roi).get('crop_cloud_pct')).getInfo()
+            add_crop_cloud_pct(img, roi, use_cropland, scale)
+            .get('crop_cloud_pct')).getInfo()
         if pct < max_pct:
             print(f"    ✅ Cloud precheck OK: {pct:.1f}% "
                   f"(cropland, limit={max_pct}%)  [{img_id}]")
@@ -669,13 +697,16 @@ def add_crop_cloud_pct_hls(image, roi):
  
     return image.set('crop_cloud_pct', crop_cloud_pct.multiply(100))
 
-def add_crop_cloud_pct(image, roi):
+def add_crop_cloud_pct(image, roi, use_cropland=True, scale=100):
     """
-    QA_PIXEL orqali faqat cropland ustidagi yomon piksel foizini hisoblaydi.
-    Bu masklamaydi. Faqat image property qo'shadi: crop_cloud_pct.
-    """
-    cropland = get_cropland_mask().clip(roi)
+    QA_PIXEL orqali `roi` ustidagi yomon (bulut/soya/qor/fill) piksel foizini
+    hisoblaydi (image property: crop_cloud_pct). Masklamaydi.
 
+    use_cropland=True  (default) → faqat ESA cropland ustida (keng ROI uchun).
+    use_cropland=False → butun `roi` ustida cropland maskasiz — POLYGON rejimi
+      uchun: bulut tekshiruvi aynan dala (footprint polygon) ustida bo'ladi.
+      (Keng kalibratsiya ROI'da bulut bo'lsa ham, dala toza sahna qoladi.)
+    """
     qa = image.select(cfg.BAND_NAMES['qa'])
 
     bad_mask = (
@@ -685,21 +716,27 @@ def add_crop_cloud_pct(image, roi):
         .Or(qa.bitwiseAnd(cfg.QA_BITMASK['cloud']))
         .Or(qa.bitwiseAnd(cfg.QA_BITMASK['cloud_shadow']))
         .Or(qa.bitwiseAnd(cfg.QA_BITMASK['snow']))
-    )
+    ).gt(0).rename('CLD')
 
-    crop_bad = bad_mask.gt(0).updateMask(cropland)
+    if use_cropland:
+        bad = bad_mask.updateMask(get_cropland_mask().clip(roi))
+    else:
+        bad = bad_mask
 
-    crop_cloud_pct = crop_bad.reduceRegion(
+    d = bad.reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=roi,
-        scale=100,
+        scale=scale,
         maxPixels=1e8,
         bestEffort=True
-    ).get('QA_PIXEL')
+    )
 
-    # Fallback 1 (=100%): keyin ×100 qilinadi, 100 qo'yilsa 10000% chiqadi
+    # Null-guard: kalit BOR bo'lsa qiymatni olamiz (0.0 = to'liq toza — VALID!),
+    # kalit YO'Q bo'lsa (bo'sh hudud) → fallback 1 (=100%). DIQQAT: eski
+    # If(pct,pct,1) 0.0 ni ham FALSY deb 100% qilardi — kichik toza dala uchun
+    # xato edi; .contains() bilan 0.0 to'g'ri saqlanadi.
     crop_cloud_pct = ee.Number(
-        ee.Algorithms.If(crop_cloud_pct, crop_cloud_pct, 1)
+        ee.Algorithms.If(d.contains('CLD'), d.get('CLD'), 1)
     )
 
     return image.set('crop_cloud_pct', crop_cloud_pct.multiply(100))

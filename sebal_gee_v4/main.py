@@ -104,12 +104,38 @@ def get_hls_tile_geometry(mgrs_tile, date_start='2024-01-01',
 
 def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                  tile_label='', anchor_method='default',
-                 anchor_mode='median_anchor'):
+                 anchor_mode='median_anchor',
+                 cloud_roi=None, cloud_use_cropland=True,
+                 ref_type='alfalfa', utc_offset=None, etr24_source='era5',
+                 sloping_terrain=False):
     """
     Bitta ROI/tile uchun SEBAL pipeline.
     Returns: list of processed scene images
     """
     prefix = f"  [{tile_label}]" if tile_label else "  "
+
+    # SEBAL_ID: anchor BITTA NUQTA bo'lishi shart (cold/hot dT hamda hot suv
+    # balansi AYNI bir pikselga tayanadi — izchillik). Metod (cimec/plan/…)
+    # kandidatlarni topadi, point_anchor ulardan bittasini oladi.
+    if mode == 'SEBAL_ID' and anchor_mode != 'point_anchor':
+        print(f"{prefix} ℹ️ SEBAL_ID → anchor_mode='point_anchor' (bitta nuqta) majburiy")
+        anchor_mode = 'point_anchor'
+
+    # Mahalliy standart vaqt zonasi (SEBAL Manual App.5-A; DST YO'Q).
+    # Kunlik oyna (Rs24 / ETr24) shu offsetga ko'ra mahalliy kunga bog'lanadi.
+    if utc_offset is None:
+        utc_offset = daily_et.utc_offset_from_roi(roi)
+        print(f"{prefix} 🕒 utc_offset avtomatik = {utc_offset:+d} soat "
+              f"(zona markazi ≈ boylam/15; aniq bo'lmasa qo'lda bering)")
+
+    # QIYA YUZA rejimi (Tasumi Ch.V): z_ws — "ob-havo stansiyasi" balandligi
+    # (ERA5 uchun ROI o'rtacha balandligi; App.K: shamol ta'siri past)
+    z_ws = 0.0
+    if sloping_terrain:
+        from . import sloping_terrain as slt
+        dem_ref = ee.Image(cfg.DEM['collection']).select(cfg.DEM['band'])
+        z_ws = slt.mean_elevation(dem_ref, roi)
+        print(f"{prefix} ⛰️ sloping_terrain=True | z_ws (ROI o'rtacha) = {z_ws:.0f} m")
     # Tile label bo'lsa: P156_R032 kabi qiymatdan path/row ajratamiz
     if tile_label:
         is_hls = satellite == 'HLS'
@@ -133,7 +159,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         satellite=satellite, cloud_max=cloud_max,
         mosaic_same_date=not bool(tile_label),
         wrs_path=path_num, wrs_row=row_num,
-        mgrs_tile=mgrs_tile)
+        mgrs_tile=mgrs_tile,
+        cloud_roi=cloud_roi, cloud_use_cropland=cloud_use_cropland)
     info = preprocessing.collection_info(collection)
 
     if tile_label:
@@ -148,8 +175,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         print(f"{prefix} ⚠️ Tasvir yo'q, o'tkazildi")
         return [], info
 
-    # Surface props
-    collection = collection.map(surface_props.compute_all)
+    # Surface props (mode → SEBAL_ID emissivity Eq.4.28 uchun)
+    collection = collection.map(lambda im: surface_props.compute_all(im, mode))
 
     # ---- Anchor zonalari — TILE uchun BIR MARTA (cold=cropland, hot=bare+shrub) ----
     # (radiation'dan OLDIN — SEBAL_B L↓ Tref cold_mask'ga bog'liq.)
@@ -157,7 +184,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
     # Radiation — mode L↓ usulini tanlaydi (SEBAL_B empirik Tref, yangiliklar ERA5)
     collection = collection.map(
-        lambda im: radiation.compute_all(im, mode, roi, cold_mask))
+        lambda im: radiation.compute_all(im, mode, roi, cold_mask,
+                                         sloping_terrain=sloping_terrain))
 
     # Energy balance — har sahna alohida
     image_list = collection.toList(collection.size())
@@ -179,8 +207,16 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             print(f"{prefix}   L↓ Tref: {_tref_src} = {_tref_val:.2f} K")
 
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
+        # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
+        # munosabati LST_DEM bilan qurilgani uchun (energy_balance.compute_all
+        # ichida). Aks holda cold/hot skalyarlari asl LST da, raster dT esa
+        # LST_DEM da bo'lib, c5 (kesma) 0.0065·z ga siljib ketadi.
+        img_anchor = img
+        if sloping_terrain:
+            from . import sloping_terrain as _slt
+            img_anchor = img.addBands(_slt.lst_dem(img), overwrite=True)
         anchors = energy_balance.select_anchor_pixels(
-            img, roi, cold_mask=cold_mask, hot_mask=hot_mask,
+            img_anchor, roi, cold_mask=cold_mask, hot_mask=hot_mask,
             method=anchor_method, anchor_mode=anchor_mode)
 
         if not anchors['valid'].getInfo():
@@ -189,8 +225,12 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             continue   # bu sahna scene_images ga QO'SHILMAYDI
 
         img = energy_balance.compute_all(
-            img, roi, cold_mask=cold_mask, hot_mask=hot_mask, anchors=anchors)
-        img = daily_et.compute_daily_et(img, roi)
+            img, roi, cold_mask=cold_mask, hot_mask=hot_mask, anchors=anchors,
+            mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws)
+        img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
+                                        utc_offset=utc_offset,
+                                        etr24_source=etr24_source,
+                                        sloping_terrain=sloping_terrain)
 
         if mode == 'pysebal':
             img = et_decomposition.compute_all(img, roi)
@@ -202,7 +242,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             # ETREF_24 (grass, ASCE-EWRI) va KC har sahnaga qo'shiladi.
             # pysebal'da bularni et_decomposition allaqachon beradi.
 
-            img = ref_et.compute_etref_daily(img, roi)
+            img = ref_et.compute_etref_daily(img, roi, utc_offset=utc_offset)
             kc = (img.select('ET_24')
                   .divide(img.select('ETREF_24').max(0.5))
                   .clamp(0, 2.5).rename('KC'))
@@ -210,6 +250,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         scene_images.append(img)
 
+    info['utc_offset'] = utc_offset   # oylik hisob shu offsetni ishlatishi uchun
+    info['sloping_terrain'] = sloping_terrain
     return scene_images, info
 
 
@@ -386,7 +428,9 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
 def _export_monthly(scene_images, roi, year, month, mode,
                    folder, scale, crs, tile_label='',
                    save_et=True, save_biomass=True,
-                   save_etref=True, save_tact=True, save_eact=True):
+                   save_etref=True, save_tact=True, save_eact=True,
+                   etrf_water_balance=False, ref_type='alfalfa', utc_offset=0,
+                   sloping_terrain=False):
     """
     Oylik rasterlar — har produkt ALOHIDA TIF.
     True/False bilan tanlash mumkin.
@@ -404,7 +448,10 @@ def _export_monthly(scene_images, roi, year, month, mode,
             scene_images, roi, year, month)
     else:
         monthly = daily_et.compute_monthly_et(
-            scene_images, roi, year, month)
+            scene_images, roi, year, month, mode=mode,
+            etrf_water_balance=etrf_water_balance,
+            ref_type=ref_type, utc_offset=utc_offset,
+            sloping_terrain=sloping_terrain)
 
     if monthly is None:
         print(f"  ❌ {month_str}: monthly image hosil bo‘lmadi.")
@@ -649,7 +696,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         month_tasks = _export_monthly(
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
-                            False, save_biomass, save_etref, save_tact, save_eact)
+                            False, save_biomass, save_etref, save_tact, save_eact,
+                            utc_offset=info.get('utc_offset', 0))
                     elif use_viirs:
                         _viirs_export_month(
                             scenes, info, tile_roi, current_year,
@@ -660,13 +708,15 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             False,  # save_et=False → VIIRS ET ishlatiladi
-                            save_biomass, save_etref, save_tact, save_eact)
+                            save_biomass, save_etref, save_tact, save_eact,
+                            utc_offset=info.get('utc_offset', 0))
                     else:
                         month_tasks = _export_monthly(
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             save_et, save_biomass, save_etref,
-                            save_tact, save_eact)
+                            save_tact, save_eact,
+                            utc_offset=info.get('utc_offset', 0))
 
                     tasks.extend(month_tasks)
 
@@ -730,7 +780,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         save_biomass,
                         save_etref,
                         save_tact,
-                        save_eact
+                        save_eact,
+                        utc_offset=info.get('utc_offset', 0)
                     )
 
                     tasks.extend(month_tasks)
@@ -794,4 +845,176 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     print("  🔗 https://code.earthengine.google.com/tasks")
     print(f"{'='*60}")
     return {'tasks': all_tasks}
+
+
+# ==============================================================
+# POLYGON-ASOSLI ET (zonal) — dala-darajasida validatsiya
+# ==============================================================
+# MUHIM: bu FAQAT orkestratsiya qatlami — SEBAL hisob-kitob zanjiri
+# (process_tile → energy_balance/radiation/daily_et) UMUMAN o'zgarmaydi.
+# Kalibratsiya kengroq hududda (polygon atrofida bufer, cold+hot anchor uchun);
+# zonal extraktsiya esa polygon(lar) bo'yicha.
+
+
+def _zonal_add(fc_in, image, prop_name, scale=30, reducer=None):
+    """
+    `image` (BITTA band) ni `fc_in` polygonlari bo'yicha reduce qilib (default
+    mean), natijani to'g'ridan-to'g'ri `prop_name` atributi sifatida qo'shadi
+    (Reducer.setOutputs — 'mean' oraliq nomisiz). Akkumulyatsiya: qaytgan FC
+    oldingi barcha atributlarni saqlaydi, shuning uchun ketma-ket chaqiriladi.
+    """
+    reducer = (reducer or ee.Reducer.mean()).setOutputs([prop_name])
+    return image.reduceRegions(
+        collection=fc_in, reducer=reducer, scale=scale, tileScale=4)
+
+
+def run_polygons(polygon_asset,
+                 date_start='2024-04-01', date_end='2024-09-01',
+                 mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+                 calib_buffer_m=15000, inner_buffer_m=-30,
+                 anchor_method='cascade', anchor_mode='median_anchor',
+                 out_asset=None, out_folder='SEBAL_Polygon',
+                 crs='EPSG:32610', months=(4, 5, 6, 7, 8),
+                 year=2024, export_rasters=False,
+                 etrf_water_balance=False, ref_type='alfalfa', utc_offset=None,
+                 etr24_source='era5', sloping_terrain=False):
+    """
+    Polygon(lar) bo'yicha SEBAL ET — zonal (mean).
+
+    1 ta polygon bo'lsa bittasi, 100+ bo'lsa har biri uchun hisoblanadi.
+    Har polygonga atribut: ET_{year}_{MM} (oylik mm) + ET_{YYYYMMDD} (har bulutsiz
+    Landsat sahna kuni ET_24, mm/kun) + n_pixels, n_scenes. Natija GEE asset
+    (out_asset berilsa) va Drive CSV sifatida export qilinadi.
+
+    Parameters
+    ----------
+    polygon_asset : str | ee.FeatureCollection | ee.Geometry
+        Polygon asset ID yoki FC/Geometry.
+    calib_buffer_m : int
+        Kalibratsiya ROI = polygon bounds + shu bufer (~cold+hot anchor uchun).
+    inner_buffer_m : int
+        Zonaldan oldin polygonga ichki bufer (chet aralash pikselni chiqarish).
+        0 = to'liq polygon (fraksion vaznlash). Manfiy = eroziya.
+    months : tuple
+        Oylik ET hisoblanadigan oylar (default 2024 Apr–Aug).
+    """
+    # 1. Polygon FC
+    if isinstance(polygon_asset, ee.Geometry):
+        fc = ee.FeatureCollection([ee.Feature(polygon_asset)])
+    else:
+        fc = ee.FeatureCollection(polygon_asset)
+
+    n_poly = fc.size().getInfo()
+    print(f"\n{'='*60}")
+    print(f"  POLYGON ET | polygonlar: {n_poly} | {date_start}..{date_end}")
+    print(f"  Mode: {mode} | anchor: {anchor_method}/{anchor_mode}")
+    print(f"{'='*60}")
+
+    poly_geom = fc.geometry()
+
+    # 2. Kalibratsiya ROI — polygon atrofida bufer (cold+hot anchor uchun kengroq)
+    roi_calib = poly_geom.bounds().buffer(calib_buffer_m).bounds()
+
+    # 3. Tile aniqlash — polygonni qamrab, eng ko'p bulutsiz sahnali path/row
+    tiles = detect_wrs_tiles(poly_geom, date_start, date_end, satellite, cloud_max)
+    if not tiles:
+        print("  ❌ Polygon uchun Landsat tile topilmadi.")
+        return {'tasks': []}
+    best, best_n = None, -1
+    for (p, r) in tiles:
+        nn = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+              .filterBounds(poly_geom).filterDate(date_start, date_end)
+              .filter(ee.Filter.eq('WRS_PATH', p))
+              .filter(ee.Filter.eq('WRS_ROW', r))
+              .filter(ee.Filter.lt('CLOUD_COVER', cloud_max)).size().getInfo())
+        if nn > best_n:
+            best_n, best = nn, (p, r)
+    path, row = best
+    tile_label = f'P{path}_R{row}'
+    print(f"  Tile: {tile_label} ({best_n} bulutsiz L8 sahna)")
+
+    # 4. SEBAL — MAVJUD pipeline (o'zgarmagan). MUHIM: cloud precheck DALA
+    #    (polygon) ustida — keng kalibratsiya ROI'da bulut bo'lsa ham, dala
+    #    toza sahnalar saqlanadi (aks holda SJV yozida ko'p clear sahna xato
+    #    rad etiladi → paxta piki yo'qoladi → ET past baholanadi).
+    scenes, info = process_tile(
+        roi_calib, date_start, date_end, mode, satellite, cloud_max,
+        tile_label=tile_label, anchor_method=anchor_method,
+        anchor_mode=anchor_mode, ref_type=ref_type, utc_offset=utc_offset,
+        etr24_source=etr24_source, sloping_terrain=sloping_terrain,
+        cloud_roi=poly_geom, cloud_use_cropland=False)
+    if not scenes:
+        print("  ❌ Sahna yo'q — to'xtatildi.")
+        return {'tasks': []}
+
+    # sahna sanalari (bitta getInfo)
+    scene_dates = ee.List(
+        [ee.Image(s).date().format('YYYYMMdd') for s in scenes]).getInfo()
+
+    # 5. Zonal geometriya — ichki bufer (chet piksel himoyasi) + poly_id
+    work = fc.map(lambda f: f.set('poly_id', f.get('system:index')))
+    if inner_buffer_m:
+        work = work.map(
+            lambda f: f.setGeometry(f.geometry().buffer(inner_buffer_m)))
+
+    # 6. Oylik zonal (ET_{year}_{MM}) — akkumulyativ
+    first_et = None
+    for m in months:
+        monthly = daily_et.compute_monthly_et(scenes, roi_calib, year, m, mode=mode,
+                                              etrf_water_balance=etrf_water_balance,
+                                              ref_type=ref_type,
+                                              utc_offset=info['utc_offset'],
+                                              etr24_source=etr24_source,
+                                              sloping_terrain=sloping_terrain)
+        et = monthly.select('ET_MONTHLY')
+        if first_et is None:
+            first_et = et
+        work = _zonal_add(work, et, f'ET_{year}_{m:02d}')
+        print(f"  ↪ oylik zonal: ET_{year}_{m:02d}")
+
+    # 7. Per-sahna zonal (ET_{YYYYMMDD} — instant ET_24)
+    for s, d in zip(scenes, scene_dates):
+        work = _zonal_add(work, ee.Image(s).select('ET_24'), f'ET_{d}')
+    print(f"  ↪ {len(scenes)} sahna zonal qo'shildi")
+
+    # 8. QC — valid piksel soni (first oy ET_MONTHLY count) + sahna soni
+    work = _zonal_add(work, first_et, 'n_pixels', reducer=ee.Reducer.count())
+    work = work.map(lambda f: f.set('n_scenes', len(scenes)))
+
+    # 9. Export — asset + CSV
+    tasks = []
+    stamp = f'{year}_{months[0]:02d}_{months[-1]:02d}'
+    if out_asset:
+        t = ee.batch.Export.table.toAsset(
+            collection=work, description=f'polyET_{stamp}_asset',
+            assetId=out_asset)
+        t.start(); tasks.append(t.id)
+        print(f"  ✅ Asset export → {out_asset}")
+    t2 = ee.batch.Export.table.toDrive(
+        collection=work, description=f'polyET_{stamp}_csv',
+        folder=out_folder, fileFormat='CSV')
+    t2.start(); tasks.append(t2.id)
+    print(f"  ✅ CSV export → Drive/{out_folder}/")
+
+    # 10. Ixtiyoriy — oylik ET raster (polygonga clip)
+    if export_rasters:
+        for m in months:
+            monthly = daily_et.compute_monthly_et(scenes, roi_calib, year, m, mode=mode,
+                                              etrf_water_balance=etrf_water_balance,
+                                              ref_type=ref_type,
+                                              utc_offset=info['utc_offset'],
+                                              etr24_source=etr24_source,
+                                              sloping_terrain=sloping_terrain)
+            img = monthly.select('ET_MONTHLY').clip(poly_geom)
+            name = f'polyET_raster_{year}-{m:02d}'
+            tr = ee.batch.Export.image.toDrive(
+                image=img.toFloat(), description=name, folder=out_folder,
+                fileNamePrefix=name, region=poly_geom.bounds(), scale=30,
+                crs=crs, maxPixels=1e13, fileFormat='GeoTIFF')
+            tr.start(); tasks.append(tr.id)
+        print(f"  ✅ {len(months)} oylik raster export (clip)")
+
+    print(f"\n  ✅ Tayyor! {len(tasks)} export task")
+    print("  🔗 https://code.earthengine.google.com/tasks")
+    return {'tasks': tasks, 'scene_dates': scene_dates, 'tile': tile_label}
 

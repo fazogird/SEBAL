@@ -816,9 +816,200 @@ masalalari. Har biri **"fake qiymat quymaslik"** printsipiга muvofiq tuzatildi
 
 ---
 
+### 30. VAQT REJIMI — ERA5 interpolyatsiya + mahalliy standart kun (Manual App. 5)
+
+**IKKALA REJIMGA (SEBAL_B va SEBAL_ID) tegishli.** Vaqt konvensiyalari **empirik
+tasdiqlangan** (taxmin qilinmagan):
+
+| Manba | Vaqt rejimi | Qanday tasdiqlangan |
+|---|---|---|
+| Landsat | **UTC** | 17:06 UTC → mahalliy quyosh 10:40 (descending node ~10:30 ✓) |
+| ERA5-Land | **UTC** | harorat cho'qqisi 21:00 UTC = 15:00 CST ✓ |
+| AmeriFlux tower | **mahalliy standart** (DST yo'q) | `SW_IN_POT` cho'qqisi 12:00 ✓ |
+
+**(a) ERA5 → overpass vaqtiga CHIZIQLI INTERPOLYATSIYA**
+(`preprocessing.get_era5_for_image`). Ilgari **±1 soatlik oynaning o'rtachasi**
+olinardi; endi App.5-B bo'yicha ikki yozuv orasida interpolyatsiya, **ikki guruh
+alohida og'irlik bilan**:
+- **INSTANT** (T2m, dewpoint, bosim, u/v shamol) — yorliq vaqtida ayni qiymat
+  (`Flag_period = 1`): yorliqlar `floor(t)`, `+1`; og'irlik = kasr qism.
+- **AKKUMULYATIV** (`ssrd/strd _hourly`) — yorliq `T` = **`[T−1h, T]`**
+  (`Flag_period = 0`), markazi **`T−0.5h`**: `a = floor(t−0.5)+1`, `w = t−(a−0.5)`.
+
+ERA5 konvensiyasi **quyosh chiqishi testi** bilan aniqlangan (2022-07-14, US-Ne1:
+quyosh 11:57 UTC → `SSRD@11:00 = 0`, `SSRD@12:00` kichik nolmas → yorliq davr **OXIRI**).
+
+Misol (overpass 17:06 UTC): eski `SSRD=866.4 W/m², T2m=31.59 °C, u=5.50 m/s`
+→ yangi `SSRD=876.2, T2m=31.04, u=5.33` — manual qo'lda hisobi bilan **aynan mos**.
+
+**(b) Kunlik oyna = MAHALLIY STANDART kalendar kun** (App.5-A), yangi `utc_offset`
+parametri (ilgari **UTC kun** edi). Ta'sir qilgan joylar:
+`ref_et.get_daily_era5_aggregate`, `daily_et.get_daily_solar_radiation` (Rs24 —
+SEBAL_B), `daily_et.get_daily_etr24` (ETr24 — SEBAL_ID), `ref_et.compute_etref_daily`.
+```
+mahalliy 00:00 = UTC (00:00 − utc_offset)
+utc_offset = round(zona MARKAZI boylami / 15)      ← App.5-A
+```
+- Avtomatik: `daily_et.utc_offset_from_roi(roi)` → Nebraska −96.5° → **−6** ✓
+  (Central zona markazi −90/15 = −6).
+- ⚠️ **O'zbekiston uchun qo'lda `utc_offset=5` bering** — avtomatik **+4** beradi
+  (UZT quyosh vaqtidan siljigan): `process_tile(..., utc_offset=5)`.
+- **DST HECH QACHON qo'llanmaydi** ("winter standard time" — manual talabi).
+
+**Miqdoriy ta'sir:** `Rs` 24 soatlik oynadan qariyb mustaqil (28.74 vs 28.81 MJ =
+0.2%), lekin `T_max/T_min` oynasi siljigani uchun **ETr24 ~7% farq qiladi**
+(2022-07-14: UTC kun 9.92 → mahalliy kun 10.69 mm/kun).
+
+**Validatsiya (US-Ne1 2022, 50.2 ga polygon, Mar–Okt):**
+
+| Model | | R² | MBE | MAE | RMSE |
+|---|---|---|---|---|---|
+| **SEBAL_B** | oldin | 0.894 | −18.5 | 27.1 | 29.1 |
+| | **keyin** | **0.894** | **−18.4** | **27.1** | **29.1** |
+| **SEBAL_ID** | oldin | 0.847 | +35.9 | 37.3 | 44.8 |
+| | **keyin** | **0.880** | **+31.6** | **33.8** | **39.9** |
+
+➡️ **SEBAL_B amalda o'zgarmadi** — eski natijalar kuchda qoladi.
+➡️ **SEBAL_ID barcha ko'rsatkichda yaxshilandi.**
+
+### 31. z₀m — MAX chegara olib tashlandi (o'lik qoldiq)
+
+`surface_props.compute_z0m`: `z₀m = 0.018 × LAI` uchun `clamp(0.005, 1.0)` →
+**`.max(0.005)`** (yuqori chegara yo'q).
+
+**Sabab:** LAI ≤ 6 → z₀m ≤ **0.108 m**, ya'ni `z0m_max = 1.0` **hech qachon
+faollashmasdi** — eski Gediz SAVI-eksponensial formulasidan (`exp(−5.809+5.62·SAVI)`)
+qolgan qoldiq. **Natijaga ta'siri NOL.** MIN 0.005 qoladi (`ln(200/z₀m)` domeni).
+Fizik tekshiruv: ekin uchun `z₀m ≈ 0.1·h` → 1 m ekinga 0.1 m ✓.
+
+### 32. SEBAL_ID rejimi qo'shildi
+
+Tasumi (2003) modifikatsiyalari **alohida rejim** sifatida — **SEBAL_B kodi
+o'zgarmagan** (barcha farq `if mode=='SEBAL_ID'` shoxida).
+To'liq bosqichma-bosqich tavsif: **[SEBAL_ID.md](SEBAL_ID.md)**.
+
+Qisqacha: L↓ Eq 4.13 · emissivity Eq 4.28 (LAI) · cold piksel `ET=1.05·ETr` (dT≠0) ·
+hot piksel FAO-56 suv balansi (bitta nuqta, lokal CHIRPS) · instant→kunlik/oylik
+**ETrF** (EF emas) · `point_anchor` majburiy · ixtiyoriy Appendix I
+(`etrf_water_balance=True`). Yangi fayllar: `water_balance.py`, `etrf_water_balance.py`.
+
+### 33. QIYA YUZALAR / TOG'LAR — `sloping_terrain=True/False`
+
+**BARCHA rejimlarda ishlaydi** (SEBAL_B, SEBAL_ID, pysebal). Default `False` →
+hech narsa o'zgarmaydi. Manba: Tasumi (2003) Ch.V + App. E, K.
+Yangi fayl: [`sloping_terrain.py`](sebal_gee_v4/sloping_terrain.py).
+
+**4 ta mustaqil tuzatish:**
+
+**(1) Ts_dem — dT uchun haroratni balandlikka moslash (Eq 5.11)**
+```
+Ts_dem = Ts + 0.0065·z          (6.5 °C/km, nam havo lapse rate)
+```
+Aks holda baland joylar orografik sovish tufayli "salqin" ko'rinib, past dT →
+past H → **noto'g'ri yuqori ET** beradi (App. K, Fig K.1: Ts balandlik bilan
+trend beradi, Ts_dem esa tasodifiy taqsimlanadi ✓).
+- ⚠️ **FAQAT dT–Ts munosabatida** (anchor tanlash + `dT = c4·Ts_dem + c5`).
+  Radiatsiyada (`L↑`, `G₀`) va `λ_hv` da **ASL Ts** qoladi — yuza haqiqiy
+  haroratida nur chiqaradi. `compute_all` oxirida LST asl holiga qaytariladi.
+- ⚠️ **`datum` AHAMIYATSIZ** — u `c5` (kesma) ichida qisqaradi, chunki
+  `c4 = (dT_hot−dT_cold)/(Ts_hot−Ts_cold)` — AYIRMA. Shuning uchun `datum=0`.
+- 🐛 **Topilgan va tuzatilgan bug:** anchor `main.py` da tanlanadi, dT esa
+  `compute_all` ichida hisoblanadi. Ikkalasi **ayni Ts maydonidan** bo'lishi
+  shart — aks holda `c5` `0.0065·z` ga siljib, yassi joyda ham H **+67%**
+  o'zgarib ketardi. Endi anchor ham `LST_DEM` bilan tanlanadi.
+
+**(2) cosθ qiya yuzada (Eq 5.12–5.13, Duffie & Beckman 1980)**
+```
+cosθ_u = sinδ·sinφ·cos s − sinδ·cosφ·sin s·cosγ + cosδ·cosφ·cos s·cosω
+       + cosδ·sinφ·sin s·cosγ·cosω + cosδ·sin s·sinγ·sinω
+cosθ   = cosθ_u / cos s                      ← gorizontal ekvivalent
+```
+`s`=qiyalik, `γ`=ekspozitsiya (0=janub, −π/2=sharq, +π/2=g'arb, ±π=shimol;
+GEE aspect'dan: `γ = aspect − 180°`), `ω`=soat burchagi (Eq 5.15–5.16).
+`K↓ = Gsc·cosθ·dr·τsw` ga kiradi. **clamp: cosθ ≥ 0.05** (o'z-soyasidagi qiyalik).
+
+**(3) Radiatsiya tuzatishi — ETrF (SEBAL_ID) / Rs24 (SEBAL_B)** (Eq 5.17–5.19)
+```
+C_rad  = [Rso_inst_Flat/Rso_inst_Pixel] × [Rso_24_Pixel/Rso_24_Flat]
+ETrF24 = C_rad · ETrF_inst  →  ET24 = ETrF24 · ETr24        [SEBAL_ID]
+Rs24_adj = Rs24 · (Ra24_Pixel/Ra24_Flat)  →  Rn24            [SEBAL_B]
+```
+**Nima uchun kerak:** ertalab janubi-sharqiy qiyalik ko'p radiatsiya oladi,
+kechqurun kam → **instant holat sutkani ifodalamaydi** → "ETrF kunduzi barqaror"
+farazi qiyalikda buziladi.
+
+🔑 **Muhim soddalashtirish:** App. E dagi `(K_B+K_D)` atmosfera hadi flat va
+pixel uchun **bir xil** (quyosh o'rni qiyalikdan o'zgarmaydi) → **nisbatlarda
+qisqaradi** → `C_rad` **sof geometriya**:
+```
+C_rad = [sinφ_quyosh / cosθ_pixel] × [Ra24_pixel / Ra24_flat]
+```
+Ya'ni `K_t` (loyqalik), `W`, `P`, `e_a` **kerak emas** — natija taxminlarga
+bog'liq bo'lmaydi. `Ra24` — `cosθ(ω)` ni sutka bo'yi **raqamli integrallash**
+(24 soatlik qadam; App. E qiya yuza uchun 24h formulasini bermaydi).
+**clamp: C_rad ∈ [0.5, 2.0]**.
+Koeffitsientlar sahna bandi (`C_RAD`, `RA24_RATIO`) sifatida saqlanadi — oylikda
+ETrF/EF bilan birga interpolyatsiya qilinadi.
+
+**(4) z₀m va u200 tuzatishi (Eq 5.20–5.23)**
+```
+C_z0m  = 1 + (s−5)/20      [faqat s ≥ 5°]   →  z₀m_adj  = C_z0m·z₀m
+C_wind = 1 + 0.1·(z−z_ws)/1000              →  u200_adj = C_wind·u200
+```
+Har 10° qiyalikka z₀m 50% oshadi; har 1000 m balandlikka shamol +10%.
+`z_ws` — "ob-havo stansiyasi" balandligi; ERA5 uchun **ROI o'rtacha balandligi**
+(avtomatik hisoblanadi).
+> App. K: ET bularga **juda kam sezgir** (z₀m 2x o'zgarsa ham ET deyarli
+> o'zgarmaydi — cold piksel `1.05·ETr` ga qotirilgani uchun dT kompensatsiya
+> qiladi). To'liqlik uchun qo'llanadi.
+
+**Tekshiruv:**
+- **Yassi joy (US-Ne1, SEBAL_B, 2022-07):** `slope=False` vs `True` farqi
+  **<1%** (K↓ +0.36%, Rn +0.45%, H −0.63%, ET_24 +0.32%) ✓ — qolgan farq
+  Nebraskaning haqiqiy yumshoq relyefidan.
+- **Tog' (Idaho Sawtooth, qiyalik o'rt 19.3°, maks 71°, 2462 m):**
+  `cosθ` 0.05–2.20 (o'rt 0.87), `C_rad` 0.78–2.00 (o'rt 1.11),
+  `Ra24` nisbati o'rt 1.07 — ekspozitsiyaga qarab fizik tarqalish ✓
+
+**Ishlatish:**
+```python
+main.run_polygons(..., sloping_terrain=True)
+main.run(..., sloping_terrain=True)
+```
+
+#### ⚠️ MA'LUM CHEKLOV — bitta dT funksiyasi tog'da yetarli emas (App. K, Fig K.5–K.6)
+
+`dT = c4·Ts + c5` butun sahna uchun **bitta chiziq** va u *"Ts yuqori = quruqroq"*
+farazi ustiga qurilgan. Lekin **shamol ham Ts ni sovutadi** (App. K, Fig K.6 —
+ikki cho'l saytida advektsiya farqi olib tashlangach, kuchli shamol Ts ni aniq
+pasaytiradi).
+
+Tog'da shamol fazoviy keskin o'zgaradi (cho'qqida maksimum, etakda minimum).
+Natijada vodiyda kalibrlangan chiziq cho'qqidagi **quruq** pikselni (shamol
+sovutgani uchun Ts past) **"namroq"** deb o'qiydi → dT past → H past →
+**ET oshirib yuboriladi**. Kitob: *xato "quruq" hududlarda "nam" hududlardan
+kattaroq bo'ladi*.
+
+**Bu modul buni HAL QILMAYDI** — 4 ta tuzatish geometriya va balandlik ta'sirini
+to'g'rilaydi, lekin fazoviy ob-havo (shamol) heterogenligini emas.
+
+**Kitob yechimi:** tasvirni ob-havo sharoitiga qarab **sub-hududlarga bo'lib**,
+har biriga **alohida cold/hot anchor va alohida dT funksiyasi**. Tasumi Idahoda
+path 40 ni ikkiga bo'lgan (Snake River Plain / Shimoliy tog'lar); path 39 ni
+yaxlit qoldirgan (shamol bir xil edi).
+**Amaliy test:** hot piksel kandidatlarining Ts diapazoni butun hududda o'xshash
+bo'lsa — shamol sharoiti bir xil deb hisoblash mumkin.
+
+*(Sub-hudud bo'lish — alohida keyingi bosqich, hozir amalga oshirilmagan.)*
+
+---
+
 ## Manbalar
 
 - Bastiaanssen, W.G.M. et al. (1998). *A remote sensing surface energy balance algorithm for land (SEBAL)*. Journal of Hydrology.
+- **Duffie, J.A., Beckman, W.A. (1980).** *Solar Engineering of Thermal Processes*. — qiya yuzada quyosh tushish burchagi cosθ (Tasumi Eq 5.12).
+- **Tasumi, M. et al. (2000).** — SEBAL ning tog'/qiya yuzalarga birinchi moslashtirishi.
+- **SEBAL Advanced Training and Users Manual — Appendix 5** (*Time Issues Around Weather Data and Reference Evapotranspiration*). — GMT→mahalliy standart vaqt (DST yo'q), zona markazi/15 korreksiyasi, ob-havo davri flaglari (`Flag_period`, `Flag_DST`), overpass vaqtiga chiziqli interpolyatsiya.
 - Bastiaanssen, W.G.M. (2000). *SEBAL-based sensible and latent heat fluxes in the irrigated Gediz Basin, Turkey*. Journal of Hydrology.
 - Allen, R.G., Tasumi, M., Trezza, R. (2007). *Satellite-Based Energy Balance for Mapping Evapotranspiration with Internalized Calibration (METRIC)*. ASCE J. Irrig. Drain. Eng.
 - Tasumi, M. (2003). *Progress in Operational Estimation of Regional Evapotranspiration Using Satellite Imagery*. PhD dissertation, University of Idaho. — SEBAL_ID formulalari: z₀m=0.018·LAI, L=0.1 SAVI'dan LAI, empirik L↓, ikki-xil z₂ (rah 0.2m / stability 2.0m), harroratga bog'liq λ (Eq. 3.48), Table 4.11 z₀m_min.

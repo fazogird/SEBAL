@@ -11,6 +11,60 @@ ee_utils.install_getinfo_retry()   # 429 "Too many concurrent" da avtomatik retr
 ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2","ee-chexovant11"
 
 
+# ==============================================================
+# POLYGON ET — AmeriFlux US-NSb (sug'oriladigan paxta, CA) validatsiya
+# ==============================================================
+# main.run() EMAS — polygon rejimi uchun main.run_polygons() ishlatiladi.
+# Tile QO'LDA kiritilmaydi — avtomat aniqlanadi (bu sayt uchun P43_R35).
+# Har polygonga ET_2024_04..08 (oylik) + ET_<sana> (har Landsat sahna) zonal
+# (mean) yoziladi → GEE asset + Drive CSV (+ ixtiyoriy oylik ET GeoTIFF).
+# SEBAL hisob-kitob zanjiri O'ZGARMAGAN.
+#
+# ⚠️ ESLATMA: 'flux_poly' — SIYRAK dala (2024 NDVI ~0.32). Zich paxta towerdan
+#    JANUBDA (NDVI ~0.71, lat ~36.3315-36.3340). To'g'ri footprint uchun o'sha
+#    janubiy dalaga polygon chizib, quyidagi polygon_asset ni almashtiring.
+
+# result = main.run_polygons(
+#     polygon_asset='projects/ee-chexovant11/assets/flux_poly',  # public (Anyone read)
+#     date_start='2024-04-01', date_end='2024-09-01',
+#     months=(4, 5, 6, 7, 8), year=2024,
+#     mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+#     calib_buffer_m=15000,      # kalibratsiya ROI = polygon + ~15 km (cold+hot anchor)
+#     inner_buffer_m=-30,        # dala chetidagi aralash pikselni chiqarish
+#     anchor_method='cascade', anchor_mode='median_anchor',
+#     out_asset='projects/carbon-science-461016-q2/assets/us_nsb_ET_2024',
+#     out_folder='SEBAL_Polygon', crs='EPSG:32610',   # SJV → UTM 10N
+#     export_rasters=True,       # oylik ET GeoTIFF ham (Drive'dan yuklab ko'rish uchun)
+# )
+
+
+# ==============================================================
+# POLYGON ET — AmeriFlux US-Ne1 (Mead, NE — sug'oriladigan makka)
+# ==============================================================
+# Faqat DALA kerak (butun tile emas) → main.run_polygons() ishlatiladi.
+# Kalibratsiya avtomatik keng ROI'da (polygon + 15 km, cold+hot anchor),
+# natija FAQAT polygon bo'yicha zonal (mean) → asset + CSV.
+# Nebraska: WRS ≈ P28_R31, UTM 14N = EPSG:32614.
+#
+# Polygon: (A) tower koord + bufer doira (tez, dala chegarasi taxminiy), yoki
+#          (B) qo'lda chizib asset qilib, polygon_asset='projects/.../assets/ne1_poly'.
+
+# import ee  # (tepada import qilingan)
+# ne1_field = ee.Geometry.Point([-96.4766, 41.1651]).buffer(350)  # (A) 350 m doira
+#
+# result = main.run_polygons(
+#     polygon_asset=ne1_field,          # (A) ee.Geometry — yoki (B) asset ID string
+#     date_start='2024-05-01', date_end='2024-10-01',
+#     months=(5, 6, 7, 8, 9), year=2024,
+#     mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+#     calib_buffer_m=15000,     # kalibratsiya ROI = dala + 15 km (cold+hot anchor)
+#     inner_buffer_m=0,         # kichik doira uchun 0 (eroziya qilmaydi); katta dala uchun -30
+#     anchor_method='cascade', anchor_mode='median_anchor',
+#     out_asset='projects/carbon-science-461016-q2/assets/us_ne1_ET_2024',
+#     out_folder='SEBAL_Polygon_Ne1', crs='EPSG:32614',   # Nebraska → UTM 14N
+#     export_rasters=False,     # True → oylik ET GeoTIFF ham (dala atrofi clip)
+# )
+
 
 # ==============================================================
 # QASHQADARYO — 2026 Mart
@@ -231,34 +285,34 @@ ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2
 # # ==============================================================
 # # Idaho — 2026 Mart + Aprel
 # # ==============================================================
-main.run(
-    roi_type='gaul', name='Idaho', level=1,
-    date_start='2025-03-01', date_end='2025-11-01',
-    mode='SEBAL_B', satellite='BOTH', cloud_max=70,
-    process_by_tile=True,
-    tiles=[(40, 30)],
-    export_daily=False, export_monthly=True,
-    save_et=True, save_biomass=False,
-    save_etref=False, save_tact=False, save_eact=False,
-    validate=False,
-    folder='SEBAL_B_Idaho_2025',
-    scale=30, crs='EPSG:32611',
+# main.run(
+#     roi_type='gaul', name='Idaho', level=1,
+#     date_start='2025-03-01', date_end='2025-11-01',
+#     mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+#     process_by_tile=True,
+#     tiles=[(40, 30)],
+#     export_daily=False, export_monthly=True,
+#     save_et=True, save_biomass=False,
+#     save_etref=False, save_tact=False, save_eact=False,
+#     validate=False,
+#     folder='SEBAL_B_Idaho_2025',
+#     scale=30, crs='EPSG:32611',
 
-    # ---- ANCHOR TANLASH (beton kaskad) ----
-    # 'default'  | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
-    # Nomlangan metod birinchi sinaladi, keyin qolganlari (ekin→ROI),
-    # hech biri chiqmasa 'default' fallback. Har qadam log'da chiqadi.
-    anchor_method='cascade',
+#     # ---- ANCHOR TANLASH (beton kaskad) ----
+#     # 'default'  | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
+#     # Nomlangan metod birinchi sinaladi, keyin qolganlari (ekin→ROI),
+#     # hech biri chiqmasa 'default' fallback. Har qadam log'da chiqadi.
+#     anchor_method='cascade',
 
-    # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
-    use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
-    viirs_mode='lambda',     # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
-    viirs_model='multi',     # 'ndvi' | 'ndvi2' | 'multi'
-    viirs_qa='lenient',      # 'lenient' | 'strict'
-    viirs_fill='linear',     # 'linear' | 'nearest'
-    viirs_crs='EPSG:32611',  # 30m fine grid CRS — Idaho = UTM 11N.
-    #                         None qoldirsangiz avtomatik `crs`ga tushadi.
-)
+#     # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
+#     use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
+#     viirs_mode='lambda',     # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
+#     viirs_model='multi',     # 'ndvi' | 'ndvi2' | 'multi'
+#     viirs_qa='lenient',      # 'lenient' | 'strict'
+#     viirs_fill='linear',     # 'linear' | 'nearest'
+#     viirs_crs='EPSG:32611',  # 30m fine grid CRS — Idaho = UTM 11N.
+#     #                         None qoldirsangiz avtomatik `crs`ga tushadi.
+# )
 
 # ==============================================================
 # SIRDARYO — HLS bilan
@@ -331,3 +385,35 @@ main.run(
 #     s30_cropland_only=False, # True → yakuniy ET faqat ekin maydoniga
 #     s30_validate=False,     # True → hold-out validatsiya CSV
 # )
+
+# # ==============================================================
+# # Idaho — 2026 Mart + Aprel
+# # ==============================================================
+main.run(
+    roi_type='gaul', name='Nebraska', level=1,
+    date_start='2022-03-01', date_end='2022-11-01',
+    mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+    process_by_tile=True,
+    tiles=[(28, 31)],
+    export_daily=False, export_monthly=True,
+    save_et=True, save_biomass=False,
+    save_etref=False, save_tact=False, save_eact=False,
+    validate=False,
+    folder='SEBAL_B_Nebraska_2025',
+    scale=30, crs='EPSG:32611',
+
+    # ---- ANCHOR TANLASH (beton kaskad) ----
+    # 'default'  | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
+    # Nomlangan metod birinchi sinaladi, keyin qolganlari (ekin→ROI),
+    # hech biri chiqmasa 'default' fallback. Har qadam log'da chiqadi.
+    anchor_method='cascade',
+
+    # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
+    use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
+    viirs_mode='lambda',     # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
+    viirs_model='multi',     # 'ndvi' | 'ndvi2' | 'multi'
+    viirs_qa='lenient',      # 'lenient' | 'strict'
+    viirs_fill='linear',     # 'linear' | 'nearest'
+    viirs_crs='EPSG:32611',  # 30m fine grid CRS — Idaho = UTM 11N.
+    #                         None qoldirsangiz avtomatik `crs`ga tushadi.
+)

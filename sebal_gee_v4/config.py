@@ -115,6 +115,19 @@ EMISSIVITY = {
     'dense_veg': 0.985,      # NDVI > 0.74 (zich o'simlik)
 }
 
+# SEBAL_ID (Tasumi 2003) — Eq. (4.28): LAI-asosli emissivity (surface_props.
+# compute_emissivity, faqat mode='SEBAL_ID').
+#   NDVI > 0, LAI < 3  → ε₀ = 0.95 + 0.01 × LAI
+#   LAI ≥ 3            → ε₀ = 0.98
+#   suv va qor        → ε₀ = 0.985  (konstanta)
+EMISSIVITY_ID = {
+    'a': 0.95,               # ε₀ = 0.95 + 0.01·LAI  (NDVI>0, LAI<3)
+    'b': 0.01,
+    'lai_max': 3.0,          # LAI ≥ 3 chegarasi
+    'dense': 0.98,           # LAI ≥ 3 (zich o'simlik)
+    'water_snow': 0.985,     # suv va qor (NDVI < 0)
+}
+
 # ==============================================================
 # 5. SOIL HEAT FLUX — Simplified Bastiaanssen (2000)
 # ==============================================================

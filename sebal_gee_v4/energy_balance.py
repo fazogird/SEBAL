@@ -17,6 +17,7 @@ Output: Image with H, lambda_E, ETrF bands
 
 import ee
 from . import config as cfg
+from . import ref_et   # SEBAL_ID: instant alfalfa ETr (cold/hot λET)
 
 
 # ==============================================================
@@ -364,7 +365,7 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
     hot_mask = _ensure_nonempty(hot_mask, hot_fallback)
 
     # cold/hot skalyar — median (default) yoki bitta ekstremal piksel
-    cold_lst, hot_lst, hot_rn_g0 = _reduce_anchor_values(
+    cold_lst, cold_rn_g0, hot_lst, hot_rn_g0 = _reduce_anchor_values(
         image, search_geom, cold_mask, hot_mask, anchor_mode)
 
     # ---- YAKUNIY, HAQIQIY tekshiruv ----
@@ -379,9 +380,10 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
         'cold_lst': cold_lst,
         'hot_lst': hot_lst,
         'hot_rn_g0': hot_rn_g0,
+        'cold_rn_g0': cold_rn_g0,   # SEBAL_ID: cold piksel H_cp uchun
         'hot_mask': hot_mask,
         'cold_mask': cold_mask,
-        'valid': anchors_valid, 
+        'valid': anchors_valid,
     }
 
 
@@ -587,16 +589,21 @@ def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
     Bo'sh mask → sentinel -999 (valid-tekshiruvi skip qiladi).
     """
     lst = image.select('LST')
+    rn_g0 = image.select('RN_G0')
     if anchor_mode == 'point_anchor':
-        cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
-            ee.Reducer.min(), geom, 30, maxPixels=1e9,
-            bestEffort=True, tileScale=4).get('LST', -999))
+        # cold = eng SOVUQ (min LST) piksel; uning Rn−G₀ AYNI o'sha pikseldan
+        # (min(2): 'min'=LST, 'min1'=Rn−G₀). RN_G0-valid pikselларга cheklanadi.
+        cold_stats = (image.select(['LST', 'RN_G0'])
+                      .updateMask(cold_mask).updateMask(rn_g0.mask())
+                      .reduceRegion(ee.Reducer.min(2), geom, 30, maxPixels=1e9,
+                                    bestEffort=True, tileScale=4))
+        cold_lst = ee.Number(cold_stats.get('min', -999))
+        cold_rn_g0 = ee.Number(cold_stats.get('min1', -999))
         # DIQQAT: max(2) absolyut eng issiq LST pikselni oladi va agar o'sha
         # pikselda RN_G0 masked bo'lsa 'max1'=null qaytaradi (test bilan
         # tasdiqlangan). Shuning uchun avval RN_G0-VALID pikselларga cheklaymiz —
         # shunda eng issiq RN_G0-valid piksel olinadi, hot_rn_g0 null BO'LMAYDI
         # (izchil juft). Umuman valid piksel bo'lmasa → key yo'q → sentinel -999.
-        rn_g0 = image.select('RN_G0')
         hot_stats = (image.select(['LST', 'RN_G0'])
                      .updateMask(hot_mask).updateMask(rn_g0.mask())
                      .reduceRegion(ee.Reducer.max(2), geom, 30, maxPixels=1e9,
@@ -604,15 +611,17 @@ def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
         hot_lst = ee.Number(hot_stats.get('max', -999))       # eng issiq LST
         hot_rn_g0 = ee.Number(hot_stats.get('max1', -999))    # o'sha pikselning Rn−G₀
     else:  # 'median_anchor' (default — hozirgi bilan aynan bir xil natija)
-        cold_lst = ee.Number(lst.updateMask(cold_mask).reduceRegion(
+        cold_stats = image.select(['LST', 'RN_G0']).updateMask(cold_mask).reduceRegion(
             ee.Reducer.median(), geom, 30, maxPixels=1e9,
-            bestEffort=True, tileScale=4).get('LST', -999))
+            bestEffort=True, tileScale=4)
+        cold_lst = ee.Number(cold_stats.get('LST', -999))
+        cold_rn_g0 = ee.Number(cold_stats.get('RN_G0', -999))   # SEBAL_ID: cold H uchun
         hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
             ee.Reducer.median(), geom, 30, maxPixels=1e9,
             bestEffort=True, tileScale=4)
         hot_lst = ee.Number(hot_stats.get('LST', -999))
         hot_rn_g0 = ee.Number(hot_stats.get('RN_G0', -999))
-    return cold_lst, hot_lst, hot_rn_g0
+    return cold_lst, cold_rn_g0, hot_lst, hot_rn_g0
 
 
 def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
@@ -625,7 +634,7 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
     """
     # cold/hot skalyar — median (default) yoki bitta ekstremal piksel.
     # Bo'sh mask → sentinel -999; keyin >-900 tekshiruvi.
-    cold_lst, hot_lst, hot_rn_g0 = _reduce_anchor_values(
+    cold_lst, cold_rn_g0, hot_lst, hot_rn_g0 = _reduce_anchor_values(
         image, geom, cold_mask, hot_mask, anchor_mode)
 
     probe = ee.List([
@@ -645,6 +654,7 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
                   f"cold={c:.1f}K  hot={h:.1f}K  ΔT={h - c:.1f}K")
         return {
             'cold_lst': cold_lst, 'hot_lst': hot_lst, 'hot_rn_g0': hot_rn_g0,
+            'cold_rn_g0': cold_rn_g0,   # SEBAL_ID: cold piksel H_cp uchun
             'hot_mask': hot_mask, 'cold_mask': cold_mask,
             'valid': ee.Number(1), 'method': method, 'zone': zone,
         }
@@ -712,7 +722,7 @@ def select_anchor_pixels(image, roi, cold_mask=None, hot_mask=None,
 # M6: WIND & MOMENTUM
 # ==============================================================
 
-def compute_friction_velocity(image):
+def compute_friction_velocity(image, sloping_terrain=False, z_ws=0.0):
     """
     Ishqalanish tezligi u*(x,y) — ERA5 wind dan.
 
@@ -745,6 +755,14 @@ def compute_friction_velocity(image):
             ee.Image(z_ref).divide(z0m_wind).log()
         )
     ).rename('U_200')
+
+    # ---- QIYA YUZA (Tasumi Eq 5.20-5.23) ----
+    # z₀m_adj = (1+(s−5)/20)·z₀m  [s≥5°];  u200_adj = (1+0.1(z−z_ws)/1000)·u200
+    # App. K: ET bularga JUDA KAM sezgir, lekin to'liqlik uchun qo'llanadi.
+    if sloping_terrain:
+        from . import sloping_terrain as slt
+        z0m = slt.adjust_z0m(image, z0m)
+        u_200 = slt.adjust_u200(image, u_200, z_ws).rename('U_200')
 
     # 2. u*(x,y) — har piksel uchun lokal z₀m dan
     # u* = k × u_200 / ln(200 / z₀m)
@@ -816,16 +834,28 @@ def _stability_scalar(L, z_blend, z1, z2):
     return psi_m, psi_h
 
 
-def compute_sensible_heat_flux(image, anchors, roi):
+def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
+                               lambda_et_cold=0.0, lambda_et_hot=0.0):
     """
     Sezuvchan issiqlik oqimi H — iterativ hisoblash.
     Bastiaanssen (1998) original SEBAL yondashuvi (F.24-32).
 
-    ASOSIY FARAZ (klassik SEBAL, o'zgarmagan):
-      Cold pixel: δTa_cold = 0  (H_cold = 0 — yaxshi sug'orilgan
-                   maydonda butun mavjud energiya ET'ga sarflanadi)
-      Hot pixel:  δTa_hot = H_hot × rah_hot / (ρₐ × cₚ)
-                   H_hot = Q* - G₀  (hot pikselda λE = 0)
+    ASOSIY FARAZ:
+      SEBAL_B (klassik, o'zgarmagan):
+        Cold pixel: δTa_cold = 0  (H_cold = 0 — yaxshi sug'orilgan
+                     maydonda butun mavjud energiya ET'ga sarflanadi)
+        Hot pixel:  δTa_hot = H_hot × rah_hot / (ρₐ × cₚ)
+                     H_hot = Q* - G₀  (hot pikselda λE = 0)
+
+      SEBAL_ID (Tasumi 2003 — ikkala uch NOLMAS, ikkalasi iteratsiya qilinadi):
+        Cold pixel: H_cp = Rn_cp − G_cp − λET_cp,  λET_cp = 1.05·ETr
+                     δTa_cold = H_cp × rah_cp / (ρ · cₚ)
+        Hot pixel:  H_hp = Rn_hp − G_hp − λET_hp,  λET_hp = ETrF_hot·ETr
+                     (λET_hp suv balansidan; hozircha 0 → SEBAL_B hot bilan bir xil)
+                     δTa_hot = H_hp × rah_hp / (ρ · cₚ)
+        Chiziqli: c4 = (δTa_hot − δTa_cold)/(Ts_hot − Ts_cold),
+                  c5 = δTa_cold − c4·Ts_cold.
+      lambda_et_cold, lambda_et_hot — client skalyar [W/m²] (SEBAL_ID uchun).
 
     Konvergensiya mezoni — SEBAL Manual, Appendix 8:
       "This iterative process is repeated until the successive
@@ -850,6 +880,9 @@ def compute_sensible_heat_flux(image, anchors, roi):
     hot_lst = anchors['hot_lst']
     hot_rn_g0 = anchors['hot_rn_g0']
     hot_mask = anchors['hot_mask']
+    cold_mask = anchors['cold_mask']
+    cold_rn_g0 = anchors.get('cold_rn_g0', hot_rn_g0)   # SEBAL_ID: cold H_cp uchun
+    is_id = (mode == 'SEBAL_ID')
 
     lst = image.select('LST')
     rho_air = image.select('RHO_AIR')
@@ -878,7 +911,7 @@ def compute_sensible_heat_flux(image, anchors, roi):
     # SEBAL kalibratsiyasi). Butun rah(x,y) field'ni HAR iteratsiyada
     # baholash o'rniga — hot-piksel median kirishlarini BIR MARTA olamiz,
     # keyin (A) iteratsiya sof Python'da, server chaqiruvisiz ketadi.
-    stats = ee.Dictionary({
+    stats_d = {
         'u200': u_200.updateMask(hot_mask).reduceRegion(
             ee.Reducer.median(), roi, 30, maxPixels=1e9,
             bestEffort=True, tileScale=4).get('U_200', -999),
@@ -889,7 +922,22 @@ def compute_sensible_heat_flux(image, anchors, roi):
             ee.Reducer.median(), roi, 30, maxPixels=1e9,
             bestEffort=True, tileScale=4).get('RHO_AIR', -999),
         'hot_lst': hot_lst, 'cold_lst': cold_lst, 'hot_rn_g0': hot_rn_g0,
-    }).getInfo()
+    }
+    if is_id:
+        # SEBAL_ID: cold piksel rah_cp uchun cold-mask skalyarlari + cold Rn−G₀
+        stats_d.update({
+            'u200_c': u_200.updateMask(cold_mask).reduceRegion(
+                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                bestEffort=True, tileScale=4).get('U_200', -999),
+            'z0m_c': z0m.updateMask(cold_mask).reduceRegion(
+                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                bestEffort=True, tileScale=4).get('Z0M', -999),
+            'rho_c': rho_air.updateMask(cold_mask).reduceRegion(
+                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                bestEffort=True, tileScale=4).get('RHO_AIR', -999),
+            'cold_rn_g0': cold_rn_g0,
+        })
+    stats = ee.Dictionary(stats_d).getInfo()
 
     import math
     u200_h = stats['u200']
@@ -897,7 +945,18 @@ def compute_sensible_heat_flux(image, anchors, roi):
     rho_h = stats['rho']
     hlst = stats['hot_lst']
     clst = stats['cold_lst']
-    H_hot = stats['hot_rn_g0']
+    # H_hot = Rn−G₀ − λET_hot (SEBAL_B: λET_hot=0 → H_hot=Rn−G₀, o'zgarmagan)
+    H_hot = stats['hot_rn_g0'] - lambda_et_hot
+
+    # SEBAL_ID: cold piksel skalyarlari + H_cold = Rn−G₀_cp − λET_cp
+    if is_id:
+        u200_c = stats['u200_c']
+        z0m_c = max(stats['z0m_c'], cfg.ROUGHNESS['z0m_min'])
+        rho_c = stats['rho_c']
+        H_cold = stats['cold_rn_g0'] - lambda_et_cold
+    else:
+        u200_c = z0m_c = rho_c = None
+        H_cold = 0.0
 
     # ==========================================================
     # (A) SKALYAR ITERATSIYA — sof Python (server chaqiruvi YO'Q).
@@ -910,19 +969,29 @@ def compute_sensible_heat_flux(image, anchors, roi):
     ustar_h = max(k * u200_h / ln_zb_z0m, 0.02)          # neytral boshlang'ich
     rah_h = max(ln_z2_z1 / (k * ustar_h), 1.0)
 
-    c4_list, c5_list, dta_list = [], [], []
+    # SEBAL_ID: cold piksel parallel iteratsiyasi (δTa_cold ≠ 0)
+    if is_id:
+        ln_zb_z0m_cold = math.log(z_blend / z0m_c)
+        ustar_cold = max(k * u200_c / ln_zb_z0m_cold, 0.02)
+        rah_cold = max(ln_z2_z1 / (k * ustar_cold), 1.0)
+        prev_psi_m_cold = prev_psi_h_cold = prev_ustar_cold = None
+
+    c4_list, c5_list, dta_list, dtac_list = [], [], [], []
     prev_dt = prev_rah = None
     prev_psi_m = prev_psi_h = prev_ustar = None
     converged_at = None
 
     for i in range(max_iter):
-        # δTa_hot = H_hot·rah_hot/(ρ·cp);  H_hot=Q*-G₀ (hot pikselda λE=0)
+        # δTa_hot = H_hot·rah_hot/(ρ·cp)
         dta_hot = H_hot * rah_h / (rho_h * cp)
-        c4 = dta_hot / (hlst - clst)     # chiziqli kalibratsiya
-        c5 = -c4 * clst
+        # δTa_cold: SEBAL_B → 0; SEBAL_ID → H_cp·rah_cp/(ρ·cp)
+        dta_cold = (H_cold * rah_cold / (rho_c * cp)) if is_id else 0.0
+        c4 = (dta_hot - dta_cold) / (hlst - clst)     # chiziqli kalibratsiya
+        c5 = dta_cold - c4 * clst
         c4_list.append(c4)
         c5_list.append(c5)
         dta_list.append(dta_hot)
+        dtac_list.append(dta_cold)
 
         # Konvergensiya (SEBAL Manual App.8): dT_hot va rah_hot stabillashishi.
         # NISBIY (1%): masshtabdan mustaqil (kichik/katta dT'ga bir xil mos).
@@ -931,36 +1000,58 @@ def compute_sensible_heat_flux(image, anchors, roi):
                 and abs(rah_h - prev_rah) < tol_rel * abs(rah_h)):
             converged_at = i + 1
             print(f"  ✅ (A) Konvergensiya {i+1}-iteratsiyada: "
-                  f"dT_hot={dta_hot:.4f} K, rah_hot={rah_h:.3f} s/m")
+                  f"dT_hot={dta_hot:.4f} K, rah_hot={rah_h:.3f} s/m"
+                  + (f", dT_cold={dta_cold:.4f} K" if is_id else ""))
             break
 
         prev_dt, prev_rah = dta_hot, rah_h
 
-        # Monin-Obukhov L (hot pikselda H=H_hot, u*=ustar_h)
+        # ---- Hot piksel Monin-Obukhov stability ----
         h_safe = H_hot if abs(H_hot) >= 1.0 else 1.0
         L_h = -rho_h * cp * ustar_h ** 3 * hlst / (k * g * h_safe)
         L_h = max(min(L_h, 1e6), -1e6)
 
-        psi_m_c, psi_h_c = _stability_scalar(L_h, z_blend, z1, z2)
+        psi_m_cand, psi_h_cand = _stability_scalar(L_h, z_blend, z1, z2)
 
         # Dhungel et al. (2016) damping — ketma-ket ikki ψ (va u*) o'rtachasi.
         # DOI: 10.1117/1.JRS.10.026033 ("averaging the last two calculations
         # for the three psi terms" + "averaging the u* ...").
         if prev_psi_m is not None:
-            psi_m = 0.5 * (prev_psi_m + psi_m_c)
-            psi_h = 0.5 * (prev_psi_h + psi_h_c)
+            psi_m = 0.5 * (prev_psi_m + psi_m_cand)
+            psi_h = 0.5 * (prev_psi_h + psi_h_cand)
         else:
-            psi_m, psi_h = psi_m_c, psi_h_c
-        prev_psi_m, prev_psi_h = psi_m_c, psi_h_c
+            psi_m, psi_h = psi_m_cand, psi_h_cand
+        prev_psi_m, prev_psi_h = psi_m_cand, psi_h_cand
 
-        ustar_c = max(k * u200_h / (ln_zb_z0m - psi_m), 0.02)
+        ustar_cand = max(k * u200_h / (ln_zb_z0m - psi_m), 0.02)
         if prev_ustar is not None:
-            ustar_h = 0.5 * (prev_ustar + ustar_c)
+            ustar_h = 0.5 * (prev_ustar + ustar_cand)
         else:
-            ustar_h = ustar_c
-        prev_ustar = ustar_c
+            ustar_h = ustar_cand
+        prev_ustar = ustar_cand
 
         rah_h = max((ln_z2_z1 - psi_h) / (k * ustar_h), 1.0)
+
+        # ---- Cold piksel Monin-Obukhov stability (SEBAL_ID) ----
+        if is_id:
+            hc_safe = (H_cold if abs(H_cold) >= 1.0
+                       else (1.0 if H_cold >= 0 else -1.0))
+            L_c = -rho_c * cp * ustar_cold ** 3 * clst / (k * g * hc_safe)
+            L_c = max(min(L_c, 1e6), -1e6)
+            psi_m_cc, psi_h_cc = _stability_scalar(L_c, z_blend, z1, z2)
+            if prev_psi_m_cold is not None:
+                psi_m_cold = 0.5 * (prev_psi_m_cold + psi_m_cc)
+                psi_h_cold = 0.5 * (prev_psi_h_cold + psi_h_cc)
+            else:
+                psi_m_cold, psi_h_cold = psi_m_cc, psi_h_cc
+            prev_psi_m_cold, prev_psi_h_cold = psi_m_cc, psi_h_cc
+            ustar_cold_cand = max(k * u200_c / (ln_zb_z0m_cold - psi_m_cold), 0.02)
+            if prev_ustar_cold is not None:
+                ustar_cold = 0.5 * (prev_ustar_cold + ustar_cold_cand)
+            else:
+                ustar_cold = ustar_cold_cand
+            prev_ustar_cold = ustar_cold_cand
+            rah_cold = max((ln_z2_z1 - psi_h_cold) / (k * ustar_cold), 1.0)
 
     N_A = converged_at if converged_at is not None else max_iter
     if converged_at is None:
@@ -983,13 +1074,15 @@ def compute_sensible_heat_flux(image, anchors, roi):
         c4_i = ee.Number(c4_list[i])
         c5_i = ee.Number(c5_list[i])
         dta_hot_i = dta_list[i]        # client skalyar (clamp chegaralari uchun)
+        # SEBAL_B: pastki uch = 0 (dTa_cold=0); SEBAL_ID: dTa_cold (nolmas)
+        dta_cold_i = dtac_list[i] if is_id else 0.0
 
         # Har piksel δTa
         dta_raw = lst.multiply(c4_i).add(c5_i)
 
-        # XAVFSIZLIK 1: [0, dta_hot] ± 20% margin (chegaralar — client skalyar)
-        dt_lower = min(0.0, dta_hot_i)
-        dt_upper = max(0.0, dta_hot_i)
+        # XAVFSIZLIK 1: [dTa_cold, dTa_hot] ± 20% margin (chegaralar — client skalyar)
+        dt_lower = min(dta_cold_i, dta_hot_i)
+        dt_upper = max(dta_cold_i, dta_hot_i)
         margin = (dt_upper - dt_lower) * 0.2
         dta = dta_raw.clamp(dt_lower - margin, dt_upper + margin).rename('DTA')
 
@@ -1186,7 +1279,9 @@ def compute_evaporative_fraction(image):
 # ==============================================================
 
 def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
-                anchor_method='default', anchor_mode='median_anchor'):
+                anchor_method='default', anchor_mode='median_anchor',
+                mode='SEBAL_B', etrf_hot=None,
+                sloping_terrain=False, z_ws=0.0):
     """
     To'liq energiya balansini hisoblash.
 
@@ -1201,11 +1296,26 @@ def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
     Input:  Image with surface properties + radiation
     Output: Image with H, LAMBDA_E, ETrF, EVAP_FRAC bands
 
+    mode='SEBAL_ID' — cold piksel dTa≠0 (ET_cp=1.05·ETr) va hot piksel
+      dTa (ET_hp=ETrF_hot·ETr). ETr instant alfalfa (FAO-56 PM). etrf_hot —
+      hot piksel suv balansi koeffitsienti (default 0 → SEBAL_B hot bilan bir xil;
+      keyingi bosqichda water_balance beradi).
+
     Anchor pixel tanlash ROI kerak — shuning uchun
     bu funksiya map() ichida emas, alohida chaqiriladi.
     """
+    # ---- QIYA YUZA (Tasumi Eq 5.11): dT uchun Ts ni DEM ga moslash ----
+    # Ts_dem = Ts + 0.0065·z. FAQAT anchor tanlash va dT–Ts munosabatida;
+    # radiatsiya (L↑, G₀) ALLAQACHON asl Ts bilan hisoblangan (radiation.py),
+    # va oxirida LST asl holiga qaytariladi (daily_et λ_hv asl Ts talab qiladi).
+    lst_actual = image.select('LST')
+    if sloping_terrain:
+        from . import sloping_terrain as slt
+        image = image.addBands(slt.lst_dem(image), overwrite=True)
+
     # M6: Wind & momentum
-    image = compute_friction_velocity(image)
+    image = compute_friction_velocity(image, sloping_terrain=sloping_terrain,
+                                      z_ws=z_ws)
     image = compute_rah_neutral(image)
 
     # M5: Anchor selection
@@ -1214,8 +1324,41 @@ def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
                                        hot_mask=hot_mask, method=anchor_method,
                                        anchor_mode=anchor_mode)
 
+    # ---- SEBAL_ID: instant alfalfa ETr → cold/hot λET skalyarlari ----
+    lambda_et_cold = lambda_et_hot = 0.0
+    if mode == 'SEBAL_ID':
+        from . import water_balance
+        image = ref_et.compute_instant_etr(image)     # ETR_INST band (mm/soat)
+        LAMBDA = 2.45e6                                 # bug'lanish yashirin issiqligi [J/kg]
+        cm = anchors['cold_mask']; hm = anchors['hot_mask']
+        # Hot piksel suv balansi → ETrF_hot (0 = to'liq quruq hot; klassik SEBAL)
+        if etrf_hot is None:
+            etrf_hot = water_balance.hot_pixel_etrf(image, roi, hm)
+        etr = image.select('ETR_INST')
+        vals = ee.Dictionary({
+            'etr_c': etr.updateMask(cm).reduceRegion(
+                ee.Reducer.median(), roi, 100, maxPixels=1e9,
+                bestEffort=True, tileScale=4).get('ETR_INST', 0),
+            'etr_h': etr.updateMask(hm).reduceRegion(
+                ee.Reducer.median(), roi, 100, maxPixels=1e9,
+                bestEffort=True, tileScale=4).get('ETR_INST', 0),
+        }).getInfo()
+        etr_c = vals['etr_c'] or 0.0
+        etr_h = vals['etr_h'] or 0.0
+        # λET_cp = 1.05·ETr; λET_hp = ETrF_hot·ETr  (W/m² = mm/soat · λ / 3600)
+        lambda_et_cold = 1.05 * etr_c * LAMBDA / 3600.0
+        lambda_et_hot = etrf_hot * etr_h * LAMBDA / 3600.0
+
     # M7: Sensible heat flux (iterativ)
-    image = compute_sensible_heat_flux(image, anchors, roi)
+    image = compute_sensible_heat_flux(image, anchors, roi, mode=mode,
+                                       lambda_et_cold=lambda_et_cold,
+                                       lambda_et_hot=lambda_et_hot)
+
+    # Qiya yuza: LST ni ASL holiga qaytarish (dT bosqichi tugadi).
+    # λE = Rn−G₀−H bo'lgani uchun bu λE ga ta'sir qilmaydi, lekin keyingi
+    # bosqichlar (daily_et λ_hv = f(LST)) asl haroratni talab qiladi.
+    if sloping_terrain:
+        image = image.addBands(lst_actual, overwrite=True)
 
     # M8: Latent heat flux
     image = compute_latent_heat_flux(image)
