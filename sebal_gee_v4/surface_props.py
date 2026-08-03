@@ -18,6 +18,11 @@ Output: Image with surface property bands added
 import ee
 from . import config as cfg
 
+# Ekin-spetsifik z0m uchun ekin turi (h = f(LAI) → z0m = 0.123·h). None → default
+# per-piksel z0m = Z0M_LAI_COEF·LAI (o'zgarmaydi). main.run(crop_type=…) FAQAT
+# CSV/tadqiqot rejimida buni o'rnatadi (nuqta ekin turi ma'lum). cfg.CROP_H_LAI.
+CROP_TYPE = None
+
 
 # ==============================================================
 # NDVI — Normalized Difference Vegetation Index
@@ -68,28 +73,63 @@ def compute_savi(image):
 # ALBEDO — Olmedo (2016) Broadband
 # ==============================================================
 
+# Production 'ALBEDO' bandini qaysi usul beradi. main.run(albedo_method=) o'rnatadi.
+#   'config' (DEFAULT) → hozirgi cfg.OLMEDO_COEFFICIENTS (O'ZGARMAGAN natija).
+#   'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → foydalanuvchi koeffitsientlari (pastda).
+# ⚠️ DIQQAT: 'olmedo' (foydalanuvchi, ofsetli) ≠ 'config' (cfg, ofsetsiz) — BOSHQA
+#    koeffitsientlar. Har run'da 5 usul ALB_* diagnostika bandi ham qo'shiladi.
+ALBEDO_METHOD = 'config'
+
+
+def _albedo_variants(image):
+    """
+    5 broadband-albedo usuli (foydalanuvchi koeffitsientlari) — diagnostika.
+    Coastal (B_UB) = SR_B1; preprocessing uni scale qilmaydi → shu yerda inline.
+    """
+    b = image.select('SR_B2'); g = image.select('SR_B3'); r = image.select('SR_B4')
+    nir = image.select('SR_B5'); s1 = image.select('SR_B6'); s2 = image.select('SR_B7')
+    ub = (image.select('SR_B1').multiply(cfg.SCALE_FACTORS['sr_mult'])
+          .add(cfg.SCALE_FACTORS['sr_add']).clamp(0.0, 1.0))
+
+    a_olmedo = (b.multiply(0.4739).add(g.multiply(-0.4372)).add(r.multiply(0.1652))
+                .add(nir.multiply(0.2831)).add(s1.multiply(0.1072))
+                .add(s2.multiply(0.1029)).add(0.0366))
+    a_liang = (b.multiply(0.356).add(r.multiply(0.130)).add(nir.multiply(0.373))
+               .add(s1.multiply(0.085)).add(s2.multiply(0.072)).subtract(0.0018))
+    a_ke = (ub.multiply(0.130).add(b.multiply(0.115)).add(g.multiply(0.143))
+            .add(r.multiply(0.180)).add(nir.multiply(0.281)).add(s1.multiply(0.108))
+            .add(s2.multiply(0.042)))
+    a_tasumi = (b.multiply(0.300).add(g.multiply(0.277)).add(r.multiply(0.233))
+                .add(nir.multiply(0.143)).add(s1.multiply(0.036)).add(s2.multiply(0.012)))
+    a_avg3 = a_olmedo.add(a_liang).add(a_ke).divide(3)
+    return {'olmedo': a_olmedo, 'liang': a_liang, 'ke': a_ke,
+            'tasumi': a_tasumi, 'avg3': a_avg3}
+
+
 def compute_albedo(image):
     """
-    Broadband albedo — Olmedo (2016) coefficients.
+    Broadband albedo — production 'ALBEDO' + 5 usul diagnostika bandi.
 
-    α = 0.246×B2 + 0.146×B3 + 0.191×B4 + 0.304×B5 + 0.105×B6 + 0.008×B7
-
-    Source: R `water` package, SMARTS model, Kimberly-Idaho calibration.
-    No offset constant (Liang uses -0.0018, Olmedo does not).
-    Input: C2L2 Surface Reflectance (already scaled 0–1 in preprocessing).
+    Production 'ALBEDO' ni ALBEDO_METHOD tanlaydi:
+      'config' (default) → cfg.OLMEDO_COEFFICIENTS (R `water`, ofsetsiz — O'ZGARMAGAN)
+      'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → _albedo_variants (foydalanuvchi koeff.)
+    Har doim ALB_OLMEDO/ALB_LIANG/ALB_KE/ALB_TASUMI/ALB_AVG3 diagnostika bandlari ham
+    qo'shiladi — lizimetr bilan solishtirib, qaysi oyда qaysi usul mosligini topish.
+    Input: C2L2 SR (0–1 scaled) + SR_B1 (xom DN, inline scale).
     """
-    coeffs = cfg.OLMEDO_COEFFICIENTS
+    var = _albedo_variants(image)
+    diag = [v.clamp(0.0, 0.80).rename('ALB_' + k.upper()) for k, v in var.items()]
 
-    # Har band × koeffitsient, keyin yig'indi
-    albedo = (image.select(list(coeffs.keys()))
-              .multiply(list(coeffs.values()))
-              .reduce(ee.Reducer.sum())
-              .rename('ALBEDO'))
+    if ALBEDO_METHOD in var:
+        albedo = var[ALBEDO_METHOD].clamp(0.0, 0.80).rename('ALBEDO')
+    else:   # 'config' yoki noma'lum → hozirgi (o'zgarmagan)
+        coeffs = cfg.OLMEDO_COEFFICIENTS
+        albedo = (image.select(list(coeffs.keys()))
+                  .multiply(list(coeffs.values()))
+                  .reduce(ee.Reducer.sum())
+                  .clamp(0.0, 0.80).rename('ALBEDO'))
 
-    # Albedo 0–1 oralig'iga clamp (xavfsizlik)
-    albedo = albedo.clamp(0.0, 0.80)
-
-    return image.addBands(albedo)
+    return image.addBands([albedo] + diag)
 
 
 # ==============================================================
@@ -117,8 +157,8 @@ def compute_emissivity(image, mode='SEBAL_B'):
     """
     ndvi = image.select('NDVI')
 
-    # ---- SEBAL_ID: Eq. (4.28) LAI-asosli ----
-    if mode == 'SEBAL_ID':
+    # ---- SEBAL_ID (va SEBAL_Milliy): Eq. (4.28) LAI-asosli ----
+    if cfg.is_id_mode(mode):
         eid = cfg.EMISSIVITY_ID
         lai = image.select('LAI')
         emissivity = (
@@ -178,9 +218,20 @@ def compute_z0m(image):
     # qolgan o'lik qoldiq edi) — olib tashlandi. MIN 0.005 qoladi: u ln(200/z₀m)
     # domenini himoya qiladi (LAI < 0.28 bo'lgan yalang'och piksellarda).
     lai = image.select('LAI')
-    z0m = (lai.multiply(cfg.Z0M_LAI_COEF)
-           .max(rcfg['z0m_min'])
-           .rename('Z0M'))
+    if CROP_TYPE is not None:
+        # Ekin-spetsifik: h = a3·LAI³ + a2·LAI² + a1·LAI ; z0m = 0.123·h
+        # (Tasumi/Wright, R² 0.98-0.99). Yalang pikselда LAI→0 → h→0 → z0m_min.
+        a3, a2, a1 = cfg.CROP_H_LAI.get(CROP_TYPE, cfg.CROP_H_LAI['default'])
+        h_crop = lai.expression(
+            'a3*L*L*L + a2*L*L + a1*L',
+            {'a3': a3, 'a2': a2, 'a1': a1, 'L': lai}).max(0)
+        z0m = (h_crop.multiply(cfg.Z0M_HEIGHT_COEF)
+               .max(rcfg['z0m_min'])
+               .rename('Z0M'))
+    else:
+        z0m = (lai.multiply(cfg.Z0M_LAI_COEF)
+               .max(rcfg['z0m_min'])
+               .rename('Z0M'))
 
     z0h = (z0m.divide(ee.Number(rcfg['kB_inv']).exp())
            .rename('Z0H'))

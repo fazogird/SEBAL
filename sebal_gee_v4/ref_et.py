@@ -319,14 +319,13 @@ def compute_etref_daily(image, roi, utc_offset=0):
     """
     day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
     day_start = ee.Date(day_str)
-
-    daily_met = get_daily_era5_aggregate(day_start, roi, utc_offset=utc_offset)
     dem = image.select('DEM')
 
-    calc = RefETCalculator(ref_type='grass')
-    result = calc.calculate(daily_met, dem, mode='daily')
-
-    etref = result.select('ETr').rename('ETREF_24')
+    # SOATLIK-YIG'INDI (kitob App.B) grass — ETr24 bilan izchil usul.
+    # (ETREF_24 faqat KC = ET_24/ETREF_24 diagnostikasiga kiradi.)
+    etref = (compute_etr24_hourly_sum(day_start, roi, dem, ref_type='grass',
+                                      utc_offset=utc_offset)
+             .select('ETr').rename('ETREF_24'))
     return image.addBands(etref)
 
 
@@ -392,6 +391,70 @@ def compute_instant_etr(image, ref_type='alfalfa', band_name='ETR_INST'):
     etr = num1.add(num2).divide(den).max(0).rename(band_name)   # mm/soat
 
     return img.addBands(etr, overwrite=True)
+
+
+# ==============================================================
+# ETr24 — SOATLIK-YIG'INDI (kitob Appendix B usuli)
+# ==============================================================
+
+def compute_etr24_hourly_sum(date, roi, dem, ref_type='alfalfa', utc_offset=0):
+    """
+    Kunlik referens ET [mm/kun] = 24 SOATLIK ASCE-EWRI PM ETr YIG'INDISI.
+
+    Tasumi (2003) Appendix B: *"Daily values (ET_r24) were calculated by SUMMING
+    the corresponding hourly values of ETr"* — kunlik-qadamli tenglama EMAS.
+    Har soat kunduz/tun koeffitsientlari (alfalfa Cd 0.25/1.7, G 0.04/0.20·Rn;
+    grass Cd 0.24/0.96, G 0.1/0.5·Rn) bilan hisoblanadi.
+
+    Validatsiya (US-Ne1 2022 oylik, SEBAL_ID): kunlik-qadamga nisbatan
+    R² 0.801→0.830, MBE +18.6→+15.2, RMSE 31.8→28.2 (yaxshiroq va kitobga mos).
+
+    Kirish: date (ee.Date/str), roi, dem, ref_type ('alfalfa'/'grass'),
+            utc_offset (mahalliy standart soat; DST YO'Q — App.5-A).
+    Chiqish: ee.Image, band 'ETr' (mm/kun).
+    """
+    calc = RefETCalculator(ref_type=ref_type)
+    ymd = ee.Date(ee.Date(date).format('YYYY-MM-dd'))
+    day_start = ymd.advance(-utc_offset, 'hour')    # mahalliy standart kalendar kun
+    coll = (ee.ImageCollection(cfg.ERA5['collection'])
+            .filterDate(day_start, day_start.advance(1, 'day'))
+            .filterBounds(roi))
+    demi = ee.Image(dem)
+    E = cfg.ERA5['bands']
+    w2m = 4.87 / math.log(67.8 * 10 - 5.42)         # 10m→2m (FAO-56 Eq 47)
+    Cn = calc.Cn_hr_day
+    cd_day, cd_night = calc.Cd_hr_day, calc.Cd_hr_night
+    g_day, g_night = (0.04, 0.20) if ref_type == 'alfalfa' else (0.1, 0.5)
+
+    def to_etr(img):
+        d = ee.Date(img.get('system:time_start'))
+        doy = ee.Number(d.getRelative('day', 'year')).add(1)
+        hour = ee.Number(d.get('hour'))
+        dr, dec = calc._dr_decl(doy)
+        ll = ee.Image.pixelLonLat()
+        lat = ll.select('latitude').multiply(math.pi / 180.0)
+        lon = ll.select('longitude')
+        T = img.select(E['air_temp']).subtract(273.15)          # °C
+        P = img.select(E['pressure']).divide(1000.0)            # kPa
+        u2 = img.select(E['u_wind']).hypot(img.select(E['v_wind'])).multiply(w2m)
+        Td = img.select(E['dewpoint']).subtract(273.15)
+        ea = calc._esat(Td); es = calc._esat(T)
+        Rs = img.select(E['ssrd']).divide(1e6)                  # MJ/m²/soat
+        Delta = calc._delta_svp(T, es); Gamma = calc._gamma(P)
+        Ra = calc.Ra_hourly(lat, lon, doy, hour, dr, dec)
+        Rso = calc.Rso(Ra, demi)
+        Rn = Rs.multiply(1.0 - calc.albedo).subtract(
+             calc.Rnl_hourly(T.add(273.16), ea, Rs, Rso))
+        is_day = Rs.gt(0.01)
+        Cd = ee.Image(cd_day).where(is_day.Not(), cd_night)
+        G = Rn.multiply(g_day).where(is_day.Not(), Rn.multiply(g_night))
+        num1 = Delta.multiply(Rn.subtract(G)).multiply(0.408)
+        num2 = (Gamma.multiply(u2).multiply(es.subtract(ea).max(0))
+                .multiply(ee.Image.constant(Cn).divide(T.add(273.15))))
+        den = Delta.add(Gamma.multiply(u2.multiply(Cd).add(1.0)))
+        return num1.add(num2).divide(den).max(0).rename('ETr')   # mm/soat = mm
+
+    return ee.ImageCollection(coll.map(to_etr)).sum().rename('ETr')
 
 
 # ==============================================================

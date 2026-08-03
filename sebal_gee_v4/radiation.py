@@ -203,8 +203,11 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
     """
     sigma = cfg.STEFAN_BOLTZMANN
 
-    # ---- 'yangiliklar' MODE: ERA5-Land STRD/3600 (O'CHIRILMAGAN) ----
-    if mode == 'yangiliklar':
+    # ---- ERA5-Land STRD/3600 L↓ ----
+    #   'yangiliklar'  — asl ERA5 rejimi
+    #   'SEBAL_Milliy' — SEBAL_ID oilasi, lekin L↓ ERA5 (Bushland validatsiya:
+    #                    ERA5 R²=0.97/RMSE 13.7 >> Bastiaanssen R²=0.72/RMSE 44.9)
+    if mode == 'yangiliklar' or mode == 'SEBAL_Milliy':
         # ERA5 strd — hourly accumulated (J/m²) → W/m²
         strd = image.select('STRD').divide(3600.0)
         l_down = strd.rename('L_DOWN').max(0)
@@ -419,6 +422,154 @@ def compute_net_available_energy(image):
 
 
 # ==============================================================
+# ERMIDA SMW LST — faqat SEBAL_Milliy (C2L2 ST band o'rniga)
+# ==============================================================
+# Ermida et al. (2020), Remote Sensing, doi:10.3390/rs12091471 — Statistical
+# Mono-Window: LST = A·Tb/ε + B/ε + C. Tb = at-sensor brightness temp (K2/ln(K1/L10+1));
+# ε = bizning EMISSIVITY (Tasumi LAI); A,B,C — L8 TIRS10 koeffitsientlari, TPW (ERA5
+# total column water vapour) bin bo'yicha (bin = min(floor(TPW_cm/0.6),9)).
+#
+# NEGA (Bushland lizimetr validatsiya, 2026-07-27): C2L2 ST band nadir IRT'dan +6.2K
+# issiq (R²0.837) — bu USGS tan olgan C2 ST vegetatsiya-moslash anomaliyasi (Malakar
+# 2018; ASTER GED baza NDVI o'zgargan sug'oriladigan yarim-quruq dalada xato) va
+# single-channel suv-bug'i sezgirligi. SMW (bizning ε bilan): +4.8K, R²0.894, RMSE
+# 7.25→5.61 va anchor-buzuvchi LAI-bog'liqlikni −38% kamaytiradi. Qoldiq ~4.8K asosan
+# nuqta-vs-footprint (sovuq lizimetr mikro-uchastka) — anchor yutadi, majburan tuzatilmaydi.
+# L9 TIRS-2 uchun ham L8 koeffitsienti ishlatiladi (farq <0.1K).
+_SMW_L8 = {
+    'A': [0.9751, 1.0090, 1.0541, 1.1282, 1.1987,
+          1.3205, 1.4540, 1.6350, 1.5468, 1.9403],
+    'B': [-205.8929, -232.2750, -253.1943, -279.4212, -307.4497,
+          -348.0228, -393.1718, -451.0790, -429.5095, -547.2681],
+    'C': [212.7173, 230.5698, 238.9548, 244.0772, 251.8341,
+          257.2740, 263.5599, 268.9405, 275.0895, 277.9953],
+}
+_TIRS10_K1, _TIRS10_K2 = 774.8853, 1321.0789   # L8/9 TIRS band 10 Planck (C2 metadata)
+
+
+def compute_lst_smw(image):
+    """Ermida (2020) SMW LST — SEBAL_Milliy uchun 'LST' bandini qayta yozadi.
+
+    LST = A·Tb/ε + B/ε + C ; Tb = K2/ln(K1/L10+1) ; ε = EMISSIVITY (bizning);
+    A,B,C — TPW (ERA5 TCWV, cm) bin bo'yicha L8 TIRS10 koeffitsientlari.
+    Kirish: image'da ST_TRAD (C2L2 thermal radiance) va EMISSIVITY bo'lishi shart.
+    """
+    # 1) Brightness temperature Tb — ST_TRAD (C2L2 thermal radiance, ×0.001 → W/m²/sr/µm)
+    l10 = image.select('ST_TRAD').multiply(0.001)
+    tb = l10.expression('K2 / log(K1 / L + 1.0)',
+                        {'K1': _TIRS10_K1, 'K2': _TIRS10_K2, 'L': l10})
+    eps = image.select('EMISSIVITY')
+
+    # 2) TPW (cm) — to'liq ERA5 hourly total column water vapour (ERA5-Land'da YO'Q)
+    t = ee.Date(image.get('system:time_start'))
+    tcwv = (ee.ImageCollection('ECMWF/ERA5/HOURLY')
+            .select('total_column_water_vapour')
+            .filterDate(t.advance(-1, 'hour'), t.advance(1, 'hour'))
+            .first())
+    tpw_cm = ee.Image(tcwv).divide(10.0)                 # kg/m² (mm) → cm
+    pos = tpw_cm.divide(0.6).floor().min(9).max(0).toInt()
+
+    # 3) TPW bin → A,B,C (remap)
+    idx = list(range(10))
+    a = pos.remap(idx, _SMW_L8['A'])
+    b = pos.remap(idx, _SMW_L8['B'])
+    c = pos.remap(idx, _SMW_L8['C'])
+
+    # 4) LST = A·Tb/ε + B/ε + C
+    lst = (a.multiply(tb).divide(eps)
+           .add(b.divide(eps))
+           .add(c)
+           .rename('LST'))
+    return image.addBands(lst, overwrite=True)
+
+
+# ==============================================================
+# LST FOOTPRINT DIAGNOSTIKA — validatsiya MASSHTABI uchun (compute_lst_smw'ni
+# UMUMAN o'zgartirmaydi; 'LST' bandi xom retrieval bo'lib qoladi). Hech qanday
+# tuzatish/ofset QO'LLANMAYDI — faqat qo'shimcha tashxis bandlari. Bular parcel
+# MARKAZIDA (nuqta) namuna olish uchun mo'ljallangan: sun'iy yo'ldosh termal
+# radiometrining fazoviy javobi (PSF) eng sovuq pikselni emas, footprint ichidagi
+# radiatsiyaning integrallashgan javobini ko'radi — shuning uchun PSF-vaznli
+# footprint RADIANCE fazosida (L=ε·σ·T⁴), keyin qayta ekvivalent haroratga.
+# ==============================================================
+
+# Soddalashtirilgan PSF (mukammal TIRS 2D PSF emas) — markazga katta vazn.
+# DIQQAT: shunchaki VAZNLAR (list) — kernel funksiya ICHIDA quriladi. Modul
+# darajasida ee.Kernel.fixed(...) YOZMA: u import paytida (ee.Initialize'dan
+# OLDIN) ishga tushib "Earth Engine not initialized" xatosini beradi.
+_PSF_WEIGHTS = [[1, 2, 1], [2, 4, 2], [1, 2, 1]]
+
+
+def add_lst_footprint_diagnostics(image, scale=30):
+    """LST footprint/neighborhood TASHXIS bandlarini QO'SHADI (xom LST o'zgarmaydi).
+
+    Qo'shiladigan bandlar (nuqtada namuna olinganda markaziy piksel = tegishli stat):
+      LST_raw_center, LST_mean_3x3, LST_median_3x3, LST_mean_5x5, LST_p10_5x5,
+      LST_std_5x5, LST_psf_weighted (radiance-fazo 1-2-1 kernel),
+      NDVI_mean_5x5, NDVI_std_5x5, ALBEDO_std_5x5, DIST_EDGE (dala chetigacha, m),
+      ST_QA (K, C2L2 noaniqlik), WATER_VAPOR (ERA5 TPW, cm).
+    Mavjud EMISSIVITY, TAU_SW, RN, H, G0, ET_24 bandlari export'da to'g'ridan olinadi.
+
+    ⚠️ HECH QANDAY tuzatish yo'q — 'LST' bandi xom SMW retrieval bo'lib qoladi.
+    """
+    sigma = cfg.STEFAN_BOLTZMANN
+    lst = image.select('LST')
+    ndvi = image.select('NDVI')
+    alb = image.select('ALBEDO')
+    eps = image.select('EMISSIVITY')
+
+    k3 = ee.Kernel.square(radius=1, units='pixels')   # 3×3
+    k5 = ee.Kernel.square(radius=2, units='pixels')   # 5×5
+
+    lst_center = lst.rename('LST_raw_center')
+    lst_m3 = lst.reduceNeighborhood(ee.Reducer.mean(), k3).rename('LST_mean_3x3')
+    lst_md3 = lst.reduceNeighborhood(ee.Reducer.median(), k3).rename('LST_median_3x3')
+    lst_m5 = lst.reduceNeighborhood(ee.Reducer.mean(), k5).rename('LST_mean_5x5')
+    lst_p10 = lst.reduceNeighborhood(
+        ee.Reducer.percentile([10]), k5).rename('LST_p10_5x5')
+    lst_sd5 = lst.reduceNeighborhood(ee.Reducer.stdDev(), k5).rename('LST_std_5x5')
+
+    # PSF-vaznli footprint — RADIANCE fazosida (nochiziqli L=ε·σ·T⁴), emissivlik
+    # bilan, keyin qayta ekvivalent radiometrik haroratga: T = (Lw/(εw·σ))^0.25.
+    psf = ee.Kernel.fixed(3, 3, _PSF_WEIGHTS, normalize=True)   # LAZY (import emas)
+    rad = eps.multiply(sigma).multiply(lst.pow(4))
+    rad_w = rad.convolve(psf)
+    eps_w = eps.convolve(psf)
+    lst_psf = (rad_w.divide(eps_w.multiply(sigma))
+               .pow(0.25).rename('LST_psf_weighted'))
+
+    ndvi_m5 = ndvi.reduceNeighborhood(ee.Reducer.mean(), k5).rename('NDVI_mean_5x5')
+    ndvi_sd5 = ndvi.reduceNeighborhood(ee.Reducer.stdDev(), k5).rename('NDVI_std_5x5')
+    alb_sd5 = alb.reduceNeighborhood(ee.Reducer.stdDev(), k5).rename('ALBEDO_std_5x5')
+
+    # Dala chetigacha masofa (m) — ESA WorldCover cropland (40) chetigacha
+    # (piksel aralashuvi/chekka effektlarini tekshirish uchun).
+    crop = (ee.ImageCollection('ESA/WorldCover/v200').first()
+            .select('Map').eq(40))
+    dist_edge = (crop.fastDistanceTransform(128).sqrt()
+                 .multiply(ee.Image.pixelArea().sqrt())
+                 .rename('DIST_EDGE'))
+
+    # ST_QA — C2L2 sirt-harorat noaniqligi (K, ×0.01). Mavjud bo'lsa, aks holda -1.
+    has_qa = image.bandNames().contains('ST_QA')
+    st_qa = ee.Image(ee.Algorithms.If(
+        has_qa, image.select('ST_QA').multiply(0.01),
+        ee.Image.constant(-1))).rename('ST_QA')
+
+    # WATER_VAPOR — SMW bilan AYNAN bir xil ERA5 TCWV (TPW, cm)
+    t = ee.Date(image.get('system:time_start'))
+    tcwv = (ee.ImageCollection('ECMWF/ERA5/HOURLY')
+            .select('total_column_water_vapour')
+            .filterDate(t.advance(-1, 'hour'), t.advance(1, 'hour')).first())
+    wv = ee.Image(tcwv).divide(10.0).rename('WATER_VAPOR')
+
+    return image.addBands([
+        lst_center, lst_m3, lst_md3, lst_m5, lst_p10, lst_sd5, lst_psf,
+        ndvi_m5, ndvi_sd5, alb_sd5, dist_edge, st_qa, wv,
+    ])
+
+
+# ==============================================================
 # MAIN: Compute all radiation components
 # ==============================================================
 
@@ -435,6 +586,11 @@ def compute_all(image, mode='yangiliklar', roi=None, cold_mask=None,
     Input:  Image with surface properties
     Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
     """
+    # SEBAL_Milliy: C2L2 ST band o'rniga Ermida SMW LST (vegetatsiya-anomaliyasidan
+    # mustaqil). L↑, G₀, anchor, dT — hammasi shu tuzatilgan LST'ni ishlatadi.
+    if mode == 'SEBAL_Milliy':
+        image = compute_lst_smw(image)
+
     image = compute_incoming_shortwave(image, sloping_terrain=sloping_terrain)
     image = compute_incoming_longwave(image, mode, roi, cold_mask)
     image = compute_outgoing_longwave(image)

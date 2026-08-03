@@ -19,6 +19,20 @@ import ee
 from . import config as cfg
 from . import ref_et   # SEBAL_ID: instant alfalfa ETr (cold/hot λET)
 
+# Anchor tanlash reduceRegion masshtabi (m). Default 30. Katta ROI (butun tile)
+# uchun main.run(export_csv=True) buni 100 ga qo'yadi — Landsat TERMAL native res
+# aynan 100m (30m — resample), shuning uchun anchor sifati YO'QOLMAYDI, lekin
+# reduceRegion ~10× tez (piksel soni 11× kam). ET esa lizimetr'da 30m qoladi.
+ANCHOR_SCALE = 30
+
+# Cold (ho'l) anchor referens-ET fraksiyasi: λET_cold = COLD_ETRF · ETr_inst.
+# Tasumi/SEBAL_ID default 1.05 (sug'oriladigan to'liq-qoplama ekin advektsiyada
+# alfalfa-referensdan biroz ko'p transpiratsiya qiladi). METRIC amaliyoti ba'zan
+# 0.85 gacha tushiradi (daily ET ortiqcha-baholashni kamaytiradi — Allen METRIC).
+# main.run(cold_etrf=…) buni override qiladi (default 1.05 → SEBAL_ID o'zgarmaydi).
+# SEBAL_Milliy'da ground-truth kalibratsiya uchun sinaladi.
+COLD_ETRF = 1.05
+
 
 # ==============================================================
 # TILE-DARAJASIDA CROPLAND ZONASI — bir marta hisoblanadi
@@ -326,16 +340,16 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
     # DIQQAT: bitta percentile so'ralsa kalit = band nomi ('NDVI'/'LST').
     cold_np = ndvi.updateMask(cold_base).reduceRegion(
         ee.Reducer.percentile([acfg['cold_ndvi_percentile']]),
-        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        search_geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     cold_tp = lst.updateMask(cold_base).reduceRegion(
         ee.Reducer.percentile([acfg['cold_lst_percentile']]),
-        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        search_geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     hot_np = ndvi.updateMask(hot_base).reduceRegion(
         ee.Reducer.percentile([acfg['hot_ndvi_percentile']]),
-        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        search_geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     hot_tp = lst.updateMask(hot_base).reduceRegion(
         ee.Reducer.percentile([acfg['hot_lst_percentile']]),
-        search_geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        search_geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
 
     ndvi_p_cold = ee.Number(cold_np.get('NDVI', _HI))   # gte -> yo'q bo'lsa bo'sh
     lst_p_cold = ee.Number(cold_tp.get('LST', _LO))     # lte -> bo'sh
@@ -449,12 +463,12 @@ def _anchor_cimec(image, geom, base):
     # Cold: yuqori NDVI (p80) guruhida eng sovuq (p5..p40)
     # DIQQAT: bitta percentile so'ralsa kalit = band nomi ('NDVI'), '_p80' EMAS.
     nperc = ndvi.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([80]), geom, 30,
+        ee.Reducer.percentile([80]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     ndvi_p80 = _pn(nperc, 'NDVI', _HI)              # gte → yo'q/null bo'lsa bo'sh
     high_ndvi = base.And(ndvi.gte(ndvi_p80))
     tsg = ts.updateMask(high_ndvi).reduceRegion(
-        ee.Reducer.percentile([5, 40]), geom, 30,
+        ee.Reducer.percentile([5, 40]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     cold_lo = _pn(tsg, 'LST_p5', _HI)               # gte → bo'sh
     cold_hi = _pn(tsg, 'LST_p40', _LO)              # lte → bo'sh
@@ -462,12 +476,12 @@ def _anchor_cimec(image, geom, base):
 
     # Hot: past NDVI (p10, o'simlik bor lekin siyrak) guruhida eng issiq
     nperc2 = ndvi.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([10]), geom, 30,
+        ee.Reducer.percentile([10]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     ndvi_p10 = _pn(nperc2, 'NDVI', _LO)             # bitta percentile → kalit 'NDVI'
     low_ndvi = base.And(ndvi.lte(ndvi_p10)).And(ndvi.gt(0.02)).And(alb.gt(0.12))
     tsd = ts.updateMask(low_ndvi).reduceRegion(
-        ee.Reducer.percentile([60, 95]), geom, 30,
+        ee.Reducer.percentile([60, 95]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     hot_lo = _pn(tsd, 'LST_p60', _HI)               # gte → bo'sh
     hot_hi = _pn(tsd, 'LST_p95', _LO)               # lte → bo'sh
@@ -498,13 +512,13 @@ def _anchor_plan_b(image, geom, base):
     alb = image.select('ALBEDO')
 
     nperc = ndvi.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([10, 95]), geom, 30,
+        ee.Reducer.percentile([10, 95]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     ndvi_p95 = _pn(nperc, 'NDVI_p95', _HI)   # gte → yo'q bo'lsa bo'sh
     ndvi_p10 = _pn(nperc, 'NDVI_p10', _LO)   # lte → yo'q bo'lsa bo'sh
 
     tperc = ts.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([5, 15, 20, 80, 85, 95]), geom, 30,
+        ee.Reducer.percentile([5, 15, 20, 80, 85, 95]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     ts_p05 = _pn(tperc, 'LST_p5', _HI)       # cold gte → bo'sh
     ts_p15 = _pn(tperc, 'LST_p15', _LO)      # cold lte chegarasi → bo'sh
@@ -532,26 +546,26 @@ def _anchor_pysebal(image, geom, base):
 
     ns = ndvi.updateMask(base).reduceRegion(
         ee.Reducer.max().combine(ee.Reducer.stdDev(), sharedInputs=True),
-        geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     ndvi_max = _safe_num(ns, 'NDVI_max', 0.7)
     ndvi_std = _safe_num(ns, 'NDVI_stdDev', 0.05)
     cold_veg = base.And(ndvi.gte(ndvi_max.subtract(ndvi_std.multiply(0.1))))
     cs = ts.updateMask(cold_veg).reduceRegion(
         ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True),
-        geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     cold_mean = _safe_num(cs, 'LST_mean', 295.0)
     cold_std = _safe_num(cs, 'LST_stdDev', 2.0)
     cold_mask = cold_veg.And(ts.lte(cold_mean.subtract(cold_std)))
 
     np_ = ndvi.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([10]), geom, 30,
+        ee.Reducer.percentile([10]), geom, ANCHOR_SCALE,
         maxPixels=1e9, bestEffort=True, tileScale=4)
     ndvi_p10 = _safe_num(np_, 'NDVI', 0.1).max(0.05)   # bitta percentile → kalit 'NDVI'
     hot_ndvi = (base.And(ndvi.gte(ndvi_p10.multiply(0.5)))
                 .And(ndvi.lte(ndvi_p10)).And(ndvi.gt(0.02)).And(alb.gt(0.12)))
     hs = ts.updateMask(hot_ndvi).reduceRegion(
         ee.Reducer.mean().combine(ee.Reducer.stdDev(), sharedInputs=True),
-        geom, 30, maxPixels=1e9, bestEffort=True, tileScale=4)
+        geom, ANCHOR_SCALE, maxPixels=1e9, bestEffort=True, tileScale=4)
     hot_mean = _safe_num(hs, 'LST_mean', 305.0)
     hot_std = _safe_num(hs, 'LST_stdDev', 2.0)
     hot_mask = hot_ndvi.And(ts.gte(hot_mean.add(hot_std)))
@@ -595,7 +609,7 @@ def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
         # (min(2): 'min'=LST, 'min1'=Rn−G₀). RN_G0-valid pikselларга cheklanadi.
         cold_stats = (image.select(['LST', 'RN_G0'])
                       .updateMask(cold_mask).updateMask(rn_g0.mask())
-                      .reduceRegion(ee.Reducer.min(2), geom, 30, maxPixels=1e9,
+                      .reduceRegion(ee.Reducer.min(2), geom, ANCHOR_SCALE, maxPixels=1e9,
                                     bestEffort=True, tileScale=4))
         cold_lst = ee.Number(cold_stats.get('min', -999))
         cold_rn_g0 = ee.Number(cold_stats.get('min1', -999))
@@ -606,18 +620,18 @@ def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
         # (izchil juft). Umuman valid piksel bo'lmasa → key yo'q → sentinel -999.
         hot_stats = (image.select(['LST', 'RN_G0'])
                      .updateMask(hot_mask).updateMask(rn_g0.mask())
-                     .reduceRegion(ee.Reducer.max(2), geom, 30, maxPixels=1e9,
+                     .reduceRegion(ee.Reducer.max(2), geom, ANCHOR_SCALE, maxPixels=1e9,
                                    bestEffort=True, tileScale=4))
         hot_lst = ee.Number(hot_stats.get('max', -999))       # eng issiq LST
         hot_rn_g0 = ee.Number(hot_stats.get('max1', -999))    # o'sha pikselning Rn−G₀
     else:  # 'median_anchor' (default — hozirgi bilan aynan bir xil natija)
         cold_stats = image.select(['LST', 'RN_G0']).updateMask(cold_mask).reduceRegion(
-            ee.Reducer.median(), geom, 30, maxPixels=1e9,
+            ee.Reducer.median(), geom, ANCHOR_SCALE, maxPixels=1e9,
             bestEffort=True, tileScale=4)
         cold_lst = ee.Number(cold_stats.get('LST', -999))
         cold_rn_g0 = ee.Number(cold_stats.get('RN_G0', -999))   # SEBAL_ID: cold H uchun
         hot_stats = image.select(['LST', 'RN_G0']).updateMask(hot_mask).reduceRegion(
-            ee.Reducer.median(), geom, 30, maxPixels=1e9,
+            ee.Reducer.median(), geom, ANCHOR_SCALE, maxPixels=1e9,
             bestEffort=True, tileScale=4)
         hot_lst = ee.Number(hot_stats.get('LST', -999))
         hot_rn_g0 = ee.Number(hot_stats.get('RN_G0', -999))
@@ -882,7 +896,7 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     hot_mask = anchors['hot_mask']
     cold_mask = anchors['cold_mask']
     cold_rn_g0 = anchors.get('cold_rn_g0', hot_rn_g0)   # SEBAL_ID: cold H_cp uchun
-    is_id = (mode == 'SEBAL_ID')
+    is_id = cfg.is_id_mode(mode)
 
     lst = image.select('LST')
     rho_air = image.select('RHO_AIR')
@@ -913,13 +927,13 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     # keyin (A) iteratsiya sof Python'da, server chaqiruvisiz ketadi.
     stats_d = {
         'u200': u_200.updateMask(hot_mask).reduceRegion(
-            ee.Reducer.median(), roi, 30, maxPixels=1e9,
+            ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
             bestEffort=True, tileScale=4).get('U_200', -999),
         'z0m': z0m.updateMask(hot_mask).reduceRegion(
-            ee.Reducer.median(), roi, 30, maxPixels=1e9,
+            ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
             bestEffort=True, tileScale=4).get('Z0M', -999),
         'rho': rho_air.updateMask(hot_mask).reduceRegion(
-            ee.Reducer.median(), roi, 30, maxPixels=1e9,
+            ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
             bestEffort=True, tileScale=4).get('RHO_AIR', -999),
         'hot_lst': hot_lst, 'cold_lst': cold_lst, 'hot_rn_g0': hot_rn_g0,
     }
@@ -927,13 +941,13 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
         # SEBAL_ID: cold piksel rah_cp uchun cold-mask skalyarlari + cold Rn−G₀
         stats_d.update({
             'u200_c': u_200.updateMask(cold_mask).reduceRegion(
-                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
                 bestEffort=True, tileScale=4).get('U_200', -999),
             'z0m_c': z0m.updateMask(cold_mask).reduceRegion(
-                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
                 bestEffort=True, tileScale=4).get('Z0M', -999),
             'rho_c': rho_air.updateMask(cold_mask).reduceRegion(
-                ee.Reducer.median(), roi, 30, maxPixels=1e9,
+                ee.Reducer.median(), roi, ANCHOR_SCALE, maxPixels=1e9,
                 bestEffort=True, tileScale=4).get('RHO_AIR', -999),
             'cold_rn_g0': cold_rn_g0,
         })
@@ -1149,6 +1163,32 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
           f"rah={_fmt(fin.get('RAH'))} s/m, H={_fmt(fin.get('H'))} W/m² "
           f"| N konvergent = {N_A}")
 
+    # ── ANCHOR TASHXIS (sahna PROPERTY sifatida — CSV export uchun) ──
+    # Tanlangan cold/hot piksel FIZIK xususiyatlari: LST, albedo, NDVI, shamol +
+    # motor natijasi dT_hot/rah_hot/H_hot. Bu fizika'ga TEGMAYDI — anchor
+    # tanlashni QC qilish va oyма-oy fizik oynalarni (LST/albedo/shamol/NDVI)
+    # ground-truth'ga qarab sozlash uchun. albedo/ndvi/shamol = mask ustida MEAN.
+    def _pv(x):
+        return x if isinstance(x, (int, float)) else -999
+
+    def _amean(band, mask):
+        return image.select(band).updateMask(mask).reduceRegion(
+            ee.Reducer.mean(), roi, ANCHOR_SCALE, maxPixels=1e9,
+            bestEffort=True, tileScale=4).get(band)
+
+    image = (image
+             .set('ANCHOR_COLD_LST', _pv(stats.get('cold_lst')))
+             .set('ANCHOR_HOT_LST', _pv(stats.get('hot_lst')))
+             .set('ANCHOR_DT_HOT', _pv(fin.get('DTA')))
+             .set('ANCHOR_RAH_HOT', _pv(fin.get('RAH')))
+             .set('ANCHOR_H_HOT', _pv(fin.get('H')))
+             .set('ANCHOR_COLD_ALBEDO', _amean('ALBEDO', cold_mask))
+             .set('ANCHOR_HOT_ALBEDO', _amean('ALBEDO', hot_mask))
+             .set('ANCHOR_COLD_NDVI', _amean('NDVI', cold_mask))
+             .set('ANCHOR_HOT_NDVI', _amean('NDVI', hot_mask))
+             .set('ANCHOR_COLD_WIND', _amean('WIND_SPEED_10M', cold_mask))
+             .set('ANCHOR_HOT_WIND', _amean('WIND_SPEED_10M', hot_mask)))
+
     return image
 
 
@@ -1326,7 +1366,7 @@ def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
 
     # ---- SEBAL_ID: instant alfalfa ETr → cold/hot λET skalyarlari ----
     lambda_et_cold = lambda_et_hot = 0.0
-    if mode == 'SEBAL_ID':
+    if cfg.is_id_mode(mode):
         from . import water_balance
         image = ref_et.compute_instant_etr(image)     # ETR_INST band (mm/soat)
         LAMBDA = 2.45e6                                 # bug'lanish yashirin issiqligi [J/kg]
@@ -1345,8 +1385,8 @@ def compute_all(image, roi, cold_mask=None, hot_mask=None, anchors=None,
         }).getInfo()
         etr_c = vals['etr_c'] or 0.0
         etr_h = vals['etr_h'] or 0.0
-        # λET_cp = 1.05·ETr; λET_hp = ETrF_hot·ETr  (W/m² = mm/soat · λ / 3600)
-        lambda_et_cold = 1.05 * etr_c * LAMBDA / 3600.0
+        # λET_cp = COLD_ETRF·ETr; λET_hp = ETrF_hot·ETr  (W/m² = mm/soat · λ / 3600)
+        lambda_et_cold = COLD_ETRF * etr_c * LAMBDA / 3600.0
         lambda_et_hot = etrf_hot * etr_h * LAMBDA / 3600.0
 
     # M7: Sensible heat flux (iterativ)

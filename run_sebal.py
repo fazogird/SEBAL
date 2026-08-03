@@ -389,31 +389,75 @@ ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2
 # # ==============================================================
 # # Idaho — 2026 Mart + Aprel
 # # ==============================================================
+# main.run(
+#     roi_type='gaul', name='Nebraska', level=1,
+#     date_start='2022-03-01', date_end='2022-11-01',
+#     mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+#     process_by_tile=True,
+#     tiles=[(28, 31)],
+#     export_daily=False, export_monthly=True,
+#     save_et=True, save_biomass=False,
+#     save_etref=False, save_tact=False, save_eact=False,
+#     validate=False,
+#     folder='SEBAL_B_Nebraska_2025',
+#     scale=30, crs='EPSG:32611',
+
+#     # ---- ANCHOR TANLASH (beton kaskad) ----
+#     # 'default'  | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
+#     # Nomlangan metod birinchi sinaladi, keyin qolganlari (ekin→ROI),
+#     # hech biri chiqmasa 'default' fallback. Har qadam log'da chiqadi.
+#     anchor_method='cascade',
+
+#     # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
+#     use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
+#     viirs_mode='lambda',     # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
+#     viirs_model='multi',     # 'ndvi' | 'ndvi2' | 'multi'
+#     viirs_qa='lenient',      # 'lenient' | 'strict'
+#     viirs_fill='linear',     # 'linear' | 'nearest'
+#     viirs_crs='EPSG:32611',  # 30m fine grid CRS — Idaho = UTM 11N.
+#     #                         None qoldirsangiz avtomatik `crs`ga tushadi.
+# )
+
+# 4 lizimetr DALASI (210×210m markazda → −30m ichki = ~150×150m yadro).
+# LZ markerlari (KMZ): NE=LZ6, SE=LZ1 (drip); NW=LZ4, SW=LZ3 (sprinkler).
+lys_parcels = main.parcels_from_points({
+    'NE': [-102.0955385, 35.18816985],
+    'SE': [-102.0955390, 35.18612583],
+    'NW': [-102.0978919, 35.18817119],
+    'SW': [-102.0979121, 35.18613288],
+}, size_m=210, inner_buffer_m=-30)
+
 main.run(
-    roi_type='gaul', name='Nebraska', level=1,
-    date_start='2022-03-01', date_end='2022-11-01',
-    mode='SEBAL_B', satellite='BOTH', cloud_max=70,
+    roi_type='gaul', name='Texas', level=1,          # Texas (Bushland shtati)
+    date_start='2021-03-01', date_end='2021-11-01',  # 2021 (lizimetr yili), mart–oktabr
+    mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70, # SEBAL_Milliy: ERA5 L↓ + SMW LST + Solar daily
+    cold_etrf=1.05,                                   # default (0.85 test yomonroq: bias↓ lekin R²↓)
+    utc_offset=-6,                                    # Texas panhandle = Central Time (CST); lizimetr ham CST
     process_by_tile=True,
-    tiles=[(28, 31)],
-    export_daily=False, export_monthly=True,
+    tiles=[(30, 36)],                                 # Bushland tile (P30/R36)
+
+    # ---- CSV ZONAL-STAT rejimi (raster YO'Q — parcel'da mean+median → batch CSV) ----
+    export_daily=False, export_monthly=False,
+    export_csv=True,
+    csv_region=lys_parcels,                           # 4 lizimetr dalasi
+    csv_bands=None,                                   # None → CSV_LYS_BANDS (Rn,G,LE,LST,ET,albedo,NDVI,LAI,u*,rah,dT,EF...)
+    csv_scale=30,
+
     save_et=True, save_biomass=False,
     save_etref=False, save_tact=False, save_eact=False,
     validate=False,
-    folder='SEBAL_B_Nebraska_2025',
-    scale=30, crs='EPSG:32611',
+    folder='SEBAL_Milliy_analiz_Bushland_CSV_2021',   # Drive papka (yakuniy: ERA5 L↓+SMW LST+Solar)
+    scale=30, crs='EPSG:32613',                       # Texas panhandle = UTM 13N
 
     # ---- ANCHOR TANLASH (beton kaskad) ----
-    # 'default'  | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
-    # Nomlangan metod birinchi sinaladi, keyin qolganlari (ekin→ROI),
-    # hech biri chiqmasa 'default' fallback. Har qadam log'da chiqadi.
+    # 'default' | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
     anchor_method='cascade',
 
     # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
     use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
-    viirs_mode='lambda',     # 'lambda' (EVAP_FRAC) yoki 'kc' (KC)
-    viirs_model='multi',     # 'ndvi' | 'ndvi2' | 'multi'
-    viirs_qa='lenient',      # 'lenient' | 'strict'
-    viirs_fill='linear',     # 'linear' | 'nearest'
-    viirs_crs='EPSG:32611',  # 30m fine grid CRS — Idaho = UTM 11N.
-    #                         None qoldirsangiz avtomatik `crs`ga tushadi.
+    viirs_mode='lambda',
+    viirs_model='multi',
+    viirs_qa='lenient',
+    viirs_fill='linear',
+    viirs_crs='EPSG:32613',   # ← 30m fine grid CRS — Texas panhandle = UTM 13N
 )

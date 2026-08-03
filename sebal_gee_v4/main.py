@@ -117,8 +117,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     # SEBAL_ID: anchor BITTA NUQTA bo'lishi shart (cold/hot dT hamda hot suv
     # balansi AYNI bir pikselga tayanadi — izchillik). Metod (cimec/plan/…)
     # kandidatlarni topadi, point_anchor ulardan bittasini oladi.
-    if mode == 'SEBAL_ID' and anchor_mode != 'point_anchor':
-        print(f"{prefix} ℹ️ SEBAL_ID → anchor_mode='point_anchor' (bitta nuqta) majburiy")
+    if cfg.is_id_mode(mode) and anchor_mode != 'point_anchor':
+        print(f"{prefix} ℹ️ {mode} → anchor_mode='point_anchor' (bitta nuqta) majburiy")
         anchor_mode = 'point_anchor'
 
     # Mahalliy standart vaqt zonasi (SEBAL Manual App.5-A; DST YO'Q).
@@ -507,15 +507,193 @@ def _export_monthly(scene_images, roi, year, month, mode,
 
 
 # ==============================================================
+# CSV ZONAL-STAT EXPORT (batch table — raster EMAS, qiymat)
+# ==============================================================
+# Lizimetr/parcel ustida mean+median → CSV. BATCH bo'lgani uchun interaktiv
+# limitlar (5-daqiqa, "too many concurrent aggregations") YO'Q. Anchor sahnaga
+# allaqachon "pishirilgan" (process_tile getInfo), shuning uchun bu yengil.
+
+# Lizimetr bilan solishtiriladigan + SEBAL diagnostika bandlari.
+# (Lizimetr o'lchaydi: Rn, G, LE→ET, LST(yuza harorat), albedo(Rs'dan), H.
+#  SEBAL diagnostika: NDVI, LAI, u*, rah, dT, EF.)
+CSV_LYS_BANDS = [
+    # --- yakuniy / oqim ---
+    'ET_24', 'ET_INST_MM_HR', 'ETRF_INST', 'LAMBDA_E', 'EVAP_FRAC',
+    'RN', 'G0', 'H', 'RN_G0', 'G_RATIO',
+    # --- yuza / radiometriya ---
+    'LST', 'ALBEDO', 'NDVI', 'SAVI', 'LAI', 'EMISSIVITY',
+    # --- 5 albedo usuli (diagnostika — qaysi oyда qaysi usul lizimetrga mos) ---
+    'ALB_OLMEDO', 'ALB_LIANG', 'ALB_KE', 'ALB_TASUMI', 'ALB_AVG3',
+    # --- radiatsiya komponentlari (Rn xatosini ajratish: vs lizimetr Rs/LWdn/LWup) ---
+    'K_DOWN', 'L_DOWN', 'L_UP', 'TAU_SW',
+    # --- aerodinamika / H motori ---
+    'DTA', 'RAH', 'USTAR', 'U_200', 'L_MO', 'Z0M', 'Z0M_WIND', 'RHO_AIR', 'SLOPE',
+    # --- meteo (ERA5) — mustaqil tekshirish (#7) ---
+    'WIND_SPEED_10M', 'AIR_TEMP',
+    # --- kunlik / referens (mavjud bo'lsa; _reduce yo'qini o'tkazib yuboradi) ---
+    'RN24', 'SOLAR_FRAC', 'ETR_INST', 'ETR24',
+]
+
+# Anchor tashxis (sahna PROPERTY'lari — energy_balance yozib qo'ygan). Per-piksel
+# EMAS: butun tile uchun bitta (tanlangan cold/hot piksel xususiyatlari + motor).
+CSV_ANCHOR_PROPS = [
+    'ANCHOR_COLD_LST', 'ANCHOR_HOT_LST', 'ANCHOR_DT_HOT', 'ANCHOR_RAH_HOT',
+    'ANCHOR_H_HOT', 'ANCHOR_COLD_ALBEDO', 'ANCHOR_HOT_ALBEDO',
+    'ANCHOR_COLD_NDVI', 'ANCHOR_HOT_NDVI', 'ANCHOR_COLD_WIND', 'ANCHOR_HOT_WIND',
+]
+
+
+def parcels_from_points(points, size_m=210, inner_buffer_m=-30):
+    """
+    {nom: [lon, lat]} → ee.FeatureCollection: har nuqta markazida size_m kvadrat,
+    ichki bufer bilan (chekka/yo'l chiqarilgan). 'name' xususiyati saqlanadi.
+    Masalan lizimetr: 210×210m dala → −30m → ~150×150m yadro.
+    """
+    feats = []
+    for nom, lonlat in points.items():
+        g = ee.Geometry.Point([lonlat[0], lonlat[1]]).buffer(size_m / 2.0).bounds()
+        if inner_buffer_m:
+            g = g.buffer(inner_buffer_m)
+        feats.append(ee.Feature(g, {'name': nom}))
+    return ee.FeatureCollection(feats)
+
+
+def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
+                      tile_label, mode, utc_offset, scale=30):
+    """
+    region_fc (parcel) ustida MEAN+MEDIAN zonal-stat → BATCH table CSV.
+      • per-scene CSV: har sahna, instant+daily bandlar (date bilan)
+      • per-month CSV: har oy, ET_MONTHLY (year/month bilan)
+    Raster export EMAS — faqat qiymatlar (kichik CSV → Drive).
+    """
+    reducer = ee.Reducer.mean().combine(ee.Reducer.median(), sharedInputs=True)
+    prefix = f'_{tile_label}' if tile_label else ''
+    tasks = []
+
+    def _reduce(img, band_list, tags):
+        # faqat MAVJUD bandlarni tanlaymiz (yo'q band select'ni buzmasin)
+        sel = img.bandNames().filter(ee.Filter.inList('item', ee.List(band_list)))
+        red = img.select(sel).reduceRegions(
+            collection=region_fc, reducer=reducer, scale=scale)
+        for k, v in tags.items():
+            red = red.map(lambda f, kk=k, vv=v: f.set(kk, vv))
+        return red
+
+    # --- PER-SCENE (instant + daily bir CSV'da; ular ayni sahnaning bandlari) ---
+    # Har qatorga sahna ANCHOR property'lari ham qo'shiladi (tanlangan cold/hot
+    # piksel xususiyatlari — anchor tanlashni QC + fizik oyna sozlash uchun).
+    scene_fcs = []
+    for s in scenes:
+        img = ee.Image(s)
+        date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
+        tags = {'date': date}
+        for p in CSV_ANCHOR_PROPS:
+            tags[p] = img.get(p)
+        scene_fcs.append(_reduce(img, bands, tags))
+    scene_fc = ee.FeatureCollection(scene_fcs).flatten()
+    t1 = ee.batch.Export.table.toDrive(
+        collection=scene_fc, description=f'SEBAL_csv_scene{prefix}',
+        folder=folder, fileNamePrefix=f'SEBAL_csv_scene{prefix}', fileFormat='CSV')
+    t1.start(); tasks.append(t1)
+    print(f"  📄 CSV per-scene export → SEBAL_csv_scene{prefix} (mean+median)")
+
+    # --- LST FOOTPRINT DIAGNOSTIKA (parcel MARKAZIDA, nuqta namuna) ---
+    # compute_lst_smw O'ZGARMAYDI; hech qanday tuzatish yo'q. PSF/neighborhood/
+    # WV/QA bandlari L0–L3 footprint validatsiya testi uchun (ayrim CSV).
+    _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale)
+
+    # --- PER-MONTH (ET_MONTHLY) ---
+    scene_months = sorted({d[:7] for d in info.get('dates', [])})
+    month_fcs = []
+    for mk in scene_months:
+        yr, mo = int(mk[:4]), int(mk[5:7])
+        monthly = daily_et.compute_monthly_et(scenes, roi, yr, mo, mode=mode,
+                                              utc_offset=utc_offset)
+        if monthly is None:
+            continue
+        month_fcs.append(_reduce(monthly, ['ET_MONTHLY'], {'year': yr, 'month': mo}))
+    if month_fcs:
+        month_fc = ee.FeatureCollection(month_fcs).flatten()
+        t2 = ee.batch.Export.table.toDrive(
+            collection=month_fc, description=f'SEBAL_csv_monthly{prefix}',
+            folder=folder, fileNamePrefix=f'SEBAL_csv_monthly{prefix}', fileFormat='CSV')
+        t2.start(); tasks.append(t2)
+        print(f"  📄 CSV oylik export → SEBAL_csv_monthly{prefix} (mean+median)")
+    return tasks
+
+
+# LST footprint tashxis bandlari uchun CSV band ro'yxati (radiation.
+# add_lst_footprint_diagnostics chiqaradi + mavjud EMISSIVITY/TAU_SW/RN/H/G0/ET_24).
+CSV_LSTDIAG_BANDS = [
+    'LST', 'LST_raw_center', 'LST_mean_3x3', 'LST_median_3x3', 'LST_mean_5x5',
+    'LST_p10_5x5', 'LST_std_5x5', 'LST_psf_weighted',
+    'NDVI', 'NDVI_mean_5x5', 'NDVI_std_5x5', 'ALBEDO', 'ALBEDO_std_5x5',
+    'DIST_EDGE', 'ST_QA', 'EMISSIVITY', 'TAU_SW', 'WATER_VAPOR',
+    'RN', 'H', 'G0', 'ET_24',
+]
+
+
+def _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale=30):
+    """
+    LST footprint TASHXIS CSV — parcel MARKAZIDA (nuqta) namuna.
+
+    compute_lst_smw O'ZGARMAYDI; hech qanday tuzatish/ofset qo'llanmaydi. Har
+    sahna uchun neighborhood (3×3/5×5), PSF-vaznli radiance-footprint, WV, ST_QA
+    va boshqa tashxis bandlari parcel MARKAZIY nuqtasida (ee.Reducer.first)
+    namuna olinadi — bu 30 m piksel/PSF footprintni lizimetr nuqtasiga
+    moslashtiradi (parcel o'rtachasi emas). L0–L3 variant testi uchun.
+    """
+    from . import radiation
+
+    # parcel → markaziy NUQTA (footprint piksel/PSF markazi)
+    pts = region_fc.map(lambda f: f.setGeometry(f.geometry().centroid(1)))
+    prefix = f'_{tile_label}' if tile_label else ''
+
+    fcs = []
+    for s in scenes:
+        img = radiation.add_lst_footprint_diagnostics(ee.Image(s), scale)
+        date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
+        sel = img.bandNames().filter(
+            ee.Filter.inList('item', ee.List(CSV_LSTDIAG_BANDS)))
+        red = img.select(sel).reduceRegions(
+            collection=pts, reducer=ee.Reducer.first(), scale=scale)
+        red = red.map(lambda f, dd=date: f.set('date', dd))
+        fcs.append(red)
+
+    fc = ee.FeatureCollection(fcs).flatten()
+    t = ee.batch.Export.table.toDrive(
+        collection=fc, description=f'SEBAL_csv_lstdiag{prefix}',
+        folder=folder, fileNamePrefix=f'SEBAL_csv_lstdiag{prefix}',
+        fileFormat='CSV')
+    t.start()
+    print(f"  📄 CSV LST-diag (footprint/PSF/neighborhood, nuqta) → "
+          f"SEBAL_csv_lstdiag{prefix}")
+    return [t]
+
+
+# ==============================================================
 # MAIN RUN
 # ==============================================================
 
 def run(roi_type='gaul', date_start=None, date_end=None,
         mode='SEBAL_B', satellite='BOTH', cloud_max=70, validate=False,
+        utc_offset=None,   # mahalliy standart soat (None=avto boylam/15). Siyosiy
+        #   vaqt zonasi boylamdan farq qilsa QO'LDA bering: mas. Texas panhandle
+        #   Central Time = -6 (avto -7 beradi — El Paso'dan tashqari xato).
 
         # Export sozlamalari
         export_daily=True,
         export_monthly=True,
+
+        # CSV ZONAL-STAT (raster emas — parcel/lizimetr ustida mean+median → CSV)
+        export_csv=False,     # True → csv_region ustida qiymatlarni CSV qiladi (batch)
+        csv_region=None,      # ee.FeatureCollection ('name' xususiyatli parcellar).
+        #                       main.parcels_from_points({'NE':[lon,lat],...}) yordamchisi bor.
+        csv_bands=None,       # None → CSV_LYS_BANDS (lizimetr bilan solishtiriladiganlar)
+        csv_scale=30,
+        cloud_roi=None,       # bulut precheck hududi. None + export_csv → avtomatik
+        #   csv_region (parcel) ustida (TEZ, faqat lizimetr uchun). Oddiy raster
+        #   rejimda None qoladi → butun ROI (butun tile kerak). Qo'lda ham berish mumkin.
 
         # Oylik produktlar (True/False)
         save_et=True,
@@ -540,6 +718,24 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         #   'point_anchor' = kandidatlar ichidan BITTA ekstremal (hot=eng issiq,
         #   cold=eng sovuq; Rn−G₀ hot pikseldan). Natijaga sezilarli ta'sir qiladi.
         anchor_mode='median_anchor',
+
+        # Cold anchor referens-ET fraksiyasi (λET_cold = cold_etrf·ETr_inst).
+        # Default 1.05 (Tasumi/SEBAL_ID). SEBAL_Milliy ground-truth test uchun
+        # 0.85 (METRIC) kabi qiymatlar sinaladi. SEBAL_ID default'da o'zgarmaydi.
+        cold_etrf=1.05,
+
+        # Ekin-spetsifik z0m (h=f(LAI) → z0m=0.123·h; Tasumi/Wright R²0.98-0.99).
+        # FAQAT export_csv rejimida (tadqiqot nuqtasi ekin turi ma'lum) qo'llanadi.
+        # None → default z0m=0.018·LAI. Qiymatlar: cfg.CROP_H_LAI kalitlari
+        # ('alfalfa','corn','potato','beans_beet_peas','spring_wheat','winter_wheat','default').
+        crop_type=None,
+
+        # Broadband albedo usuli — production 'ALBEDO' bandini tanlaydi:
+        #   'config' (DEFAULT, o'zgarmagan) → cfg.OLMEDO_COEFFICIENTS (ofsetsiz)
+        #   'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → foydalanuvchi koeffitsientlari.
+        # ⚠️ 'olmedo'(foydalanuvchi,ofsetli) ≠ 'config'(cfg). Har run'da 5 usul
+        # ALB_* diagnostika bandi CSV'ga chiqadi (qaysi oyда qaysi usul lizimetrга mos).
+        albedo_method='config',
 
         # Export sozlamalari
         folder='SEBAL_Output',
@@ -575,6 +771,40 @@ def run(roi_type='gaul', date_start=None, date_end=None,
       tiles=[(156,32),(156,33)], process_by_tile=True → faqat shu tilelar
     """
     roi = cfg.build_roi(roi_type, **roi_kwargs)
+
+    # BULUT PRECHECK HUDUDI: CSV/lizimetr rejimida FAQAT parcel ustida (tez +
+    # to'g'ri — bizga Bushland ustida bulutsizlik kerak, butun shtat emas).
+    # Oddiy raster rejimda cloud_roi=None → butun ROI (butun tile kerak).
+    _cloud_use_cropland = True
+    _csv_mode = export_csv and csv_region is not None
+    if cloud_roi is None and _csv_mode:
+        cloud_roi = csv_region.geometry()   # parcellar birlashgan geometriyasi (reduceRegion uchun)
+        _cloud_use_cropland = False
+        print("  ☁️  export_csv → bulut precheck LOKAL (csv_region parcellari; tez)")
+
+    # ANCHOR masshtabi: FAQAT CSV/lizimetr rejimida 100m (butun tile ~10× tez;
+    # Landsat termal native 100m → sifat yo'qolmaydi). Oddiy raster rejimda 30m.
+    energy_balance.ANCHOR_SCALE = 100 if _csv_mode else 30
+    if _csv_mode:
+        print("  ⚡ export_csv → anchor 100m da (butun tile tez; termal native res)")
+
+    # Cold anchor ETrF (λET_cold = cold_etrf·ETr) — SEBAL_ID default 1.05
+    energy_balance.COLD_ETRF = cold_etrf
+    if cold_etrf != 1.05:
+        print(f"  🧊 cold anchor ETrF = {cold_etrf} (default 1.05 dan farqli)")
+
+    # Broadband albedo usuli — production 'ALBEDO' (default 'config' = o'zgarmagan).
+    # 5 usul ALB_* diagnostika bandi har doim CSV'ga chiqadi (usuldan qat'i nazar).
+    surface_props.ALBEDO_METHOD = albedo_method
+    if albedo_method != 'config':
+        print(f"  🎨 albedo usuli = '{albedo_method}' (production ALBEDO; default 'config' dan farqli)")
+
+    # Ekin-spetsifik z0m — FAQAT export_csv rejimida (nuqta ekin turi ma'lum).
+    # Boshqa rejimda None (default z0m=0.018·LAI), chunki butun tile ekin turi noma'lum.
+    surface_props.CROP_TYPE = crop_type if (_csv_mode and crop_type) else None
+    if surface_props.CROP_TYPE:
+        print(f"  🌱 ekin-spetsifik z0m: crop_type='{surface_props.CROP_TYPE}' "
+              f"(h=f(LAI) → z0m=0.123·h; faqat CSV rejimi)")
 
     # VIIRS/S30 downscaling 30m fine-grid CRS. Berilmasa → asosiy export
     # `crs`. Bu ilgari viirs_downscaling.DCFG da hardcode ('EPSG:32642',
@@ -640,10 +870,20 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             scenes, info = process_tile(
                 tile_roi, date_start, date_end, mode,
                 satellite, cloud_max, tile_label,
-                anchor_method=anchor_method, anchor_mode=anchor_mode)
+                anchor_method=anchor_method, anchor_mode=anchor_mode,
+                utc_offset=utc_offset,
+                cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
 
             if not scenes:
                 continue
+
+            # CSV zonal-stat (parcel/lizimetr ustida mean+median → batch CSV)
+            if export_csv and csv_region is not None:
+                ctasks = _export_zonal_csv(
+                    scenes, info, tile_roi, csv_region,
+                    csv_bands or CSV_LYS_BANDS, folder, tile_label, mode,
+                    info.get('utc_offset', 0), csv_scale)
+                all_tasks.extend(ctasks)
 
             if export_daily:
                 tasks = _export_daily(scenes, tile_roi, mode,
@@ -732,7 +972,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         scenes, info = process_tile(
             roi, date_start, date_end, mode,
             satellite, cloud_max, anchor_method=anchor_method,
-            anchor_mode=anchor_mode)
+            anchor_mode=anchor_mode, utc_offset=utc_offset,
+            cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
 
         if scenes:
             if export_daily:

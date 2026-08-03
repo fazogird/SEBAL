@@ -115,6 +115,22 @@ EMISSIVITY = {
     'dense_veg': 0.985,      # NDVI > 0.74 (zich o'simlik)
 }
 
+# ── SEBAL rejim OILASI ─────────────────────────────────────────────────────
+# SEBAL_Milliy — SEBAL_ID (Tasumi 2003) ning ground-truth-kalibrlangan varianti.
+# SEBAL_ID bilan BARCHA jihatdan bir xil (emissivity Eq.4.28, anchor point_anchor,
+# ETrF o'z-o'zini saqlash, FAO-56 ETr, hot suv balansi) — YAGONA farq: tushuvchi
+# uzun to'lqin L↓ = ERA5-Land STRD (Bastiaanssen empirik εₐ EMAS). Asos: Bushland
+# lizimetr — ERA5 L↓ R²=0.97/RMSE 13.7 vs Bastiaanssen R²=0.72/RMSE 44.9 (2026-07-27).
+# Yangi komponent tuzatishlari (LST bias, G, z0m) shu rejimga bosqichma-bosqich
+# qo'shiladi; SEBAL_ID asl (Tasumi 2003) nusxa sifatida O'ZGARMASDAN qoladi.
+SEBAL_ID_FAMILY = ('SEBAL_ID', 'SEBAL_Milliy')
+
+
+def is_id_mode(mode):
+    """mode SEBAL_ID oilasidanmi (SEBAL_ID yoki uning varianti SEBAL_Milliy)?"""
+    return mode in SEBAL_ID_FAMILY
+
+
 # SEBAL_ID (Tasumi 2003) — Eq. (4.28): LAI-asosli emissivity (surface_props.
 # compute_emissivity, faqat mode='SEBAL_ID').
 #   NDVI > 0, LAI < 3  → ε₀ = 0.95 + 0.01 × LAI
@@ -166,6 +182,23 @@ ROUGHNESS = {
 Z0M_LAI_COEF = 0.018
 SAVI_L_LAI = 0.1
 
+# ── EKIN-SPETSIFIK z0m: h = f(LAI) → z0m = Z0M_HEIGHT_COEF · h ─────────────
+# Tasumi (Univ. Idaho), Wright (USDA-ARS Kimberly) ma'lumotidan; R² 0.98-0.99.
+# h [m] = a3·LAI³ + a2·LAI² + a1·LAI. FAQAT CSV/tadqiqot rejimida, nuqta ekin
+# turi ma'lum bo'lganda (surface_props.CROP_TYPE main.run(crop_type=…) dan).
+# CROP_TYPE=None → default (per-piksel z0m = Z0M_LAI_COEF·LAI, o'zgarmaydi).
+# Izoh: 'default' (h=0.15·LAI) → z0m=0.123·0.15·LAI=0.0185·LAI ≈ hozirgi 0.018·LAI.
+Z0M_HEIGHT_COEF = 0.123          # z0m = 0.123·h (Brutsaert 1982; SEBAL Manual)
+CROP_H_LAI = {
+    'default':         (0.0,     0.0,     0.15),    # alfalfa,kartoshka,loviya,lavlagi,no'xat: h=0.15·LAI
+    'alfalfa':         (0.0,     0.009,   0.076),   # R²=0.9881
+    'corn':            (0.03,   -0.2194,  0.7243),  # makkajo'xori, R²=0.9938
+    'potato':          (0.0043, -0.0694,  0.3783),  # kartoshka + baland loviya, R²=0.9837
+    'beans_beet_peas': (0.0025, -0.0417,  0.2754),  # loviya/lavlagi/no'xat, R²=0.9756
+    'spring_wheat':    (0.0414, -0.1848,  0.3214),  # bahorgi bug'doy, R²=0.9896
+    'winter_wheat':    (0.0039, -0.0411,  0.1747),  # qishki bug'doy, R²=0.9914
+}
+
 # Shamol ekstrapolyatsiyasi (10→200m) uchun z₀m — vegetatsiya balandligidan:
 #   h = h_max × (NDVI-NDVI_min)/(NDVI_max-NDVI_min),  z₀m,wind = 0.123 × h  [Brutsaert 1982]
 WIND_ROUGHNESS = {
@@ -195,12 +228,15 @@ WIND = {
     'z_ref_era5': 10.0,      # ERA5 wind measurement height (m)
     'z_blending': 200.0,     # blending height (Allen/METRIC standard)
     'z0m_weather': 0.12,     # (eski — endi shamol z₀m WIND_ROUGHNESS'dan)
-    # SEBAL_B (Bastiaanssen; Tasumi tezisi) — IKKI XIL z2:
-    #   rah uchun:        z1=0.1m, z2_rah=0.2m → rah = ln(0.2/0.1)/(u*·k) = ln(2)
-    #   stability (ψ) uchun: z1=0.1m, z2=2.0m (L<0 va L>0 uchun ham)
-    # Bular BOSHQA-BOSHQA — chalkashtirmaslik.
+    # KANONIK SEBAL/METRIC (Allen 2007; Tasumi 2003): rah VA stability BIR XIL
+    #   z1=0.1m, z2=2.0m → rah = ln(2.0/0.1)/(u*·k) = ln(20)
+    # (2026-07-24: z2_rah 0.2→2.0 ga o'tkazildi. Audit — Ne1 2022 SEBAL_ID:
+    #  z2_rah=2.0 da rah 11–18 s/m, dT 1.4–5.1 K → FIZIK (kitob Table 6.19 mos).
+    #  z2_rah=0.2 esa rah'ni 1.0 clampga tushirardi (nofizik). DIQQAT: yakka
+    #  o'zi 2.0 o'sish mavsumida ET ni kam baholaydi — advektsiya manbada
+    #  (hot λE≠0 / EF>1) qo'shilishi kerak. Bog'liq: rah-z2-advection-finding.)
     'z1':     0.1,           # past balandlik (rah + stability, umumiy)
-    'z2_rah': 0.2,           # rah LOG hadi uchun yuqori balandlik
+    'z2_rah': 2.0,           # rah LOG hadi uchun yuqori balandlik (= z2, kanonik)
     'z2':     2.0,           # STABILITY (Monin-Obukhov ψ) yuqori balandligi
 }
 

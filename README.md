@@ -484,6 +484,9 @@ Loyihaning ichki auditida aniqlangan, hozircha tuzatilmagan yoki qisman hal qili
 
 ### ⚠️ `rah` `z2_rah=0.2` nomuvofiqligi — ATAYLAB saqlangan (2026-07 diagnostika)
 
+> 🔴 **ESKIRDI (2026-07-24):** `z2_rah` endi **2.0** ga o'tkazildi (§35 ga qarang).
+> Quyidagi tahlil nega 0.2 vaqtincha saqlanganini tushuntiradi — tarixiy kontekst.
+
 `energy_balance.py` `rah` log hadi `ln(z2_rah/z1) = ln(0.2/0.1)` ishlatadi,
 lekin **barqarorlik** tuzatmasi `ψh(z2)−ψh(z1)` esa `z2 = 2.0 m` gача
 integrallanadi. Klassik SEBAL/METRIC'da (Allen et al. 2007; Tasumi 2003,
@@ -1001,6 +1004,53 @@ yaxlit qoldirgan (shamol bir xil edi).
 bo'lsa — shamol sharoiti bir xil deb hisoblash mumkin.
 
 *(Sub-hudud bo'lish — alohida keyingi bosqich, hozir amalga oshirilmagan.)*
+
+---
+
+## O'zgartirishlar jurnali (2026-07 — lizimetr validatsiya + kalibratsiya)
+
+### 34. Lizimetr validatsiya CSV rejimi + tezlik (`export_csv`)
+
+Bushland (Texas) tarozili lizimetri bilan solishtirish uchun **butun tile raster
+export'siz** qiymat olish rejimi. GEE **lazy** (kechiktirilgan) bo'lgani uchun,
+interaktiv `reduceRegion.getInfo()` butun tile'да "Too many concurrent
+aggregations" beradi. Yechim — **BATCH table export** (limit yuqori).
+
+**`main.run(...)` yangi parametrlari:**
+| Param | Vazifa |
+|---|---|
+| `export_csv=False` | True → parcel ustida **mean+median** zonal-stat → **batch CSV** (raster emas) |
+| `csv_region=None` | `ee.FeatureCollection` ('name' xususiyatli parcellar) |
+| `csv_bands=None` | None → `CSV_LYS_BANDS` (lizimetr bilan solishtiriladigan 16 band) |
+| `csv_scale=30` | zonal-stat masshtabi |
+| `cloud_roi=None` | bulut precheck hududi (None+export_csv → avto parcel) |
+| `utc_offset=None` | mahalliy standart soat (None=avto boylam/15; **Texas panhandle=-6**, avto -7 xato) |
+
+**Yordamchi:** `main.parcels_from_points({'NE':[lon,lat],...}, size_m=210,
+inner_buffer_m=-30)` → dala parcellari (210×210m markazda → −30m ichki = ~150m yadro).
+
+**Chiqish (Drive'ga kichik CSV):**
+- `SEBAL_csv_scene_<tile>.csv` — har sahna: `ET_INST_MM_HR, ET_24, RN, G0, H, LST,
+  ALBEDO, LAMBDA_E, NDVI, LAI, USTAR, RAH, DTA, EVAP_FRAC...` (mean+median)
+- `SEBAL_csv_monthly_<tile>.csv` — har oy: `ET_MONTHLY` (mean+median)
+
+**⚡ Tezlik — FAQAT `export_csv=True` rejimida** (oddiy raster rejim o'zgarmagan):
+- **Bulut precheck LOKAL** — butun ROI o'rniga faqat `csv_region` parcellari ustida
+  (tez VA to'g'ri: bizga lizimetr ustida bulutsizlik kerak, butun shtat emas).
+- **Anchor 100m da** (`energy_balance.ANCHOR_SCALE=100`) — Landsat termal **native
+  100m** (30m — resample), sifat YO'QOLMAYDI, lekin anchor reduceRegion ~10× tez.
+  ET esa parcelда 30m qoladi. → butun tile anchor ~2h → ~10–15 daqiqa.
+
+### 35. Kalibratsiya tuzatishlari (bu sessiya)
+
+- **`z2_rah` 0.2 → 2.0** (kanonik SEBAL/METRIC; `config.py`). Instant-daraja tekshiruv
+  (Ne1 2022, kitob Table 6.4/6.9/6.19): `rah` 1.0 clampда edi → endi 11–18 s/m,
+  `dT_hot` 0.3K → 3–5K = FIZIK. ⚠️ Yakka o'zi o'sish mavsumida ET ni kam baholaydi —
+  advektsiya manbада kerak. **§ "rah z2_rah=0.2 kept" (yuqorida) endi ESKIRDI.**
+- **ETr24 → SOATLIK-YIG'INDI** (`ref_et.compute_etr24_hourly_sum`). Kitob App.B:
+  ET_r24 = Σ 24 soatlik ETr (kunlik-qadam EMAS). Ne1 2022: R² 0.801→0.830.
+- **Hot piksel tuproq θFC/θWP → Saxton-Rawls** (OpenLandMap sand/clay pedotransfer),
+  tekstura-klass Table 5.1 o'rniga. HWSD2'да θFC/θWP alohida yo'q edi.
 
 ---
 

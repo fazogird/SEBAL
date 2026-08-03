@@ -55,10 +55,11 @@ def get_daily_etr24(date, roi, dem, ref_type='alfalfa', utc_offset=0,
                .filterDate(day, day.advance(1, 'day')).first())
         return ee.Image(img).select(band).rename('ETR24')
 
-    met = ref_et.get_daily_era5_aggregate(day, roi, utc_offset=utc_offset)
-    etr = (ref_et.RefETCalculator(ref_type=ref_type)
-           .calculate(met, ee.Image(dem), mode='daily').select('ETr'))
-    return etr.rename('ETR24')
+    # SOATLIK-YIG'INDI (kitob App.B) — kunlik-qadamdan aniqroq (Ne1 2022:
+    # R² 0.801→0.830). Har soat kunduz/tun koeffitsientlari bilan ETr, 24 soat yig'indi.
+    etr = ref_et.compute_etr24_hourly_sum(day, roi, ee.Image(dem),
+                                          ref_type=ref_type, utc_offset=utc_offset)
+    return etr.select('ETr').rename('ETR24')
 
 
 # ==============================================================
@@ -156,7 +157,7 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
         from . import sloping_terrain as slt
         ra_ratio = slt.ra24_ratio(image)               # band 'RA24_RATIO'
         image = image.addBands(ra_ratio)
-        if mode != 'SEBAL_ID':
+        if not cfg.is_id_mode(mode):
             rs24 = rs24.multiply(ra_ratio).rename('RS24')   # SEBAL_B: Rn24 orqali
     image = image.addBands(rs24)
 
@@ -178,7 +179,7 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
                .rename('ET_INST_MM_HR'))
     image = image.addBands(et_inst)
 
-    if mode == 'SEBAL_ID':
+    if cfg.is_id_mode(mode):
         # ETrF_inst = ET_inst / ETr_inst (ikkalasi mm/soat)
         # ref_type — EKSTRAPOLYATSIYA referensi (alfalfa default, grass sinov uchun).
         # DIQQAT: cold anchor (ET_cp=1.05·ETr) HAR DOIM ALFALFA da qoladi
@@ -198,15 +199,30 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
                                 source=etr24_source)
         # QIYA YUZA (Eq 5.17-5.19): ETrF24 = C_rad · ETrF_inst
         etrf24 = etrf_inst
-        image = image.addBands(etrf_inst)
+        image = image.addBands(etrf_inst).addBands(etr24)
         if sloping_terrain:
             from . import sloping_terrain as slt
             c_rad = slt.c_radiation(image)             # band 'C_RAD'
             image = image.addBands(c_rad)
             etrf24 = etrf_inst.multiply(c_rad).rename('ETRF24')
-        # ET₂₄ = ETrF24 · ETr24  (Eq 5.8 / 5.19)
-        et_24 = etrf24.multiply(etr24).max(0).rename('ET_24')
-        image = image.addBands(etr24).addBands(et_24)
+
+        if mode == 'SEBAL_Milliy':
+            # SOLAR upscaling: ET₂₄ = ET_inst · (Rs24_jami / Rs_inst) = ET_inst·eff.soat.
+            # Referens-ETrF (self-preservation) o'rniga SOLAR shakl — diurnal
+            # over-baholashni fizik yechadi. Bushland lizimetr: daily MBE +0.88→
+            # +0.17, R²↑; solar shakl ekin ET diurnaliga mos (~9.25 eff.soat vs
+            # referens ~10.9). Rs24=get_daily_solar_radiation (ERA5 SSRD kunlik
+            # o'rt W/m²), Rs_inst=SSRD (ERA5 overpass soati, J/m²) — izchil ERA5.
+            rs24 = get_daily_solar_radiation(date, roi, utc_offset)       # W/m² o'rt
+            ssrd = image.select('SSRD').max(1e4)                          # J/m² (overpass soati)
+            solar_frac = et_inst.divide(ssrd).rename('SOLAR_FRAC')        # monthly interp uchun
+            eff_hr = rs24.multiply(cfg.DAILY_ET['seconds_per_day']).divide(ssrd)  # eff.soat
+            et_24 = et_inst.multiply(eff_hr).max(0).rename('ET_24')
+            image = image.addBands(solar_frac).addBands(et_24)
+        else:
+            # SEBAL_ID: ET₂₄ = ETrF24 · ETr24  (Tasumi Eq 5.8 / 5.19)
+            et_24 = etrf24.multiply(etr24).max(0).rename('ET_24')
+            image = image.addBands(et_24)
     else:
         # SEBAL_B: ET₂₄ = EF × Rn24 × 86400 / λ
         et_24 = (evap_frac.multiply(rn24).multiply(spd).divide(lam)
@@ -251,7 +267,7 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
     import calendar
 
     # SEBAL_ID + Appendix I: kunlik ETrF tuzatish (per-piksel suv balansi)
-    if mode == 'SEBAL_ID' and etrf_water_balance:
+    if cfg.is_id_mode(mode) and etrf_water_balance:
         from . import etrf_water_balance as ewb
         dem_img = ee.Image(image_list[0]).select('DEM')
         return ewb.monthly_et_adjusted(image_list, roi, year, month, dem_img,
@@ -268,8 +284,12 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
     # SEBAL_ID: ETrF interpolyatsiya (Eq 5.9); SEBAL_B: EF interpolyatsiya
     # QIYA YUZA: koeffitsientlar sahna bandi sifatida ETrF/EF bilan birga
     # interpolyatsiya qilinadi (ular sahnaning o'z vaqti/geometriyasiga tegishli)
-    if mode == 'SEBAL_ID':
-        bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
+    if cfg.is_id_mode(mode):
+        # SEBAL_Milliy: SOLAR_FRAC interpolyatsiya (solar upscaling); SEBAL_ID: ETRF_INST
+        if mode == 'SEBAL_Milliy':
+            bands = ['SOLAR_FRAC']
+        else:
+            bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
         interp_collection = ee.ImageCollection(image_list).select(bands)
         dem_img = ee.Image(image_list[0]).select('DEM')
     else:
@@ -288,7 +308,15 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
         day_offset = ee.Number(day_offset)
         current_date = month_start.advance(day_offset, 'day')
 
-        if mode == 'SEBAL_ID':
+        if mode == 'SEBAL_Milliy':
+            # SOLAR upscaling monthly: SOLAR_FRAC (=ET_inst/SSRD) ENG YAQIN sahnadan,
+            # × o'sha kunning Rs24 jami (get_daily_solar_radiation × 86400).
+            interp = _nearest_scene(lambda_collection, current_date)
+            solar_frac = interp.select('SOLAR_FRAC')
+            rs24 = get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
+            et_day = (solar_frac.multiply(rs24)
+                      .multiply(cfg.DAILY_ET['seconds_per_day']).max(0))
+        elif cfg.is_id_mode(mode):
             # Eq 5.9: har tasvir ±8 kunni ifodalaydi → ENG YAQIN sahna hukmron
             # (o'rtachalash YO'Q — SEBAL_B ning midpoint usulidan farqli)
             interp = _nearest_scene(lambda_collection, current_date)
