@@ -336,6 +336,30 @@ DAILY_ET = {
 }
 
 # ==============================================================
+# 11b. CONSUMPTIVE USE — CUirr / effektiv yog'in (Prz) / NIWR
+# ==============================================================
+# FAQAT mode='SEBAL_Milliy'. Kunlik FAO-56 ildiz-zona suv balansi + USDA Curve
+# Number runoff (OpenET / ET Demands metodologiyasi; Allen 1998, USDA 1998).
+#   Prz   = P - Runoff - DeepPerc   (effektiv yog'in)
+#   CUirr = ETa - Prz               (sug'orish suvi iste'moli)
+#   NIWR  = ETc - Prz               (ETc = Kc_max·ETr, net talab)
+#   AW    = CUirr / Efficiency      (qo'llangan suv — quvur/kanaldan berilgan)
+# CN gidrologik guruh: sand>50%->A, clay>40%->C, aks holda B (row crop, good cond.).
+CONSUMPTIVE_USE = {
+    'root_depth':     1.0,   # Zr — ildiz zonasi chuqurligi (m); TAW=1000·(FC-WP)·Zr
+    'depletion_frac': 0.5,   # p — RAW=p·TAW (hozircha ma'lumot uchun)
+    'dr_init_frac':   0.5,   # oy boshidagi boshlang'ich depletion = frac·TAW
+    'kc_max':         1.05,  # ETc = Kc_max·ETr (well-watered potensial upper bound)
+    'cn_a':           67.0,  # USDA CN2 (o'rt. namlik), qatorli ekin, yaxshi holat
+    'cn_b':           78.0,
+    'cn_c':           85.0,
+    # Sug'orish samaradorligi (AW=CUirr/eff). ⚠️ VAQTINCHA generik 0.70 (butun
+    # tile bir xil) — KEYIN optimallashtiriladi (tizim turi: drip 0.90, pivot 0.85,
+    # toshqin 0.50-0.65; RS'dan faqat pivot aniqlanadi, qolgani tashqi ma'lumot). furrow/kanal ~0.55.
+    'irrigation_efficiency': 0.55,
+}
+
+# ==============================================================
 # 12. ERA5 DATA SOURCES
 # ==============================================================
 
@@ -469,6 +493,18 @@ def build_roi(roi_type, **kwargs):
 
     elif roi_type == 'shapefile':
         fc = ee.FeatureCollection(kwargs['asset_id'])
+        return fc.geometry()
+
+    elif roi_type == 'asset':
+        # Foydalanuvchi assetidan viloyat/hudud tanlash (GAUL o'rniga, ixtiyoriy).
+        #   asset_id   — FeatureCollection asset ID
+        #   name       — tanlanadigan hudud nomi (None → butun asset)
+        #   name_field — nom maydoni (default 'region_nam' — uzb_admin1_2026)
+        fc = ee.FeatureCollection(kwargs['asset_id'])
+        name = kwargs.get('name')
+        if name is not None:
+            field = kwargs.get('name_field', 'region_nam')
+            fc = fc.filter(ee.Filter.eq(field, name))
         return fc.geometry()
 
     elif roi_type == 'gaul':

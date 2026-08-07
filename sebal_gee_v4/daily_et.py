@@ -233,6 +233,71 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
 
 
 # ==============================================================
+# SEBAL_Milliy — KUNLIK ET SERIYASI (CUirr suv balansi uchun)
+# ==============================================================
+
+def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
+                    ref_type='alfalfa', utc_offset=0, etr24_source='era5',
+                    sloping_terrain=False):
+    """
+    Oyning har kuni uchun kunlik ET (mm/kun) — ee.List(ee.Image). BARCHA rejim.
+
+    compute_monthly_et'ning kunlik qadami (compute_day_et) bilan AYNAN bir xil
+    mantiq: SEBAL_Milliy → SOLAR_FRAC×Rs24; SEBAL_ID → ETRF_INST×ETr24;
+    SEBAL_B/pysebal → EF×Rn24/λ. consumptive_use shu seriyani ildiz-zona suv
+    balansini haydash uchun ishlatadi (ET va Prz bir xil kunlik ET'dan).
+
+    Returns: (ee.List of ee.Image, days_in_month:int, month_start:ee.Date)
+    """
+    import calendar
+    days = calendar.monthrange(year, month)[1]
+    month_start = ee.Date.fromYMD(year, month, 1)
+
+    if mode == 'SEBAL_Milliy':
+        bands = ['SOLAR_FRAC']
+    elif cfg.is_id_mode(mode):
+        bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
+    else:
+        bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST'] + \
+                (['RA24_RATIO'] if sloping_terrain else [])
+    coll = ee.ImageCollection(image_list).select(bands)
+    dem_img = (ee.Image(image_list[0]).select('DEM')
+               if cfg.is_id_mode(mode) else None)
+
+    def _day(off):
+        off = ee.Number(off)
+        d = month_start.advance(off, 'day')
+        if mode == 'SEBAL_Milliy':
+            interp = _nearest_scene(coll, d)
+            rs24 = get_daily_solar_radiation(d, roi, utc_offset=utc_offset)
+            return (interp.select('SOLAR_FRAC').multiply(rs24)
+                    .multiply(cfg.DAILY_ET['seconds_per_day']).max(0).rename('ET_DAY'))
+        elif cfg.is_id_mode(mode):
+            interp = _nearest_scene(coll, d)
+            etrf = interp.select('ETRF_INST')
+            if sloping_terrain:
+                etrf = etrf.multiply(interp.select('C_RAD'))
+            etr24 = get_daily_etr24(d, roi, dem_img, ref_type=ref_type,
+                                    utc_offset=utc_offset, source=etr24_source)
+            return etrf.multiply(etr24).max(0).rename('ET_DAY')
+        else:
+            interp = _interpolate_lambda(coll, d)
+            rs24 = get_daily_solar_radiation(d, roi, utc_offset=utc_offset)
+            if sloping_terrain:
+                rs24 = rs24.multiply(interp.select('RA24_RATIO'))
+            rn24 = ((ee.Image(1.0).subtract(interp.select('ALBEDO'))).multiply(rs24)
+                    .subtract(ee.Image(cfg.DAILY_ET['rn24_constant'])
+                              .multiply(interp.select('TAU_SW'))).max(0))
+            lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+                   .add(2.501).multiply(1e6))
+            return (interp.select('EVAP_FRAC').multiply(rn24)
+                    .multiply(cfg.DAILY_ET['seconds_per_day']).divide(lam)
+                    .max(0).rename('ET_DAY'))
+
+    return ee.List.sequence(0, days - 1).map(_day), days, month_start
+
+
+# ==============================================================
 # MONTHLY EXTRAPOLATION
 # ==============================================================
 

@@ -427,27 +427,72 @@ lys_parcels = main.parcels_from_points({
     'SW': [-102.0979121, 35.18613288],
 }, size_m=210, inner_buffer_m=-30)
 
-main.run(
-    roi_type='gaul', name='Texas', level=1,          # Texas (Bushland shtati)
-    date_start='2021-03-01', date_end='2021-11-01',  # 2021 (lizimetr yili), mart–oktabr
-    mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70, # SEBAL_Milliy: ERA5 L↓ + SMW LST + Solar daily
-    cold_etrf=1.05,                                   # default (0.85 test yomonroq: bias↓ lekin R²↓)
-    utc_offset=-6,                                    # Texas panhandle = Central Time (CST); lizimetr ham CST
-    process_by_tile=True,
-    tiles=[(30, 36)],                                 # Bushland tile (P30/R36)
+# main.run(
+#     roi_type='gaul', name='Texas', level=1,          # Texas (Bushland shtati)
+#     date_start='2021-03-01', date_end='2021-04-01',  # 2021 (lizimetr yili), mart–oktabr
+#     mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70, # SEBAL_Milliy: ERA5 L↓ + SMW LST + Solar daily
+#     cold_etrf=1.05,                                   # default (0.85 test yomonroq: bias↓ lekin R²↓)
+#     utc_offset=-6,                                    # Texas panhandle = Central Time (CST); lizimetr ham CST
+#     process_by_tile=True,
+#     tiles=[(30, 36)],                                 # Bushland tile (P30/R36)
 
-    # ---- CSV ZONAL-STAT rejimi (raster YO'Q — parcel'da mean+median → batch CSV) ----
-    export_daily=False, export_monthly=False,
-    export_csv=True,
-    csv_region=lys_parcels,                           # 4 lizimetr dalasi
-    csv_bands=None,                                   # None → CSV_LYS_BANDS (Rn,G,LE,LST,ET,albedo,NDVI,LAI,u*,rah,dT,EF...)
-    csv_scale=30,
+#     # ---- RASTER OYLIK rejimi (butun tile bo'yicha TIF — CSV/point EMAS) ----
+#     export_daily=False,
+#     export_monthly=True,      # ← oylik raster: ET + Peffec/CUirr/NIWR (tile bo'yicha)
+#     export_csv=False,         # ← CSV/point-zonal O'CHIRILDI
+
+#     save_et=True, save_biomass=False,
+#     save_etref=False, save_tact=False, save_eact=False,
+#     save_cuirr=True,          # ← Peffec (samarali yog'in) + CUirr + NIWR oylik rasterlari
+#     validate=False,
+#     folder='SEBAL_Milliy_CUirr_Bushland_2021',        # Drive papka (raster: ET/Peffec/CUirr/NIWR)
+#     scale=30, crs='EPSG:32613',                       # Texas panhandle = UTM 13N
+
+#     # ---- ANCHOR TANLASH (beton kaskad) ----
+#     # 'default' | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
+#     anchor_method='cascade',
+
+#     # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
+#     use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
+#     viirs_mode='lambda',
+#     viirs_model='multi',
+#     viirs_qa='lenient',
+#     viirs_fill='linear',
+#     viirs_crs='EPSG:32613',   # ← 30m fine grid CRS — Texas panhandle = UTM 13N
+# )
+
+
+
+# ==============================================================
+# SAMARQAND (O'zbekiston) — CUirr / AW raster (SEBAL_Milliy)
+# ==============================================================
+main.run(
+    # ROI: yangi UZB asset chegarasidan (GAUL emas). name_field='region_nam'.
+    roi_type='asset',
+    asset_id='projects/ee-chexovant11/assets/uzb_admin1_2026',
+    name='Samarqand',                                 # asset qiymati (uzbekcha)
+    date_start='2026-03-01', date_end='2026-04-01',   # TEST: 1 oy (iyul, sug'orish piki).
+    #                                                   To'liq mavsum: '2024-05-01'→'2024-10-01'
+    mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70, # SEBAL_Milliy: ERA5 L↓ + SMW LST + Solar
+    cold_etrf=1.05,
+    utc_offset=5,                                     # O'zbekiston = UTC+5 (UZT, DST YO'Q)
+    process_by_tile=True,
+    tiles=[(156,32),(155,32),(155,33)],                                # TEST: 1 tile. To'liq: [(156,32),(155,32),(155,33)]
+
+    # ---- RASTER OYLIK rejimi (butun tile bo'yicha TIF) ----
+    export_daily=False,
+    export_monthly=True,      # ET + CU (Peffec/CUirr/NIWR/AW bitta ko'p-bandli fayl)
+    export_csv=False,
 
     save_et=True, save_biomass=False,
     save_etref=False, save_tact=False, save_eact=False,
-    validate=False,
-    folder='SEBAL_Milliy_analiz_Bushland_CSV_2021',   # Drive papka (yakuniy: ERA5 L↓+SMW LST+Solar)
-    scale=30, crs='EPSG:32613',                       # Texas panhandle = UTM 13N
+    save_cuirr=True,          # → SEBAL_monthly_CU_*.tif — DEFAULT faqat CUIRR + AW (30m)
+    # save_prz=True,          # (ixtiyoriy) Peffec(PRZ) bandini ham qo'shadi
+    # save_niwr=True,         # (ixtiyoriy) NIWR — LEKIN og'ir ETr hisoblanadi (sekin)
+    validate=False,           # O'zbekistonda OpenET ishlamaydi
+    folder='SEBAL_Milliy_ETCUirr_Samarqand_2026',       # Drive papka
+    scale=30, crs='EPSG:32642',                       # O'zbekiston = UTM 42N
+    # ⚠️ irrigation_efficiency=0.70 (config) — O'zbek furrow uchun ~0.55; keyin optimallash.
 
     # ---- ANCHOR TANLASH (beton kaskad) ----
     # 'default' | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
@@ -459,5 +504,5 @@ main.run(
     viirs_model='multi',
     viirs_qa='lenient',
     viirs_fill='linear',
-    viirs_crs='EPSG:32613',   # ← 30m fine grid CRS — Texas panhandle = UTM 13N
+    viirs_crs='EPSG:32642',   # ← 30m fine grid CRS — O'zbekiston UTM 42N
 )
