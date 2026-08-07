@@ -1054,9 +1054,78 @@ inner_buffer_m=-30)` → dala parcellari (210×210m markazda → −30m ichki = 
 
 ---
 
+## O'zgartirishlar jurnali (2026-08 — Consumptive Use: CUirr / AW / NIWR)
+
+Yangi modul **`consumptive_use.py`** — ET ustidagi **sug'orish suvi hisobi** (OpenET /
+ET Demands metodologiyasi; Allen et al. 1998 FAO-56, USDA 1998 SCS Curve Number).
+Fizika (ET/anchor zanjiri) **O'ZGARMAGAN** — bu additive suv-balans qatlami.
+
+### 36. CUirr / Peffec (Prz) / NIWR / AW
+
+**Formulalar:**
+
+| Produkt | Formula | Ma'nosi |
+|---|---|---|
+| **Prz** (Peffec) | `P − Runoff − DeepPerc` | Effektiv yog'in (ildiz zonasida qolgan) |
+| **CUirr** | `ETa − Prz` | Sug'orish suvi ISTE'MOLI (haqiqiy ET'dan) |
+| **AW** | `CUirr / Efficiency` | Qo'llangan suv (quvur/kanaldan berilgan) |
+| **NIWR** | `ETc − Prz` (ETc=Kc_max·ETr) | Net sug'orish talabi |
+
+**Kunlik FAO-56 ildiz-zona suv balansi** (server-side, oy kunlari bo'yicha `ee.List.iterate`):
+```
+S    = 25400/CN − 254              (SCS potensial retention)
+RO   = (P − 0.2S)² / (P + 0.8S)    (Curve Number oqim)
+I    = P − RO                       (infiltratsiya)
+Dr'  = Dr − I + ETa                 (ildiz-zona depletion; ETa haydaydi)
+DP   = max(0, −Dr')                 (chuqur perkolatsiya)
+Dr   = clamp(Dr', 0, TAW)
+Prz  = Σ (I − DP)                   (oylik effektiv yog'in)
+```
+Har piksel MUSTAQIL (skalyar emas). Kirish: **CHIRPS DAILY** (yog'in), **Saxton-Rawls
+RASTER** θFC/θWP (OpenLandMap sand/clay → `TAW=1000·(FC−WP)·Zr`), CN guruh
+(sand>50%→A, clay>40%→C, else B). Hammasi **GLOBAL → O'zbekistonga ham ishlaydi**.
+
+**Ishga tushirish** (`main.run`, ISTALGAN rejim — `save_cuirr=True`):
+```python
+main.run(..., export_monthly=True, save_cuirr=True)   # DEFAULT: ET+CUIRR+AW
+# save_prz=True   → Peffec(PRZ) bandini ham qo'shadi
+# save_niwr=True  → NIWR (⚠️ og'ir ETr 31 kun hisoblanadi — sekin)
+```
+
+**Optimallashtirishlar:**
+- **ET + CU BITTA rasterda** (`SEBAL_monthly_ETCU_*.tif`): `ET_MONTHLY` BIR MARTA
+  hisoblanadi (CUIRR=ET−Prz allaqachon ET'ga bog'liq) — alohida ET task ET'ni ikkinchi
+  marta hisoblardi. Default bandlar: `ET_MONTHLY, CUIRR, AW` @ 30m.
+- **NIWR default O'CHIQ** → og'ir ETr (ERA5 31 kun) umuman hisoblanmaydi.
+- **NIWR ETr** = ERA5 DAILY kunlik-timestep (DEM ~1km da — soatlik-yig'indidan yengil).
+- **Shape mos**: CU extenti `updateMask(ET)` bilan ET footprintiga tenglashadi.
+
+**Config** (`config.py` → `CONSUMPTIVE_USE`): `root_depth` (Zr=1.0m), `kc_max` (1.05),
+`cn_a/b/c`, **`irrigation_efficiency`** (⚠️ generik; O'zbek furrow ~0.55, drip 0.90,
+pivot 0.85 — keyin optimallash).
+
+**⚠️ KEYIN QO'SHILADI:** ekin-turi (Zr + Kcb), efficiency tizim-turiga (RS'dan faqat
+center-pivot aniqlanadi), sug'orilgan-maydon mask (IrrMapper — O'zbek uchun muqobil).
+
+### 37. `roi_type='asset'` — foydalanuvchi chegarasidan hudud tanlash
+
+`config.build_roi`ga `'asset'` turi qo'shildi (GAUL saqlandi):
+```python
+main.run(roi_type='asset',
+         asset_id='projects/.../uzb_admin1_2026',
+         name='Samarqand', name_field='region_nam', ...)   # None → butun asset
+```
+O'zbekiston viloyatlari uchun yangi asset chegaralaridan tanlash (GAUL o'rniga).
+
+---
+
 ## Manbalar
 
 - Bastiaanssen, W.G.M. et al. (1998). *A remote sensing surface energy balance algorithm for land (SEBAL)*. Journal of Hydrology.
+- **Allen, R.G. et al. (1998).** *Crop evapotranspiration — Guidelines for computing crop water requirements (FAO-56)*. — dual crop coefficient, TEW/REW/TAW, effektiv yog'in.
+- **USDA-SCS (1998).** *National Engineering Handbook, Part 630 (Curve Number)*. — runoff CN usuli.
+- **Saxton, K.E., Rawls, W.J. (2006).** *Soil water characteristic estimates by texture and organic matter*. SSSAJ. — sand/clay → θFC/θWP pedotransfer.
+- **Huntington, J. et al. / OpenET (Melton et al. 2022).** — ET Demands (CUirr, Prz, NIWR, AW) metodologiyasi.
 - **Duffie, J.A., Beckman, W.A. (1980).** *Solar Engineering of Thermal Processes*. — qiya yuzada quyosh tushish burchagi cosθ (Tasumi Eq 5.12).
 - **Tasumi, M. et al. (2000).** — SEBAL ning tog'/qiya yuzalarga birinchi moslashtirishi.
 - **SEBAL Advanced Training and Users Manual — Appendix 5** (*Time Issues Around Weather Data and Reference Evapotranspiration*). — GMT→mahalliy standart vaqt (DST yo'q), zona markazi/15 korreksiyasi, ob-havo davri flaglari (`Flag_period`, `Flag_DST`), overpass vaqtiga chiziqli interpolyatsiya.

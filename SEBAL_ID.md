@@ -725,3 +725,47 @@ main.run(
 MBE≈−0.04 (energiya balansi QIYA EMAS ✅); daily R²≈0.78. Oylik esa siyrak
 sun'iy-yo'ldosh qamrovi + tez fenologiya (may-iyun yashillanish o'tkazib yuboriladi)
 sababli ekstrapolyatsiyada zaif — bu SEBAL fizikasi emas. Bog'liq: `bushland-lysimeter`.
+
+---
+
+## 11-BOSQICH — Sug'orish suvi hisobi: CUirr / Peffec / NIWR / AW
+
+**`consumptive_use.py`** — oylik ET (ETa) ustidagi POST-hisob (OpenET / ET Demands;
+Allen 1998 FAO-56 + USDA 1998 SCS Curve Number). `_ID` va `_Milliy` (va boshqa)
+rejimlarda `main.run(save_cuirr=True)` bilan. **Fizika (ET/anchor) O'ZGARMAGAN** —
+additive suv-balans qatlami. ETa manbai — shu rejimning `ET_MONTHLY`'si (SEBAL_ID:
+ETrF·ETr24; SEBAL_Milliy: solar-upscaling).
+
+### 11.1 Formulalar
+| Produkt | Formula | Ma'no |
+|---|---|---|
+| **Prz** (Peffec) | P − Runoff − DeepPerc | Effektiv yog'in (ildiz zonasida qolgan) |
+| **CUirr** | ETa − Prz | Sug'orish suvi ISTE'MOLI |
+| **AW** | CUirr / Efficiency | Qo'llangan (berilgan) suv |
+| **NIWR** | ETc − Prz, ETc=Kc_max·ETr | Net sug'orish talabi |
+
+### 11.2 Kunlik FAO-56 ildiz-zona balansi (har piksel, server-side)
+```
+S   = 25400/CN − 254 ;  RO = (P−0.2S)²/(P+0.8S) ;  I = P − RO
+Dr' = Dr − I + ETa  ;  DP = max(0,−Dr') ;  Dr = clamp(Dr',0,TAW)
+Prz = Σ (I − DP)
+```
+Kirish: **CHIRPS DAILY** (yog'in), **Saxton-Rawls RASTER** θFC/θWP (OpenLandMap
+sand/clay → `TAW=1000·(FC−WP)·Zr`), CN guruh (sand>50→A/clay>40→C/else B). Hammasi
+GLOBAL → **O'zbekistonga ham ishlaydi**. Kunlik ETa: `daily_et.daily_et_series`.
+
+### 11.3 Chiqish va optimallashtirish
+- **ET + CU BITTA rasterda** (`SEBAL_monthly_ETCU_*.tif`): `ET_MONTHLY` BIR MARTA
+  hisoblanadi (CUIRR=ETa−Prz allaqachon ET'ga bog'liq). Default bandlar:
+  `ET_MONTHLY, CUIRR, AW` @ 30m. `save_prz`/`save_niwr` (default False) qo'shadi.
+- **NIWR default O'CHIQ** → og'ir ETr (ERA5 31 kun, DEM ~1km kunlik-timestep) skip.
+- CU extenti `updateMask(ET)` bilan ET footprintiga tenglashadi (shape mos).
+- Config `CONSUMPTIVE_USE`: `root_depth`(Zr), `kc_max`, `cn_a/b/c`,
+  `irrigation_efficiency` (⚠️ generik; O'zbek furrow ~0.55, drip 0.90, pivot 0.85).
+
+### 11.4 ROI — foydalanuvchi asseti (ixtiyoriy)
+`roi_type='asset', asset_id=..., name='Samarqand', name_field='region_nam'` —
+UZB viloyat chegaralaridan tanlash (GAUL saqlangan).
+
+**⚠️ KEYIN:** ekin-turi (Zr+Kcb), efficiency tizim-turiga (RS'dan faqat center-pivot),
+sug'orilgan-maydon mask (IrrMapper — O'zbek uchun muqobil).
