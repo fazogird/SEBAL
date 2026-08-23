@@ -8,7 +8,7 @@ import ee
 from sebal_gee_v4 import main
 from sebal_gee_v4 import ee_utils
 ee_utils.install_getinfo_retry()   # 429 "Too many concurrent" da avtomatik retry
-ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2","ee-chexovant11"
+ee.Initialize(project="ee-chexovant11")    # "carbon-science-461016-q2","ee-chexovant11"
 
 
 # ==============================================================
@@ -464,45 +464,61 @@ lys_parcels = main.parcels_from_points({
 
 
 # ==============================================================
-# SAMARQAND (O'zbekiston) — CUirr / AW raster (SEBAL_Milliy)
+# BUSHLAND 2021 — SEBAL_Milliy_Kc VALIDATSIYA (NDVI-langan FAO-56 Kc)
+#   4 lizimetr parcelida CSV-zonal → lizimetr bilan solishtirish (eski
+#   SEBAL_Milliy R²=0.55 bilan AYNI metodologiya). Raster EMAS, CSV (tez).
+#   cloud_max=70 → ko'proq sahna = zichroq NDVI interpolyatsiya.
 # ==============================================================
 main.run(
-    # ROI: yangi UZB asset chegarasidan (GAUL emas). name_field='region_nam'.
-    roi_type='asset',
-    asset_id='projects/ee-chexovant11/assets/uzb_admin1_2026',
-    name='Samarqand',                                 # asset qiymati (uzbekcha)
-    date_start='2026-03-01', date_end='2026-04-01',   # TEST: 1 oy (iyul, sug'orish piki).
-    #                                                   To'liq mavsum: '2024-05-01'→'2024-10-01'
-    mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70, # SEBAL_Milliy: ERA5 L↓ + SMW LST + Solar
-    cold_etrf=1.05,
-    utc_offset=5,                                     # O'zbekiston = UTC+5 (UZT, DST YO'Q)
+    roi_type='gaul', name='Texas', level=1,           # Texas (Bushland shtati)
+    date_start='2021-03-01', date_end='2021-11-01',   # 2021 Mart–Oktabr (lizimetr yili)
+    mode='SEBAL_Milliy_Kc', satellite='BOTH', cloud_max=70,  # ← YANGI REJIM
+    utc_offset=-6,                                     # Texas panhandle = Central (CST)
     process_by_tile=True,
-    tiles=[(156,32),(155,32),(155,33)],                                # TEST: 1 tile. To'liq: [(156,32),(155,32),(155,33)]
+    tiles=[(30, 36)],                                 # Bushland tile (P30/R36)
 
-    # ---- RASTER OYLIK rejimi (butun tile bo'yicha TIF) ----
+    # ---- CSV ZONAL (4 lizimetr parcelida — validatsiya) ----
     export_daily=False,
-    export_monthly=True,      # ET + CU (Peffec/CUirr/NIWR/AW bitta ko'p-bandli fayl)
-    export_csv=False,
+    export_monthly=False,
+    export_csv=True,
+    csv_region=main.parcels_from_points({             # SEBAL bilan AYNAN bir xil parcel
+        'NE': [-102.0955385, 35.18816985],            # LZ6 (drip)
+        'SE': [-102.0955390, 35.18612583],            # LZ1 (drip)
+        'NW': [-102.0978919, 35.18817119],            # LZ4 (sprinkler)
+        'SW': [-102.0979121, 35.18613288],            # LZ3 (sprinkler)
+    }, size_m=210, inner_buffer_m=-30),
 
     save_et=True, save_biomass=False,
     save_etref=False, save_tact=False, save_eact=False,
-    save_cuirr=True,          # → SEBAL_monthly_CU_*.tif — DEFAULT faqat CUIRR + AW (30m)
-    # save_prz=True,          # (ixtiyoriy) Peffec(PRZ) bandini ham qo'shadi
-    # save_niwr=True,         # (ixtiyoriy) NIWR — LEKIN og'ir ETr hisoblanadi (sekin)
-    validate=False,           # O'zbekistonda OpenET ishlamaydi
-    folder='SEBAL_Milliy_ETCUirr_Samarqand_2026',       # Drive papka
-    scale=30, crs='EPSG:32642',                       # O'zbekiston = UTM 42N
-    # ⚠️ irrigation_efficiency=0.70 (config) — O'zbek furrow uchun ~0.55; keyin optimallash.
+    save_cuirr=False,
+    save_aw=True,             # ← ILDIZ-ZONA water-balans AW: AW/AW_Eff/AVAILABLE_WATER/
+    #                            DP_MONTHLY/N_IRRIG/TAW (lizimetr sug'orish/SWC bilan solishtirish)
+    validate=False,
+    folder='SEBAL_AW_Bushland_2021',                      # Drive papka (CSV)
+    scale=30, crs='EPSG:32613',                       # Texas panhandle = UTM 13N
 
-    # ---- ANCHOR TANLASH (beton kaskad) ----
-    # 'default' | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
     anchor_method='cascade',
-
-    # ---- VIIRS DOWNSCALING (ixtiyoriy, 500m) ----
-    use_viirs=False,          # True → oylik ET VIIRS bilan kuchaytiriladi
-    viirs_mode='lambda',
-    viirs_model='multi',
-    viirs_qa='lenient',
-    viirs_fill='linear',
-    viirs_crs='EPSG:32642',   # ← 30m fine grid CRS — O'zbekiston UTM 42N
+    use_viirs=False, viirs_crs='EPSG:32613',
 )
+
+
+# ==============================================================
+# SAMARQAND (O'zbekiston) — CUirr / AW raster (SEBAL_Milliy) — KEYINGI BOSQICH
+# ==============================================================
+# main.run(
+#     roi_type='asset',
+#     asset_id='projects/ee-chexovant11/assets/uzb_admin1_2026',
+#     name='Samarqand',
+#     date_start='2026-04-01', date_end='2026-05-01',
+#     mode='SEBAL_Milliy', satellite='BOTH', cloud_max=70,
+#     cold_etrf=1.05, utc_offset=5,
+#     process_by_tile=True, tiles=[(156,32),(155,32),(155,33)],
+#     export_daily=False, export_monthly=True, export_csv=False,
+#     save_et=True, save_biomass=False,
+#     save_etref=False, save_tact=False, save_eact=False,
+#     save_cuirr=True,
+#     validate=False, folder='SEBAL_Mavsumiy_Samarqand_2026',
+#     scale=30, crs='EPSG:32642',
+#     anchor_method='cascade',
+#     use_viirs=False, viirs_crs='EPSG:32642',
+# )

@@ -137,15 +137,22 @@ def apply_scale_factors(image):
     st_band = cfg.BAND_NAMES['thermal']
 
     # Surface Reflectance — scale va clamp
+    # clamp [-0.199972, 1.602213] — Landsat C2 SR xom/valid-DN diapazoni (DN 1..65535).
+    # [0,1] fizik reflektans emas, C2 XOM diapazon: atmosfera-korreksiya over/undershoot
+    # (manfiy = soya/suv, >1 = bulut/qor) saqlanadi, faqat fill/overflow chiqariladi.
     sr_scaled = (image.select(sr_bands)
                  .multiply(cfg.SCALE_FACTORS['sr_mult'])
                  .add(cfg.SCALE_FACTORS['sr_add'])
-                 .clamp(0.0, 1.0))
+                 .clamp(-0.199972, 1.602213))
 
     # Surface Temperature — Kelvin ga
+    # clamp [149.003, 373.0] K — Landsat C2 ST fizik/valid-DN diapazoni (DN 1..65535);
+    # fill/overflow qiymatlarini chiqaradi. Real yer LST (~250-340K) shu ichida → ta'sirsiz.
+    # (SEBAL_Milliy'da LST keyin SMW bilan qayta yoziladi; SEBAL_B/ID da shu qiymat qoladi.)
     st_scaled = (image.select(st_band)
                  .multiply(cfg.SCALE_FACTORS['st_mult'])
                  .add(cfg.SCALE_FACTORS['st_add'])
+                 .clamp(149.003418, 372.999941)
                  .rename('LST'))
 
     # Asl bandlarni yangilangan qiymatlarga almashtirish

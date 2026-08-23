@@ -331,6 +331,14 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
     """
     import calendar
 
+    # SEBAL_Milliy_Kc: NDVI-langan FAO-56 qo'sh koeffitsient (Kcb+Ke) upscaling
+    # (energiya-balans SOLAR_FRAC EMAS — anchor'ga bog'liq bo'lmagan alohida rejim)
+    if cfg.is_kc_mode(mode):
+        from . import ndvi_kc
+        return ndvi_kc.compute_monthly_et_kc(
+            image_list, roi, year, month, utc_offset=utc_offset,
+            etr24_source=etr24_source)
+
     # SEBAL_ID + Appendix I: kunlik ETrF tuzatish (per-piksel suv balansi)
     if cfg.is_id_mode(mode) and etrf_water_balance:
         from . import etrf_water_balance as ewb

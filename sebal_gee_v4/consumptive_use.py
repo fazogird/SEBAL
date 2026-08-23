@@ -64,16 +64,32 @@ def soil_water_params(roi):
     """
     TAW (ildiz-zona jami mavjud suv, mm) va CN (Curve Number) RASTERlari.
 
-    TAW = 1000·(FC - WP)·Zr.  CN gidrologik guruh: sand>50%->A, clay>40%->C, else B.
+    TAW = 1000·(FC − WP)·Zr.
+      • FC/WP — SoilGrids 2.0 (ndvi_kc bilan IZCHIL) qum/gil → Saxton.
+      • Zr — cfg.CROP_ASSETS berilgan bo'lsa PER-CROP (crop_kc_table zr_max, FAO
+        Table 22); aks holda cu['root_depth'] konstanta. (Oldin har doim 1.0 KONSTANTA
+        edi → TAW noto'g'ri; endi ekin ildiz chuqurligiga qarab.)
+    CN gidrologik guruh: sand>50%→A, clay>40%→C, else B.
     """
-    # clip YO'Q: tuproq global; CU extenti updateMask(ET) bilan aynan ET'ga tenglashadi
-    # (clip(roi) qilsak CU viloyatga kesilib, ET'dan kichik shaklda chiqadi).
-    sand = ee.Image(wb.SAND).select('b0')
-    clay = ee.Image(wb.CLAY).select('b0')
+    # SoilGrids 2.0 (izchil ndvi_kc bilan). g/kg → % ; 0-10sm ≈ (0-5+5-15)/2.
+    sgS = ee.Image('projects/soilgrids-isric/sand_mean')
+    sgC = ee.Image('projects/soilgrids-isric/clay_mean')
+    sand = sgS.select('sand_0-5cm_mean').add(sgS.select('sand_5-15cm_mean')).multiply(0.05)
+    clay = sgC.select('clay_0-5cm_mean').add(sgC.select('clay_5-15cm_mean')).multiply(0.05)
     fc, wp = _saxton_fc_wp_raster(sand, clay)
     cu = cfg.CONSUMPTIVE_USE
 
-    taw = (fc.subtract(wp).multiply(1000.0).multiply(cu['root_depth'])
+    # PER-CROP ildiz chuqurligi Zr (crop asset) yoki konstanta fallback
+    ca = getattr(cfg, 'CROP_ASSETS', None)
+    if ca:
+        from . import crop_kc_table as ckt
+        crop = ee.ImageCollection([ee.Image(a) for a in ca]).mosaic()
+        codes, zr, _p = ckt.zr_arrays()
+        zr_img = crop.remap(codes, zr, cu['root_depth'])       # kod→zr_max (m)
+    else:
+        zr_img = ee.Image(cu['root_depth'])
+
+    taw = (fc.subtract(wp).multiply(1000.0).multiply(zr_img)
            .max(1.0).rename('TAW'))
 
     cn = (ee.Image(cu['cn_b'])

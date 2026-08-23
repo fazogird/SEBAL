@@ -63,7 +63,7 @@ def detect_wrs_tiles(roi, date_start, date_end, satellite='BOTH', cloud_max=20):
         col = (ee.ImageCollection(col_id)
                .filterBounds(roi)
                .filterDate(date_start, date_end)
-               .filter(ee.Filter.lt('CLOUD_COVER', cloud_max)))
+               .filter(ee.Filter.lte('CLOUD_COVER', cloud_max))) # Agar ≤20% bulsa
 
         props = col.aggregate_array('WRS_PATH').zip(
             col.aggregate_array('WRS_ROW')).distinct().getInfo()
@@ -110,9 +110,19 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                  sloping_terrain=False):
     """
     Bitta ROI/tile uchun SEBAL pipeline.
-    Returns: list of processed scene images
+    Returns:
+    tuple: (list of processed ee.Image objects, info dict)
     """
     prefix = f"  [{tile_label}]" if tile_label else "  "
+
+    # SEBAL_Milliy_Kc: sahna bosqichi AYNAN SEBAL_Milliy kabi (NDVI + barcha band
+    # kerak). Oylik ET esa Kc-quruvchi (cfg.is_kc_mode) bilan alohida quriladi —
+    # u main.run'dagi ASL mode bilan compute_monthly_et'ga boradi. Shu sabab bu
+    # yerda (faqat sahna ishlab chiqarish uchun) mode'ni Milliy'ga normallashtiramiz.
+    if cfg.is_kc_mode(mode):
+        print(f"{prefix} ℹ️ SEBAL_Milliy_Kc → sahnalar SEBAL_Milliy kabi, "
+              f"oylik ET = NDVI-langan FAO-56 Kc")
+        mode = 'SEBAL_Milliy'
 
     # SEBAL_ID: anchor BITTA NUQTA bo'lishi shart (cold/hot dT hamda hot suv
     # balansi AYNI bir pikselga tayanadi — izchillik). Metod (cimec/plan/…)
@@ -198,13 +208,15 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         img = ee.Image(image_list.get(i))
 
-        # ---- L↓ Tref manbai (SEBAL_B/pysebal empirik) — fallback ishladimi? ----
-        # radiation.compute_incoming_longwave xususiyat sifatida yozib qo'ygan;
-        # bu yerda (map'dan tashqarida) bir marta o'qib print qilamiz.
-        _tref_src = img.get('LDOWN_TREF_SRC').getInfo()
-        if _tref_src is not None:
-            _tref_val = img.get('LDOWN_TREF').getInfo()
-            print(f"{prefix}   L↓ Tref: {_tref_src} = {_tref_val:.2f} K")
+        # ---- L↓ Tref manbai (FAQAT empirik L↓: SEBAL_B/pysebal) ----
+        # radiation.compute_incoming_longwave xususiyat sifatida yozib qo'ygan.
+        # ⚠️ SEBAL_Milliy/'yangiliklar' → ERA5 L↓ (property YO'Q) → bu getInfo BEHUDA
+        # va katta tile'da interaktiv "User memory limit exceeded" beradi — SKIP.
+        if mode not in ('SEBAL_Milliy', 'yangiliklar'):
+            _tref_src = img.get('LDOWN_TREF_SRC').getInfo()
+            if _tref_src is not None:
+                _tref_val = img.get('LDOWN_TREF').getInfo()
+                print(f"{prefix}   L↓ Tref: {_tref_src} = {_tref_val:.2f} K")
 
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
@@ -431,13 +443,18 @@ def _export_monthly(scene_images, roi, year, month, mode,
                    save_etref=True, save_tact=True, save_eact=True,
                    etrf_water_balance=False, ref_type='alfalfa', utc_offset=0,
                    sloping_terrain=False, save_cuirr=False,
-                   save_prz=False, save_niwr=False):
+                   save_prz=False, save_niwr=False, save_aw=False,
+                   dr_init_img=None):
     """
     Oylik rasterlar — har produkt ALOHIDA TIF.
-    True/False bilan tanlash mumkin.
+    True/False bilan tanlash mumkin. save_aw → ildiz-zona water-balans AW bandlari.
+    dr_init_img — oldingi oy oxiridagi Dr rasteri (mavsumiy-uzluksiz AW uchun).
+    Qaytaradi: (tasks, dr_end_img) — dr_end_img keyingi oyga uzatiladi (save_aw'siz None).
+    Barcha rasterlar ROI ga (tile ∩ viloyat) CLIP qilinadi — bo'sh qism saqlanmaydi.
     """
     from . import monthly_analytics
     tasks = []
+    dr_end_img = None
 
     prefix = f'_{tile_label}' if tile_label else ''
     month_str = f'{year}-{month:02d}'
@@ -456,7 +473,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
 
     if monthly is None:
         print(f"  ❌ {month_str}: monthly image hosil bo‘lmadi.")
-        return tasks
+        return tasks, dr_end_img
 
     products = []
     if save_et:
@@ -474,34 +491,47 @@ def _export_monthly(scene_images, roi, year, month, mode,
     # ⚠️ BITTA ko'p-bandli TIF sifatida eksport qilinadi (alohida EMAS): shunda
     # umumiy og'ir suv balansi (Prz) va ETr BIR MARTA hisoblanadi — 4 alohida task
     # har biri Prz'ni qaytadan hisoblab, NIWR (+31 kun ETr) 2 soat ketardi.
-    if save_cuirr:
+    if save_cuirr or save_aw:
         try:
-            from . import consumptive_use
-            cu = consumptive_use.compute_all(
-                monthly.select('ET_MONTHLY'), scene_images, roi, year, month,
-                mode=mode, utc_offset=utc_offset, ref_type=ref_type,
-                sloping_terrain=sloping_terrain, with_niwr=save_niwr)
-            # ⚡ ET + CU ni BITTA rasterga birlashtiramiz — ET_MONTHLY BIR MARTA
-            # hisoblanadi (CUIRR=ET−Prz allaqachon ET'ga bog'liq → alohida ET task
-            # ET'ni ikkinchi marta hisoblardi). Default bandlar: ET_MONTHLY+CUIRR+AW.
-            out_bands = (['ET_MONTHLY'] if save_et else []) + ['CUIRR', 'AW']
-            if save_prz:
-                out_bands.append('PRZ')
-            if save_niwr:
-                out_bands.append('NIWR')
-            combined = monthly.select('ET_MONTHLY').addBands(cu)
+            combined = monthly.select('ET_MONTHLY')
+            out_bands = ['ET_MONTHLY'] if save_et else []
+            if save_cuirr:
+                from . import consumptive_use
+                cu = consumptive_use.compute_all(
+                    monthly.select('ET_MONTHLY'), scene_images, roi, year, month,
+                    mode=mode, utc_offset=utc_offset, ref_type=ref_type,
+                    sloping_terrain=sloping_terrain, with_niwr=save_niwr)
+                bn = cu.bandNames()                      # AW → AW_CUirr (CUirr/eff)
+                cu = cu.select(bn, bn.map(lambda b: ee.Algorithms.If(
+                    ee.String(b).equals('AW'), 'AW_CUirr', b)))
+                combined = combined.addBands(cu)
+                out_bands += ['CUIRR', 'AW_CUirr']
+                if save_prz:
+                    out_bands.append('PRZ')
+                if save_niwr:
+                    out_bands.append('NIWR')
+            if save_aw:
+                from . import root_zone_water
+                awimg = root_zone_water.compute_awnet(
+                    scene_images, roi, year, month, utc_offset=utc_offset,
+                    dr_init_img=dr_init_img)   # None → har oy RAW dan (sug'orish talabi)
+                # dr_end_img = awimg.select('DR_END')  # ZANJIR O'CHIQ (grafik "too complex")
+                # Mavsumiy-uzluksiz kerak bo'lsa: yuqoridagi qatorni yoqib, dr_carry uzatiladi.
+                combined = combined.addBands(awimg.select(
+                    ['AW', 'AW_Eff', 'AVAILABLE_WATER', 'DP_MONTHLY', 'N_IRRIG', 'TAW']))
+                out_bands += ['AW', 'AW_Eff', 'AVAILABLE_WATER', 'DP_MONTHLY',
+                              'N_IRRIG', 'TAW']
             cu_name = f'SEBAL_monthly_ETCU_{month_str}{prefix}'
             cu_task = ee.batch.Export.image.toDrive(
-                image=combined.select(out_bands).toFloat(),
+                image=combined.select(out_bands).toFloat().clip(roi),
                 description=cu_name, folder=folder, fileNamePrefix=cu_name,
                 region=roi, scale=scale, crs=crs, maxPixels=1e13,
                 fileFormat='GeoTIFF')
             cu_task.start(); tasks.append(cu_task.id)
-            print(f"  ⚡ ET+CU birlashgan → {cu_name} @ {scale}m | bandlar: {out_bands}")
-            # ET ni ALOHIDA products'dan olib tashlaymiz (birlashgan rasterda bor)
+            print(f"  ⚡ ET+CU/AW birlashgan → {cu_name} @ {scale}m | bandlar: {out_bands}")
             products = [p for p in products if p[1] != 'ET_MONTHLY']
         except Exception as e:
-            print(f"  ⚠️ CUirr bloki: {e}")
+            print(f"  ⚠️ CU/AW bloki: {e}")
 
     print(f"  📐 Export region: {roi.bounds().coordinates().getInfo()}")
     
@@ -518,7 +548,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
             name = f'SEBAL_monthly_{prod_name}_{month_str}{prefix}'
 
             task = ee.batch.Export.image.toDrive(
-                image=prod_image.toFloat(),
+                image=prod_image.toFloat().clip(roi),
                 description=name,
                 folder=folder,
                 fileNamePrefix=name,
@@ -537,7 +567,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
         except Exception as e:
             print(f"  ⚠️ {prod_name}: {e}")
 
-    return tasks
+    return tasks, dr_end_img
 
 
 # ==============================================================
@@ -593,7 +623,8 @@ def parcels_from_points(points, size_m=210, inner_buffer_m=-30):
 
 
 def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
-                      tile_label, mode, utc_offset, scale=30, save_cuirr=False):
+                      tile_label, mode, utc_offset, scale=30, save_cuirr=False,
+                      save_aw=False):
     """
     region_fc (parcel) ustida MEAN+MEDIAN zonal-stat → BATCH table CSV.
       • per-scene CSV: har sahna, instant+daily bandlar (date bilan)
@@ -616,31 +647,51 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     # --- PER-SCENE (instant + daily bir CSV'da; ular ayni sahnaning bandlari) ---
     # Har qatorga sahna ANCHOR property'lari ham qo'shiladi (tanlangan cold/hot
     # piksel xususiyatlari — anchor tanlashni QC + fizik oyna sozlash uchun).
-    scene_fcs = []
-    for s in scenes:
-        img = ee.Image(s)
-        date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
-        tags = {'date': date}
-        for p in CSV_ANCHOR_PROPS:
-            tags[p] = img.get(p)
-        scene_fcs.append(_reduce(img, bands, tags))
-    scene_fc = ee.FeatureCollection(scene_fcs).flatten()
-    t1 = ee.batch.Export.table.toDrive(
-        collection=scene_fc, description=f'SEBAL_csv_scene{prefix}',
-        folder=folder, fileNamePrefix=f'SEBAL_csv_scene{prefix}', fileFormat='CSV')
-    t1.start(); tasks.append(t1)
-    print(f"  📄 CSV per-scene export → SEBAL_csv_scene{prefix} (mean+median)")
+    # ALOHIDA fayllar (aniq nomlar): INST (ET-lahzalik) | DAILY_ET | INST_KOMPONENT.
+    # Fayl nomiga PAPKA (model+hudud+yil) + tur + tayl → GEE Tasks/Drive'da UNIKAL.
+    SCENE_GROUPS = {
+        'INST':           ['ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC',
+                           'SOLAR_FRAC', 'ETR_INST'],
+        'DAILY_ET':       ['ET_24'],
+        'INST_KOMPONENT': ['RN', 'G0', 'H', 'ALBEDO', 'LST', 'NDVI', 'AIR_TEMP',
+                           'USTAR', 'RAH', 'DTA', 'LAI', 'TAU_SW', 'EMISSIVITY'],
+    }
+    # SEBAL_Milliy_Kc: sahna bandlari SEBAL_Milliy bilan AYNAN bir xil (nusxa) →
+    # scene/lstdiag fayllarni CHIQARMAYMIZ; Kc'dan faqat MONTHLY_ET noyob.
+    if cfg.is_kc_mode(mode):
+        SCENE_GROUPS = {}
+    for gname, gbands in SCENE_GROUPS.items():
+        sfcs = []
+        for s in scenes:
+            img = ee.Image(s)
+            date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
+            tags = {'date': date}
+            if gname == 'INST_KOMPONENT':          # anchor QC props faqat komponent CSV'ga
+                for p in CSV_ANCHOR_PROPS:
+                    tags[p] = img.get(p)
+            sfcs.append(_reduce(img, gbands, tags))
+        gfc = ee.FeatureCollection(sfcs).flatten()
+        tg = ee.batch.Export.table.toDrive(
+            collection=gfc, description=f'{folder}_{gname}{prefix}',
+            folder=folder, fileNamePrefix=f'{folder}_{gname}{prefix}', fileFormat='CSV')
+        tg.start(); tasks.append(tg)
+        print(f"  📄 CSV {gname} → {folder}_{gname}{prefix}")
 
     # --- LST FOOTPRINT DIAGNOSTIKA (parcel MARKAZIDA, nuqta namuna) ---
     # compute_lst_smw O'ZGARMAYDI; hech qanday tuzatish yo'q. PSF/neighborhood/
     # WV/QA bandlari L0–L3 footprint validatsiya testi uchun (ayrim CSV).
-    _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale)
+    # Kc'da SKIP (sahna = Milliy nusxasi).
+    if not cfg.is_kc_mode(mode):
+        _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale)
 
-    # --- PER-MONTH (ET_MONTHLY + save_cuirr → Peffec/CUirr/NIWR) ---
+    # --- PER-MONTH (ET_MONTHLY + save_cuirr → Peffec/CUirr; save_aw → water-balans AW) ---
     mon_bands = ['ET_MONTHLY']
     if save_cuirr:
-        mon_bands += ['PRZ', 'CUIRR', 'NIWR', 'AW', 'ETPOT_MONTHLY',
-                      'RUNOFF_MONTHLY', 'DEEPPERC_MONTHLY']
+        mon_bands += ['PRZ', 'CUIRR', 'NIWR', 'AW_CU', 'ETPOT_MONTHLY',
+                      'RUNOFF_MONTHLY', 'DEEPPERC_MONTHLY']       # AW_CU = CUirr/eff (eski)
+    if save_aw:
+        mon_bands += ['AW', 'AW_Eff', 'AVAILABLE_WATER', 'DP_MONTHLY',
+                      'N_IRRIG', 'TAW']                            # water-balans (yangi)
     scene_months = sorted({d[:7] for d in info.get('dates', [])})
     month_fcs = []
     for mk in scene_months:
@@ -650,20 +701,31 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
         if monthly is None:
             continue
         if save_cuirr:
-            # CUirr / Peffec(Prz) / NIWR — parcel zonal CSV uchun (kunlik FAO-56 + CN)
+            # CUirr / Peffec(Prz) / NIWR (kunlik FAO-56 + CN). AW → AW_CU (water-balans
+            # AW bilan to'qnashmasin).
             from . import consumptive_use
             cu = consumptive_use.compute_all(
                 monthly.select('ET_MONTHLY'), scenes, roi, yr, mo,
                 mode=mode, utc_offset=utc_offset)
+            bn = cu.bandNames()
+            cu = cu.select(bn, bn.map(lambda b: ee.Algorithms.If(
+                ee.String(b).equals('AW'), 'AW_CU', b)))
             monthly = monthly.addBands(cu)
+        if save_aw:
+            # Ildiz-zona water-balans AW (root_zone_water) — per-crop (cfg.CROP_ASSETS)
+            from . import root_zone_water
+            awimg = root_zone_water.compute_awnet(
+                scenes, roi, yr, mo, utc_offset=utc_offset)
+            monthly = monthly.addBands(awimg.select(
+                ['AW', 'AW_Eff', 'AVAILABLE_WATER', 'DP_MONTHLY', 'N_IRRIG', 'TAW']))
         month_fcs.append(_reduce(monthly, mon_bands, {'year': yr, 'month': mo}))
     if month_fcs:
         month_fc = ee.FeatureCollection(month_fcs).flatten()
         t2 = ee.batch.Export.table.toDrive(
-            collection=month_fc, description=f'SEBAL_csv_monthly{prefix}',
-            folder=folder, fileNamePrefix=f'SEBAL_csv_monthly{prefix}', fileFormat='CSV')
+            collection=month_fc, description=f'{folder}_MONTHLY_ET{prefix}',
+            folder=folder, fileNamePrefix=f'{folder}_MONTHLY_ET{prefix}', fileFormat='CSV')
         t2.start(); tasks.append(t2)
-        print(f"  📄 CSV oylik export → SEBAL_csv_monthly{prefix} (mean+median)")
+        print(f"  📄 CSV MONTHLY_ET → {folder}_MONTHLY_ET{prefix} (mean+median)")
     return tasks
 
 
@@ -707,12 +769,12 @@ def _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale=30):
 
     fc = ee.FeatureCollection(fcs).flatten()
     t = ee.batch.Export.table.toDrive(
-        collection=fc, description=f'SEBAL_csv_lstdiag{prefix}',
-        folder=folder, fileNamePrefix=f'SEBAL_csv_lstdiag{prefix}',
+        collection=fc, description=f'{folder}_lstdiag{prefix}',
+        folder=folder, fileNamePrefix=f'{folder}_lstdiag{prefix}',
         fileFormat='CSV')
     t.start()
     print(f"  📄 CSV LST-diag (footprint/PSF/neighborhood, nuqta) → "
-          f"SEBAL_csv_lstdiag{prefix}")
+          f"{folder}_lstdiag{prefix}")
     return [t]
 
 
@@ -750,6 +812,10 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         # ISTALGAN rejimda ishlaydi (ETa shu rejim ET_MONTHLY'sidan). Kunlik
         # FAO-56 + Curve Number; NIWR ETr = ERA5 daily kunlik-timestep (yengil).
         save_cuirr=False,
+        # save_aw — ILDIZ-ZONA water-balans AW (root_zone_water): AW/AW_Eff/
+        # AVAILABLE_WATER/DP_MONTHLY/N_IRRIG/TAW bandlarini qo'shadi (CUirr'dan
+        # ALOHIDA, fizik water-balans). SEBAL_Milliy_Kc + crop_assets bilan per-crop.
+        save_aw=False,
         # CU eksporti DEFAULT: faqat CUirr + AW (30m = `scale`). Peffec(PRZ) va
         # NIWR ni ALOHIDA yoqish (default O'CHIQ). ⚠️ save_niwr=True bo'lsa OG'IR
         # ETr (31 kun) hisoblanadi — sekinlashtiradi; kerak bo'lmasa False qoldiring.
@@ -815,6 +881,10 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         s30_cropland_only=False,    # True → yakuniy ET faqat ekin maydoniga
         s30_validate=False,         # True → hold-out validatsiya CSV
 
+        # PER-CROP Kc (SEBAL_Milliy_Kc): crop-code raster asset(lar) ro'yxati →
+        # har piksel o'z ekinining FAO-56 koeffitsienti. None → bitta Kc (Bushland).
+        crop_assets=None,
+
         **roi_kwargs):
     """
     SEBAL-GEE v4 production pipeline.
@@ -825,6 +895,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
       tiles=[(156,32),(156,33)], process_by_tile=True → faqat shu tilelar
     """
     roi = cfg.build_roi(roi_type, **roi_kwargs)
+    cfg.CROP_ASSETS = crop_assets      # PER-CROP Kc: ndvi_kc cfg.CROP_ASSETS'ni o'qiydi
 
     # BULUT PRECHECK HUDUDI: CSV/lizimetr rejimida FAQAT parcel ustida (tez +
     # to'g'ri — bizga Bushland ustida bulutsizlik kerak, butun shtat emas).
@@ -836,11 +907,12 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         _cloud_use_cropland = False
         print("  ☁️  export_csv → bulut precheck LOKAL (csv_region parcellari; tez)")
 
-    # ANCHOR masshtabi: FAQAT CSV/lizimetr rejimida 100m (butun tile ~10× tez;
-    # Landsat termal native 100m → sifat yo'qolmaydi). Oddiy raster rejimda 30m.
-    energy_balance.ANCHOR_SCALE = 100 if _csv_mode else 30
-    if _csv_mode:
-        print("  ⚡ export_csv → anchor 100m da (butun tile tez; termal native res)")
+    # ANCHOR masshtabi: CSV/lizimetr YOKI tile-asosli (katta 185km tile) rejimda 100m —
+    # butun tile ~10× tez + interaktiv "User memory limit" xavfi kamayadi. Landsat
+    # termal native 100m → anchor sifati yo'qolmaydi. Kichik ROI (rectangle) → 30m.
+    energy_balance.ANCHOR_SCALE = 100 if (_csv_mode or process_by_tile) else 30
+    if energy_balance.ANCHOR_SCALE == 100:
+        print("  ⚡ anchor 100m da (katta tile — tez + xotira yengil; termal native res)")
 
     # Cold anchor ETrF (λET_cold = cold_etrf·ETr) — SEBAL_ID default 1.05
     energy_balance.COLD_ETRF = cold_etrf
@@ -921,12 +993,18 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 print(f"  ⚠️ Tile geometriya topilmadi ({e}) → ROI ishlatiladi")
                 tile_roi = roi
 
-            scenes, info = process_tile(
-                tile_roi, date_start, date_end, mode,
-                satellite, cloud_max, tile_label,
-                anchor_method=anchor_method, anchor_mode=anchor_mode,
-                utc_offset=utc_offset,
-                cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
+            # Chekka/bo'sh tayl (nuqtasiz yoki anchor topilmagan) BUTUN runни
+            # buzmasin — o'sha taylni o'tkazib, keyingisiga o'tamiz.
+            try:
+                scenes, info = process_tile(
+                    tile_roi, date_start, date_end, mode,
+                    satellite, cloud_max, tile_label,
+                    anchor_method=anchor_method, anchor_mode=anchor_mode,
+                    utc_offset=utc_offset,
+                    cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
+            except Exception as e:
+                print(f"  ⚠️ {tile_label} qayta ishlashda xato ({e}) → tayl o'tkazib yuborildi")
+                continue
 
             if not scenes:
                 continue
@@ -936,7 +1014,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 ctasks = _export_zonal_csv(
                     scenes, info, tile_roi, csv_region,
                     csv_bands or CSV_LYS_BANDS, folder, tile_label, mode,
-                    info.get('utc_offset', 0), csv_scale, save_cuirr=save_cuirr)
+                    info.get('utc_offset', 0), csv_scale, save_cuirr=save_cuirr,
+                    save_aw=save_aw)
                 all_tasks.extend(ctasks)
 
             if export_daily:
@@ -955,6 +1034,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 end_dt = datetime.strptime(date_end, '%Y-%m-%d')
 
                 tasks = []
+                dr_carry = None   # oylararo Dr uzatish (mavsumiy-uzluksiz AW)
 
                 # Faqat SAHNASI bor oylarni hisoblaymiz.
                 # info['dates'] = ['2026-05-15', ...] (client-side).
@@ -987,36 +1067,39 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             current_month, month_key, folder, scale, crs,
                             tile_label, s30_model, s30_qa, s30_fill,
                             cloud_max, tasks, s30_cropland_only, s30_validate)
-                        month_tasks = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly(
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             False, save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
                             save_cuirr=save_cuirr, save_prz=save_prz,
-                            save_niwr=save_niwr)
+                            save_niwr=save_niwr, save_aw=save_aw,
+                            dr_init_img=dr_carry)
                     elif use_viirs:
                         _viirs_export_month(
                             scenes, info, tile_roi, current_year,
                             current_month, month_key, folder, scale, crs,
                             tile_label, viirs_mode, viirs_model, viirs_qa,
                             viirs_fill, tasks)
-                        month_tasks = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly(
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             False,  # save_et=False → VIIRS ET ishlatiladi
                             save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
                             save_cuirr=save_cuirr, save_prz=save_prz,
-                            save_niwr=save_niwr)
+                            save_niwr=save_niwr, save_aw=save_aw,
+                            dr_init_img=dr_carry)
                     else:
-                        month_tasks = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly(
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             save_et, save_biomass, save_etref,
                             save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
                             save_cuirr=save_cuirr, save_prz=save_prz,
-                            save_niwr=save_niwr)
+                            save_niwr=save_niwr, save_aw=save_aw,
+                            dr_init_img=dr_carry)
 
                     tasks.extend(month_tasks)
 
@@ -1047,6 +1130,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 end_dt = datetime.strptime(date_end, '%Y-%m-%d')
 
                 tasks = []
+                dr_carry = None   # oylararo Dr uzatish (mavsumiy-uzluksiz AW)
 
                 # Faqat SAHNASI bor oylar (yuqoridagi tile branch bilan bir xil).
                 scene_months = {d[:7] for d in info.get('dates', [])}
@@ -1067,7 +1151,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             current_month += 1
                         continue
 
-                    month_tasks = _export_monthly(
+                    month_tasks, dr_carry = _export_monthly(
                         scenes,
                         roi,
                         current_year,
@@ -1084,7 +1168,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         save_eact,
                         utc_offset=info.get('utc_offset', 0),
                         save_cuirr=save_cuirr, save_prz=save_prz,
-                        save_niwr=save_niwr
+                        save_niwr=save_niwr, save_aw=save_aw,
+                        dr_init_img=dr_carry
                     )
 
                     tasks.extend(month_tasks)

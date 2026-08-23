@@ -131,6 +131,50 @@ def is_id_mode(mode):
     return mode in SEBAL_ID_FAMILY
 
 
+# Kc_ETo — (eski nom: SEBAL_Milliy_Kc) NDVI-langan FAO-56 QO'SH koeffitsient (Kcb+Ke).
+# ⚠️ DIQQAT: bu SEBAL EMAS — ET ni SEBAL energiya balansidan (LE=Rn−H−G) EMAS, balki
+#   ET_kun = (Kcb(NDVI) + Ke(topsoil suv balansi)) × ETo_kun  — ya'ni ETo·Kc dan quradi.
+# Bu ALOHIDA solishtiruv modeli sifatida saqlanadi; ASOSIY model = SEBAL_Milliy (energiya
+# balansi). Sahnalar SEBAL_Milliy sifatida ishlab chiqariladi (NDVI band uchun).
+# Bushland lizimetr 2021 oylik kalibratsiya (proto_ndvi_kc.py): R²=0.85, MBE≈0,
+# RMSE=25.2 — OpenET Ensemble (R²0.854/RMSE27.6) bilan teng/undan yaxshi.
+# Eski SEBAL_Milliy R²=0.548/RMSE45.6 (past-LAI da SOLAR_FRAC step-hold buziladi).
+MILLIY_KC = {
+    'kcb_a': 1.25,          # Kcb = clamp(a·NDVI + b, 0, kcb_max); 1.25 cho'qqi-past
+    #                         tuzatadi (Bushland: RMSE 21.8→16.8, MBE −8.5→+2, R²~0.94).
+    #                         Per-oy slope (0.67-1.57) overfit + ko'chmaydi (Jun=sug'orish
+    #                         artefakti, Apr=yalang'och Ke). 1.25 = fizik, ko'chuvchan.
+    'kcb_b': -0.10,
+    'kcb_max': 1.00,        # paxta cho'qqi Kcb ustki chegara (grass ETo asosida)
+    'kc_max': 1.15,         # FAO-56 Kcmax (Ke ustki chegarasi)
+    'ke_scale': 0.30,       # Ke miqyosi (yog'in-asosli balans, sug'orish miqdori yo'q)
+    'ndvi_bare': 0.15,      # fc=0 (yalang'och) NDVI
+    'ndvi_full': 0.85,      # fc=1 (to'liq kanopiy) NDVI
+    'tew': 20.0,            # topsoil jami bug'lanadigan suv (mm) — Saxton ~
+    'rew': 9.0,             # oson bug'lanadigan (mm)
+    'ref_type': 'grass',    # ETo (grass) — Kcb-NDVI koeffitsientlari grass uchun
+    # --- Senescence (FAO-56 late-season): cho'qqi NDVI kunidan keyin Kcb pasayadi.
+    #     NDVI baland qolsa-da qurigan ekin ET tushishini modellaydi. Bushland 2021
+    #     kalibratsiya: R²0.85→0.94 (Sep +23→−9, Okt +35→−6).
+    'senescence': True,
+    'sen_len_days': 60.0,   # cho'qqidan keyin Kcb to'liq pasayish davri (kun)
+    'kcb_end_frac': 0.45,   # Kcb cho'qqidan qaysi ulushgacha tushadi (davr oxirida)
+}
+
+
+def is_kc_mode(mode):
+    """mode NDVI-langan FAO-56 Kc·ETo rejimimi? Yangi nom 'Kc_ETo'
+    (eski 'SEBAL_Milliy_Kc' ham qabul qilinadi — orqaga moslik)."""
+    return mode in ('Kc_ETo', 'SEBAL_Milliy_Kc')
+
+
+# PER-CROP: crop-code raster asset(lar) ro'yxati (mosaic → remap kod→Kc koeffitsient).
+# None → bitta paxta-kalibrlangan Kc (Bushland). main.run(crop_assets=[...]) o'rnatadi.
+# crop_kc_table.CROP_KC kodlari: 1=Paxta 2=Bug'doy 3=Bog' 4=Beda 5=Makka 6=Kartoshka
+# 7=Noxot 8=Sabzi 9=Poliz 10=Ozuqa 11=Boshqa; 0=ekin emas (maska).
+CROP_ASSETS = None
+
+
 # SEBAL_ID (Tasumi 2003) — Eq. (4.28): LAI-asosli emissivity (surface_props.
 # compute_emissivity, faqat mode='SEBAL_ID').
 #   NDVI > 0, LAI < 3  → ε₀ = 0.95 + 0.01 × LAI

@@ -80,7 +80,7 @@ def _saxton_fc_wp(sand_pct, clay_pct, om_pct=2.0):
     return FC, WP
 
 
-def hot_pixel_etrf(image, roi, hot_mask, window_days=30, ze=0.10,
+def hot_pixel_etrf(image, roi, hot_mask, window_days=14, ze=0.10,
                    etrf_max=1.05, verbose=True):
     """
     Hot piksel uchun ETrF_hot ni (Kr·ETrF_max) FAO-56 kunlik suv balansidan
@@ -138,19 +138,28 @@ def hot_pixel_etrf(image, roi, hot_mask, window_days=30, ze=0.10,
         d_str = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
         p_by_day[d_str] = r[4] if r[4] is not None else 0.0
 
-    # --- 4. Kunlik ETr (alfalfa FAO-56 PM) SHU NUQTADA — bitta getRegion ---
+    # --- 4. Kunlik ETr (alfalfa FAO-56 PM) SHU NUQTADA ---
+    #   DIQQAT: butun oynani BITTA getRegion bilan olish katta tile'da GEE
+    #   "User memory limit exceeded" beradi — har kun 24 soatlik ERA5 .map
+    #   (shamol/ea) chuqur graf, kunlar soni × stacklanadi (goh o'tadi, goh
+    #   limit). Shu sabab getRegion'ni KICHIK BO'LAKLARGA (chunk) bo'lib
+    #   chaqiramiz: fizika/qiymatlar AYNAN bir xil, faqat har so'rov yengil.
     def _etr_img(d):
         day = start.advance(ee.Number(d), 'day')
         met = ref_et.get_daily_era5_aggregate(day, roi)
         etr = (ref_et.RefETCalculator(ref_type='alfalfa')
                .calculate(met, dem, mode='daily').select('ETr'))
         return etr.set('system:time_start', day.millis())
-    etr_col = ee.ImageCollection(ee.List.sequence(0, window_days - 1).map(_etr_img))
-    e_rows = etr_col.getRegion(hot_pt, 100).getInfo()
+
     etr_by_day = {}
-    for r in e_rows[1:]:
-        d_str = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
-        etr_by_day[d_str] = r[4] if r[4] is not None else 0.0
+    CHUNK = 5
+    for c0 in range(0, window_days, CHUNK):
+        seq = ee.List.sequence(c0, min(c0 + CHUNK, window_days) - 1)
+        rows = (ee.ImageCollection(seq.map(_etr_img))
+                .getRegion(hot_pt, 100)).getInfo()
+        for r in rows[1:]:
+            d_str = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
+            etr_by_day[d_str] = r[4] if r[4] is not None else 0.0
 
     # --- 5. FAO-56 kunlik balans (Python skalyar), oyna kunlari tartibida ---
     De = TEW      # boshlang'ich: quruq (oyna ichida yomg'ir bo'lsa tushadi)
