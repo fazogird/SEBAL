@@ -21,43 +21,6 @@ from . import config as cfg
 # INCOMING SHORTWAVE RADIATION K↓
 # ==============================================================
 
-# Taxminiy assume qiligan mantig'im
-# def compute_incoming_shortwave(image):
-#     """
-#     Kirib keluvchi quyosh radiatsiyasi K↓ (W/m²).
-
-#     2 ta usul — biri ERA5 dan, biri hisoblash:
-
-#     Usul 1 (default): ERA5 ssrd — to'g'ridan-to'g'ri
-#     Usul 2 (fallback): K↓ = Gsc × cos(θ) × dr × τsw
-
-#     Biz ERA5 ni ishlatamiz chunki:
-#       - Har soat uchun mavjud
-#       - Bulutlilikni hisobga oladi
-#       - Global coverage
-
-#     Lekin ERA5 resolution past (0.1° ≈ 11km), shuning uchun
-#     τsw orqali DEM-based tuzatma qo'shamiz.
-#     """
-#     # ERA5 ssrd — hourly accumulated (J/m²) → W/m² ga o'girish
-#     # ERA5-Land hourly: qiymat = shu soatdagi yig'indi (J/m²)
-#     # W/m² = J/m² / 3600s
-#     ssrd = image.select('SSRD').divide(3600.0)
-
-#     # τsw orqali lokal tuzatma
-#     # ERA5 keng maydon o'rtacha beradi, lekin balandlik farqi bor
-#     # Lokal τsw dan tuzatamiz
-#     tau_sw = image.select('TAU_SW')
-
-#     # ERA5 τsw ni taxminan hisoblash (o'rtacha balandlik uchun)
-#     # va lokal τsw bilan nisbat qilamiz
-#     # Bu sodda yondashuv — murakkab topografik tuzatma emas
-#     k_down = ssrd.multiply(tau_sw.divide(0.75)).rename('K_DOWN')
-
-#     # Xavfsizlik: K↓ ≥ 0
-#     k_down = k_down.max(0)
-
-#     return image.addBands(k_down)
 
 def compute_incoming_shortwave(image, sloping_terrain=False):
     """
@@ -136,17 +99,25 @@ def compute_incoming_shortwave(image, sloping_terrain=False):
 #
 # "Accumulated variables are reset daily at midnight, and Earth Engine provides 19 hourly bands by computing the difference between consecutive forecast steps."
 #
-# Ya'ni surface_thermal_radiation_downwards_hourly bandi — bu GEE tomonidan allaqachon ketma-ket soatlar orasidagi farq sifatida hisoblangan, xom kumulyativ qiymat emas. Shuning uchun kodingizdagi strd.divide(3600.0) — to'g'ri, qo'shimcha differensiatsiya kerak emas (bu — ResearchGate forumlarida CDS API orqali xom ma'lumot olganlar duch kelayotgan chalkashlik, GEE'da bu muammo yo'q, chunki GEE jamoasi buni oldindan hal qilib qo'ygan).
+# Ya'ni surface_thermal_radiation_downwards_hourly bandi — bu GEE tomonidan allaqachon ketma-ket soatlar orasidagi farq sifatida hisoblangan, xom kumulyativ qiymat emas. 
+# Shuning uchun kodingizdagi strd.divide(3600.0) — to'g'ri, qo'shimcha differensiatsiya kerak emas (bu — ResearchGate forumlarida CDS API orqali xom ma'lumot olganlar duch kelayotgan chalkashlik,
+# GEE'da bu muammo yo'q, chunki GEE jamoasi buni oldindan hal qilib qo'ygan).
 # 2. ERA5'ning longwave aniqligi — mustaqil validatsiya
-# Wang et al. (2021), ScienceDirect — "Does ERA5 outperform satellite products in estimating atmospheric downward longwave radiation at the surface?" — 46 ta BSRN va 9 ta GTMBA yer stansiyasi bilan solishtirib, ERA5'ning quruqlik yuzasidagi downward longwave radiation (DLR) aniqligi CERES sun'iy yo'ldosh mahsulotidan yuqoriroq ekanini ko'rsatgan. Bu — ERA5 STRD'ning o'zi mustaqil ravishda yaxshi validatsiyadan o'tgan degani.
+# Wang et al. (2021), ScienceDirect — "Does ERA5 outperform satellite products in estimating atmospheric downward longwave radiation at the surface?" — 46 ta BSRN va 9 ta GTMBA yer stansiyasi bilan solishtirib,
+# ERA5'ning quruqlik yuzasidagi downward longwave radiation (DLR) aniqligi CERES sun'iy yo'ldosh mahsulotidan yuqoriroq ekanini ko'rsatgan. Bu — ERA5 STRD'ning o'zi mustaqil ravishda yaxshi validatsiyadan o'tgan degani.
 # 3. To'g'ridan-to'g'ri metodologik prezedent — SEBAL/SEBI oilasida ERA5 ishlatilishi
 #
-# Laipelt et al. (2021), ISPRS Journal of Photogrammetry and Remote Sensing — "Long-term monitoring of evapotranspiration using the SEBAL algorithm and Google Earth Engine cloud computing" (geeSEBAL). Bu — sizning pipeline'ingizga eng yaqin, haqiqiy nashr etilgan, GEE'da ishlaydigan SEBAL implementatsiyasi, meteorologik input sifatida ERA5-Landdan foydalanadi va 10 ta eddy-covariance flux-tower bilan solishtirilgan (RMSD = 0.67 mm/kun). Bu — sizning "nega ERA5" degan savolingizga eng kuchli, to'g'ridan-to'g'ri javob beruvchi manba.
-# geeSSEBI (2025), MDPI Remote Sensing, DOI: 10.3390/rs17030395 — bundan ham aniqrog'i: bu maqola aynan sizning kodingizdagi kabi — ERA5-Land hourly shortwave VA longwave'ni 3600'ga bo'lish orqali instantaneous qiymatga o'tkazadi. Ya'ni siz ishlatgan texnik usul — nafaqat to'g'ri, balki 2025-yilgi retsenziyadan o'tgan nashrda aynan shu tarzda qo'llangan.
+# Laipelt et al. (2021), ISPRS Journal of Photogrammetry and Remote Sensing — "Long-term monitoring of evapotranspiration using the SEBAL algorithm and Google Earth Engine cloud computing" (geeSEBAL). 
+# Bu — sizning pipeline'ingizga eng yaqin, haqiqiy nashr etilgan, GEE'da ishlaydigan SEBAL implementatsiyasi, meteorologik input sifatida ERA5-Landdan foydalanadi va 10 ta eddy-covariance flux-tower bilan solishtirilgan (RMSD = 0.67 mm/kun).
+# Bu — sizning "nega ERA5" degan savolingizga eng kuchli, to'g'ridan-to'g'ri javob beruvchi manba.
+# geeSSEBI (2025), MDPI Remote Sensing, DOI: 10.3390/rs17030395 — bundan ham aniqrog'i: bu maqola aynan sizning kodingizdagi kabi — ERA5-Land hourly shortwave VA longwave'ni 3600'ga bo'lish orqali instantaneous qiymatga o'tkazadi. 
+# Ya'ni siz ishlatgan texnik usul — nafaqat to'g'ri, balki 2025-yilgi retsenziyadan o'tgan nashrda aynan shu tarzda qo'llangan.
 #
 # Xulosa — yozishingiz mumkin bo'lgan asoslash
 #
-# "Bastiaanssen (1995) empirik εₐ=0.85×(-lnτsw)^0.09 formulasi Idaho alfalfa dalalari uchun kalibrlangan bo'lib, muallifning o'zi ta'kidlaganidek boshqa iqlim mintaqasi (G'arbiy Misr) uchun butunlay farqli koeffitsientlar (1.08, 0.265) talab qiladi — demak bu formula mahalliy kalibratsiyasiz Markaziy Osiyoga ko'chirib bo'lmaydi. Shu sababli ushbu pipeline'da ERA5-Land reanalysis (STRD bandi) ishlatiladi — bu yondashuv GEE-asosli SEBAL implementatsiyalarida standart amaliyot hisoblanadi (Laipelt et al., 2021; geeSSEBI, 2025) va ERA5'ning downward longwave radiation aniqligi mustaqil validatsiyalarda quruqlik yuzasida sun'iy yo'ldosh mahsulotlaridan (CERES) yuqori ekani ko'rsatilgan (Wang et al., 2021)."
+# "Bastiaanssen (1995) empirik εₐ=0.85×(-lnτsw)^0.09 formulasi Idaho alfalfa dalalari uchun kalibrlangan bo'lib, muallifning o'zi ta'kidlaganidek boshqa iqlim mintaqasi (G'arbiy Misr) uchun butunlay farqli koeffitsientlar (1.08, 0.265) talab qiladi — 
+# demak bu formula mahalliy kalibratsiyasiz Markaziy Osiyoga ko'chirib bo'lmaydi. Shu sababli ushbu pipeline'da ERA5-Land reanalysis (STRD bandi) ishlatiladi — bu yondashuv GEE-asosli SEBAL implementatsiyalarida standart amaliyot hisoblanadi 
+# (Laipelt et al., 2021; geeSSEBI, 2025) va ERA5'ning downward longwave radiation aniqligi mustaqil validatsiyalarda quruqlik yuzasida sun'iy yo'ldosh mahsulotlaridan (CERES) yuqori ekani ko'rsatilgan (Wang et al., 2021)."
 #
 
 def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=None):

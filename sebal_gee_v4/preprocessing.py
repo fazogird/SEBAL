@@ -6,7 +6,7 @@ Landsat 8/9 C2L2 tasvirlarini tozalash va tayyorlash.
 Vazifalar:
   1. ImageCollection qurish (L8, L9 yoki ikkalasi)
   2. Cloud cover bo'yicha filtr
-  3. QA_PIXEL bitmask — bulut, soya, qor, suv olib tashlash
+  3. QA_PIXEL bitmask — bulut, soya, qor, suv olib tashlanmaydi 
   4. Scale factors qo'llash (SR → 0-1, ST → Kelvin)
   5. DEM va slope qo'shish
   6. ERA5 vaqtga moslashtirish
@@ -123,7 +123,7 @@ def apply_scale_factors(image):
     SR bands (B2-B7): DN × 0.0000275 - 0.2 → reflectance (0–1)
     ST band (B10):    DN × 0.00341802 + 149.0 → Kelvin
 
-    SR qiymatlari 0–1 oralig'iga clamp qilinadi.
+    SR qiymatlari [-0.199972 : 1.602213] oralig'iga clamp qilinadi.
     """
     sr_bands = [
         cfg.BAND_NAMES['blue'],
@@ -143,6 +143,7 @@ def apply_scale_factors(image):
     sr_scaled = (image.select(sr_bands)
                  .multiply(cfg.SCALE_FACTORS['sr_mult'])
                  .add(cfg.SCALE_FACTORS['sr_add'])
+                 .toFloat() # <--- Shu yerda piksellarni float32 ga majburlaymiz
                  .clamp(-0.199972, 1.602213))
 
     # Surface Temperature — Kelvin ga
@@ -152,6 +153,7 @@ def apply_scale_factors(image):
     st_scaled = (image.select(st_band)
                  .multiply(cfg.SCALE_FACTORS['st_mult'])
                  .add(cfg.SCALE_FACTORS['st_add'])
+                 .toFloat() # <--- Bu yerda ham LST guruhini float32 qilamiz
                  .clamp(149.003418, 372.999941)
                  .rename('LST'))
 
@@ -285,6 +287,7 @@ def get_era5_for_image(image, roi):
 def add_air_density(image):
     """
     Havo zichligini hisoblash.
+    Bu quruq havo ideal-gaz yondashuvi.
 
     ρₐ = P / (R_specific × T)
 
@@ -300,11 +303,6 @@ def add_air_density(image):
     rho_air = pressure.divide(air_temp.multiply(R_SPECIFIC)).rename('RHO_AIR')
 
     return image.addBands(rho_air)
-
-
-# ==============================================================
-# MAIN: Build clean ImageCollection
-# ==============================================================
 
 # ==============================================================
 # COLLECTION BUILDER — Landsat yoki HLS
@@ -394,7 +392,7 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
         col = (ee.ImageCollection(collection_id)
                .filterBounds(roi)
                .filterDate(date_start, date_end)
-               .filter(ee.Filter.lt('CLOUD_COVER', cloud_max)))
+               .filter(ee.Filter.lte('CLOUD_COVER', cloud_max)))
         if merged is None:
             merged = col
         else:
@@ -455,135 +453,6 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
 
     return clean_collection
 
-# def build_collection(roi, date_start, date_end, satellite='BOTH',
-#                      cloud_max=None, mosaic_same_date=True,
-#                      wrs_path=None, wrs_row=None,
-#                      mgrs_tile=None):
-#     '''
-#     Landsat yoki HLS ImageCollection qurish.
- 
-#     satellite: 'L8', 'L9', 'BOTH', 'HLS'
-#     wrs_path/wrs_row: Landsat tile filter
-#     mgrs_tile: HLS tile filter (masalan 'T42TVK')
-#     '''
-#     if cloud_max is None:
-#         cloud_max = cfg.PIPELINE['cloud_max_percent']
- 
-#     # ── HLS REJIM ──────────────────────────────────────
-#     if satellite == 'HLS':
-#         merged = (ee.ImageCollection(cfg.HLS_COLLECTION)
-#                   .filterBounds(roi)
-#                   .filterDate(date_start, date_end)
-#                   .filter(ee.Filter.lt('CLOUD_COVERAGE', cloud_max)))
- 
-#         # MGRS tile filtr
-#         if mgrs_tile is not None:
-#             tile_id = mgrs_tile if mgrs_tile.startswith('T') else f'T{mgrs_tile}'
-#             merged = merged.filter(
-#                 ee.Filter.stringContains('system:index', tile_id))
- 
-#         # Cropland cloud precheck
-#         merged = filter_by_crop_cloud_hls(merged, roi, cfg.CROP_CLOUD_MAX)
- 
-#         # Sana bo'yicha eng yaxshi
-#         if mgrs_tile is not None:
-#             distinct_dates = (merged
-#                 .aggregate_array('system:time_start')
-#                 .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-#                 .distinct())
- 
-#             def best_per_date(date_str):
-#                 date = ee.Date(date_str)
-#                 daily = merged.filterDate(date, date.advance(1, 'day'))
-#                 # ⭐ REAL UTC overpass vaqtini saqlash (ERA5 to'g'ri yuklash uchun)
-#                 actual_time = ee.Image(daily.first()).get('system:time_start')
-#                 return (daily.mosaic()
-#                         .set('system:time_start', actual_time)
-#                         .copyProperties(daily.first(), ['CLOUD_COVERAGE']))
- 
-#             merged = ee.ImageCollection(distinct_dates.map(best_per_date))
- 
-#         # HLS preprocessing
-#         def preprocess_hls(image):
-#             processed = apply_qa_mask_hls(image)
-#             processed = apply_scale_factors_hls(processed)
-#             processed = add_terrain(processed, roi)
-#             processed = get_era5_for_image(processed, roi)
-#             processed = add_air_density(processed)
-#             return processed
- 
-#         clean_collection = merged.map(preprocess_hls)
-#         return clean_collection
- 
-#     # ── LANDSAT REJIM (o'zgarmagan) ────────────────────
-#     if satellite == 'BOTH':
-#         collections = ['L8', 'L9']
-#     else:
-#         collections = [satellite]
- 
-#     merged = None
-#     for sat_key in collections:
-#         collection_id = cfg.LANDSAT_COLLECTIONS[sat_key]
-#         col = (ee.ImageCollection(collection_id)
-#                .filterBounds(roi)
-#                .filterDate(date_start, date_end)
-#                .filter(ee.Filter.lt('CLOUD_COVER', cloud_max)))
-#         if merged is None:
-#             merged = col
-#         else:
-#             merged = merged.merge(col)
- 
-#     # WRS filtr
-#     if wrs_path is not None:
-#         merged = merged.filter(ee.Filter.eq('WRS_PATH', wrs_path))
-#     if wrs_row is not None:
-#         merged = merged.filter(ee.Filter.eq('WRS_ROW', wrs_row))
- 
-#     # Cropland cloud precheck
-#     merged = filter_by_crop_cloud(merged, roi, cfg.CROP_CLOUD_MAX)
- 
-#     # Sana bo'yicha eng yaxshi
-#     if wrs_path is not None:
-#         distinct_dates = (merged
-#             .aggregate_array('system:time_start')
-#             .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-#             .distinct())
- 
-#         # def best_per_date1(date_str):
-#         #     date = ee.Date(date_str)
-#         #     daily = merged.filterDate(date, date.advance(1, 'day'))
-#         #     return daily.sort('CLOUD_COVER').first()
- 
-#         merged = ee.ImageCollection(distinct_dates.map(best_per_date))
- 
-#     # Landsat preprocessing
-#     def preprocess_image(image):
-#         processed = apply_qa_mask(image)
-#         processed = apply_scale_factors(processed)
-#         processed = add_terrain(processed, roi)
-#         processed = get_era5_for_image(processed, roi)
-#         processed = add_air_density(processed)
-#         return processed
- 
-#     clean_collection = merged.map(preprocess_image)
- 
-#     if mosaic_same_date:
-#         distinct_dates = (clean_collection
-#                           .aggregate_array('system:time_start')
-#                           .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-#                           .distinct())
- 
-#         def mosaic_by_date(date_str):
-#             date = ee.Date(date_str)
-#             daily = clean_collection.filterDate(date, date.advance(1, 'day'))
-#             mosaic = daily.mosaic()
-#             return mosaic.set('system:time_start', date.millis())
- 
-#         clean_collection = ee.ImageCollection(
-#             distinct_dates.map(mosaic_by_date))
- 
-#     return clean_collection
-
 # # ==============================================================
 # UTILITY: Collection info
 # ==============================================================
@@ -637,18 +506,18 @@ def filter_by_crop_cloud(collection, roi, max_pct, use_cropland=True, scale=100)
             .get('crop_cloud_pct')).getInfo()
         if pct < max_pct:
             print(f"    ✅ Cloud precheck OK: {pct:.1f}% "
-                  f"(cropland, limit={max_pct}%)  [{img_id}]")
+                  f"(toza sahna, limit={max_pct}%)  [{img_id}]")
             good_ids.append(img_id)
         else:
             print(f"    ⚠️  Cloud precheck FAIL: {pct:.1f}% "
-                  f"(cropland, limit={max_pct}%) → skip  [{img_id}]")
+                  f"(toza sahna, limit={max_pct}%) → skip  [{img_id}]")
 
     if not good_ids:
         good_ids = ['__none__']   # bo'sh ro'yxat — hech narsa o'tmaydi
     return collection.filter(ee.Filter.inList('system:index', good_ids))
 
 def filter_by_crop_cloud_hls(collection, roi, max_pct):
-    '''HLS uchun cropland ustidagi bulut filtri.'''
+    '''HLS uchun toza sahna ustidagi bulut filtri.'''
         # Bo'sh collection tekshiruvi
     n_total = collection.size().getInfo()
     if n_total == 0:

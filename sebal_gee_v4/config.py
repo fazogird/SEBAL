@@ -304,7 +304,7 @@ ANCHOR = {
 
     # Umumiy filtrlar
     'slope_max':            5.0,    # gradient < 5° (tekis yer)
-    'min_candidates':       50,     # minimum piksel soni
+    'min_candidates':       20,     # minimum piksel soni
 
     # Selection method
     'method': 'median',             # 'median' yoki 'mean' — outlier himoyasi
@@ -371,7 +371,7 @@ ITERATION = {
 # ==============================================================
 # 11. DAILY ET — Evaporative Fraction Method
 # ==============================================================
-# ET₂₄ = Λ × Rn24 / λ × 86400 × 1000  (mm/day)
+# ET₂₄ = Λ × Rn24 / λ × 86400 (mm/day)
 # Rn24 = (1 - α) × Rs24 - 110 × τsw (De Bruin/Slob)
 
 DAILY_ET = {

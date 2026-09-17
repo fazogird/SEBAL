@@ -989,6 +989,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 else:
                     tile_geom = get_tile_geometry(path, row)
                 tile_roi = roi.intersection(tile_geom, ee.ErrorMargin(30))
+                # 🌟 Faqat geometriya turini serverdan so'raymiz (Juda tez bajariladi)
+                tile_roi.geometry().type().getInfo()
             except Exception as e:
                 print(f"  ⚠️ Tile geometriya topilmadi ({e}) → ROI ishlatiladi")
                 tile_roi = roi

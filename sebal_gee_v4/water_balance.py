@@ -103,7 +103,7 @@ def hot_pixel_etrf(image, roi, hot_mask, window_days=14, ze=0.10,
     #        issig'i (max LST) + uning KOORDINATASI (max(3): LST, lon, lat). ---
     ll = ee.Image.pixelLonLat()
     loc = (image.select('LST').updateMask(hot_mask).addBands(ll)
-           .reduceRegion(ee.Reducer.max(3), roi, 30, maxPixels=1e9,
+           .reduceRegion(ee.Reducer.max(3), roi, 100, maxPixels=1e9,
                          bestEffort=True, tileScale=4)).getInfo()
     lon = loc.get('max1'); lat = loc.get('max2')   # max=LST, max1=lon, max2=lat
     if lon is None or lat is None:

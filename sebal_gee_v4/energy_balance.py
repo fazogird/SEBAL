@@ -142,161 +142,6 @@ def compute_tile_cropland_zone(tile_roi, min_pixel_count=20):
 # M5: ANCHOR PIXEL SELECTION
 # ==============================================================
 
-# def select_anchor_pixels(image, roi):
-#     """
-#     Cold va hot anchor piksellarni avtomatik tanlash.
-
-#     Bastiaanssen (1998) p.206:
-#       Cold: NDVI top 5%, LST bottom 20%, albedo < 0.20
-#       Hot:  NDVI bottom 10%, LST top 5%, albedo > 0.18
-
-#     Jarayon:
-#       1. Sifat maskasi (slope < 5°, valid piksellar)
-#       2. Percentile hisoblash
-#       3. Kandidatlarni filtr
-#       4. Median qiymat olish (outlier himoyasi)
-
-#     Returns
-#     -------
-#     dict : cold_lst, hot_lst, hot_h, hot_dta, c4, c5
-#     """
-#     acfg = cfg.ANCHOR
-
-#     ndvi = image.select('NDVI')
-#     lst = image.select('LST')
-#     albedo = image.select('ALBEDO')
-#     slope = image.select('SLOPE')
-   
-   
-#     # ---- 1. Tekis yer maskasi (slope < 5°) ----
-#     flat_mask = slope.lt(acfg['slope_max'])
-#     valid = image.mask().reduce(ee.Reducer.allNonZero())
-
-#     base_mask = flat_mask.And(valid)
-    
-#     try:
-#         anchor_px = base_mask.reduceRegion(
-#             reducer=ee.Reducer.count(),
-#             geometry=roi,
-#             scale=120,
-#             maxPixels=1e9,
-#             bestEffort=True
-#         ).getInfo()
-
-#         print(f"  🌾 Anchor cropland mask pixel count: {anchor_px}")
-#     except Exception as e:
-#         print(f"  ⚠️ Anchor cropland diagnostika xato: {e}")
-
-#     if cfg.ANCHOR_USE_CROPLAND:
-#         cropland_mask = get_anchor_cropland_mask(image, roi)
-#         base_mask = base_mask.And(cropland_mask)
-
-#     masked_ndvi = ndvi.updateMask(base_mask)
-#     masked_lst = lst.updateMask(base_mask)
-
-#     # ---- 2. Percentile hisoblash ----
-#     ndvi_stats = masked_ndvi.reduceRegion(
-#         reducer=ee.Reducer.percentile(
-#             [acfg['hot_ndvi_percentile'], acfg['cold_ndvi_percentile']]
-#         ),
-#         geometry=roi,
-#         scale=30,
-#         maxPixels=1e9,
-#         bestEffort=True
-#     )
-
-#     lst_stats = masked_lst.reduceRegion(
-#         reducer=ee.Reducer.percentile(
-#             [acfg['cold_lst_percentile'], acfg['hot_lst_percentile']]
-#         ),
-#         geometry=roi,
-#         scale=30,
-#         maxPixels=1e9,
-#         bestEffort=True
-#     )
-
-#     ndvi_p_hot = ee.Number(ndvi_stats.get(
-#         f'NDVI_p{acfg["hot_ndvi_percentile"]}'))
-#     ndvi_p_cold = ee.Number(ndvi_stats.get(
-#         f'NDVI_p{acfg["cold_ndvi_percentile"]}'))
-#     lst_p_cold = ee.Number(lst_stats.get(
-#         f'LST_p{acfg["cold_lst_percentile"]}'))
-#     lst_p_hot = ee.Number(lst_stats.get(
-#         f'LST_p{acfg["hot_lst_percentile"]}'))
-
-#     # ---- Anchor maskasi bo'sh bo'lganda himoya (HLS/bulutli sahna) ----
-#     # Qattiq shartlar (NDVI + LST + albedo) ba'zan 0 nomzod beradi →
-#     # median null → ee.Number(null) butun grafni buzadi
-#     # ("Number.subtract/multiply: left null"). Bo'sh bo'lsa, faqat LST
-#     # percentil asosidagi zaxira maskaga o'tamiz (base_mask non-empty
-#     # bo'lsa har doim non-empty).
-#     def _ensure_nonempty(mask, fallback):
-#         mask = mask.rename('M')
-#         cnt = mask.reduceRegion(
-#             reducer=ee.Reducer.sum(), geometry=roi, scale=120,
-#             maxPixels=1e9, bestEffort=True).get('M')
-#         cnt = ee.Number(ee.Algorithms.If(cnt, cnt, 0))
-#         return ee.Image(ee.Algorithms.If(cnt.gt(0), mask, fallback.rename('M')))
-
-#     # ---- 3. Cold pixel kandidatlar ----
-#     cold_mask = (
-#         base_mask
-#         .And(ndvi.gte(ndvi_p_cold))
-#         .And(lst.lte(lst_p_cold))
-#         .And(albedo.lt(acfg['cold_albedo_max']))
-#     )
-#     cold_fallback = base_mask.And(lst.lte(lst_p_cold))
-#     cold_mask = _ensure_nonempty(cold_mask, cold_fallback)
-
-#     # Cold pixel — LST median (eng barqaror qiymat)
-#     cold_lst = (lst.updateMask(cold_mask)
-#                 .reduceRegion(
-#                     reducer=ee.Reducer.median(),
-#                     geometry=roi,
-#                     scale=30,
-#                     maxPixels=1e9,
-#                     bestEffort=True
-#                 ).get('LST'))
-#     cold_lst = ee.Number(cold_lst)
-
-#     # ---- 4. Hot pixel kandidatlar ----
-#     hot_mask = (
-#         base_mask
-#         .And(ndvi.lte(ndvi_p_hot))
-#         .And(lst.gte(lst_p_hot))
-#         .And(albedo.gt(acfg['hot_albedo_min']))
-#     )
-#     hot_fallback = base_mask.And(lst.gte(lst_p_hot))
-#     hot_mask = _ensure_nonempty(hot_mask, hot_fallback)
-
-#     # Hot pixel — LST va (Q*-G₀) median
-#     hot_stats = (image.select(['LST', 'RN_G0'])
-#                  .updateMask(hot_mask)
-#                  .reduceRegion(
-#                      reducer=ee.Reducer.median(),
-#                      geometry=roi,
-#                      scale=30,
-#                      maxPixels=1e9,
-#                      bestEffort=True
-#                  ))
-#     hot_lst = ee.Number(hot_stats.get('LST'))
-#     hot_rn_g0 = ee.Number(hot_stats.get('RN_G0'))
-
-#     # ---- 5. Anchor ma'lumotlarni qaytarish ----
-#     # hot_mask va cold_mask ham kerak — iteratsiyada hot pixel dagi
-#     # rah qiymatini FAQAT hot piksellardan olish uchun.
-#     # Bu oldingi bug edi: butun tasvir mediani olinayotgan edi.
-
-#     anchors = {
-#         'cold_lst': cold_lst,
-#         'hot_lst': hot_lst,
-#         'hot_rn_g0': hot_rn_g0,
-#         'hot_mask': hot_mask,
-#         'cold_mask': cold_mask,
-#     }
-
-#     return anchors
-
 def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
                            anchor_mode='median_anchor'):
     """
@@ -326,7 +171,7 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
             return base_flat
         b = base_flat.And(lc.gt(0))
         px = ee.Number(b.rename('M').reduceRegion(
-            ee.Reducer.sum(), roi, 120, maxPixels=1e9,
+            ee.Reducer.sum(), roi, 100, maxPixels=1e9,
             bestEffort=True).get('M', 0))
         px = ee.Number(ee.Algorithms.If(px, px, 0))
         # <20 valid piksel (bulut) bo'lsa shu sahnada cheklovsiz (butun roi)
@@ -359,7 +204,7 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
     def _ensure_nonempty(mask, fallback):
         mask = mask.rename('M')
         cnt = mask.reduceRegion(
-            reducer=ee.Reducer.sum(), geometry=search_geom, scale=120,
+            reducer=ee.Reducer.sum(), geometry=search_geom, scale=100,
             maxPixels=1e9, bestEffort=True).get('M', 0)
         cnt = ee.Number(ee.Algorithms.If(cnt, cnt, 0))
         return ee.Image(ee.Algorithms.If(cnt.gt(0), mask, fallback.rename('M')))
@@ -404,18 +249,8 @@ def _select_anchor_default(image, roi, cold_lc=None, hot_lc=None,
 # ==============================================================
 # M5b: ANCHOR KASKAD (beton) — ko'p metodli, diagnostikali
 # ==============================================================
-#
-# select_anchor_pixels() — DISPATCHER:
-#   method='default' → yuqoridagi _select_anchor_default (o'zgarmagan).
-#   aks holda → kaskad: tanlangan metod BIRINCHI, keyin qolganlari;
-#   avval ekin zonasida, keyin butun ROI'da; hech biri chiqmasa —
-#   'default' persentil fallback (KAFOLAT). Har qadam LOG qilinadi.
-#
-# Har metod (image, geom, base_mask) → (cold_mask, hot_mask) IMAGE qaytaradi.
-# base_mask = tekis yer (slope<5°) VA valid (bulutsiz) piksellar.
 
 _CANON_ORDER = ('cimec', 'plan_a', 'plan_b', 'pysebal')
-
 
 def _base_mask(image):
     """Tekis (slope<5°) VA valid (bulutsiz) piksellar maskasi."""
@@ -978,7 +813,7 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     #     Skalyar bo'lgani uchun bir zumda ishlaydi — graf o'smaydi.
     # ==========================================================
     ln_zb_z0m = math.log(z_blend / z0m_h)
-    ln_z2_z1 = math.log(z2_rah / z1)   # rah log hadi: ln(0.2/0.1)=ln(2)
+    ln_z2_z1 = math.log(z2_rah / z1)   # 
 
     ustar_h = max(k * u200_h / ln_zb_z0m, 0.02)          # neytral boshlang'ich
     rah_h = max(ln_z2_z1 / (k * ustar_h), 1.0)

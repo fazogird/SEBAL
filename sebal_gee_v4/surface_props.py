@@ -35,12 +35,22 @@ def compute_ndvi(image):
     L8/9: NIR = SR_B5, Red = SR_B4
     Qiymat: -1 dan +1 gacha
     """
-    nir = image.select(cfg.BAND_NAMES['nir'])
-    red = image.select(cfg.BAND_NAMES['red'])
+    # 1. Kanallarni float ko'rinishida tanlash
+    nir = image.select(cfg.BAND_NAMES['nir']).float()
+    red = image.select(cfg.BAND_NAMES['red']).float()
 
-    ndvi = nir.subtract(red).divide(nir.add(red)).rename('NDVI')
+    # 2. Maxrajni hisoblash
+    denominator = nir.add(red)
 
-    return image.addBands(ndvi)
+    # 3. Optimal chegara / Maskalash:
+    # Maxraj 0 yoki undan kichik bo'lgan (anomal) piksellarni butunlay o'chirib tashlaymiz (mask)
+    # Bu orqali bo'lish amali faqat musbat va real maxrajlar uchun bajariladi
+    ndvi = nir.subtract(red).divide(denominator).rename('NDVI')
+    
+    # Faqat maxraj > 0 bo'lgan piksellarni qoldiramiz va explicit clamp qilamiz
+    ndvi_optimized = ndvi.updateMask(denominator.gt(0)).clamp(-1, 1)
+
+    return image.addBands(ndvi_optimized)
 
 
 # ==============================================================
@@ -68,7 +78,42 @@ def compute_savi(image):
 
     return image.addBands(savi)
 
+# ==============================================================
+# LAI — Leaf Area Index (qo'shimcha, optional)
+# ==============================================================
 
+def compute_lai(image):
+    """
+    LAI — SEBAL_ID (yangi SEBAL), L=0.1 li SAVI'dan.
+
+    SAVI(0.1) = (1+0.1)×(NIR-Red)/(NIR+Red+0.1)
+    LAI = -ln((0.69 - SAVI) / 0.59) / 0.91
+
+    MUHIM: SEBAL_ID LAI uchun SAVI L=0.1 ishlatiladi (umumiy SAVI L=0.5 EMAS).
+    z₀m = 0.018×LAI shu LAI'dan hisoblanadi (compute_z0m).
+    SAVI ≥ 0.687 → LAI = 6.0 (maks);  SAVI < 0.1 → LAI = 0.
+    """
+    nir = image.select(cfg.BAND_NAMES['nir'])
+    red = image.select(cfg.BAND_NAMES['red'])
+    L = cfg.SAVI_L_LAI   # 0.1
+
+    savi = (nir.subtract(red)
+            .divide(nir.add(red).add(L))
+            .multiply(1.0 + L)
+            .rename('SAVI_LAI'))
+
+    lai_formula = (ee.Image(0.69).subtract(savi)
+                   .divide(0.59)
+                   .log().multiply(-1.0)
+                   .divide(0.91))
+
+    lai = (ee.Image(0.0)
+           .where(savi.gte(0.1).And(savi.lt(0.687)), lai_formula)
+           .where(savi.gte(0.687), 6.0)
+           .clamp(0.0, 6.0)
+           .rename('LAI'))
+
+    return image.addBands(lai)
 # ==============================================================
 # ALBEDO — Olmedo (2016) Broadband
 # ==============================================================
@@ -89,7 +134,7 @@ def _albedo_variants(image):
     b = image.select('SR_B2'); g = image.select('SR_B3'); r = image.select('SR_B4')
     nir = image.select('SR_B5'); s1 = image.select('SR_B6'); s2 = image.select('SR_B7')
     ub = (image.select('SR_B1').multiply(cfg.SCALE_FACTORS['sr_mult'])
-          .add(cfg.SCALE_FACTORS['sr_add']).clamp(0.0, 1.0))
+          .add(cfg.SCALE_FACTORS['sr_add']).clamp(-0.199972, 1.602213))
 
     a_olmedo = (b.multiply(0.4739).add(g.multiply(-0.4372)).add(r.multiply(0.1652))
                 .add(nir.multiply(0.2831)).add(s1.multiply(0.1072))
@@ -118,16 +163,16 @@ def compute_albedo(image):
     Input: C2L2 SR (0–1 scaled) + SR_B1 (xom DN, inline scale).
     """
     var = _albedo_variants(image)
-    diag = [v.clamp(0.0, 0.80).rename('ALB_' + k.upper()) for k, v in var.items()]
+    diag = [v.clamp(0.0, 1.0).rename('ALB_' + k.upper()) for k, v in var.items()]
 
     if ALBEDO_METHOD in var:
-        albedo = var[ALBEDO_METHOD].clamp(0.0, 0.80).rename('ALBEDO')
+        albedo = var[ALBEDO_METHOD].clamp(0.0, 1.0).rename('ALBEDO')
     else:   # 'config' yoki noma'lum → hozirgi (o'zgarmagan)
         coeffs = cfg.OLMEDO_COEFFICIENTS
         albedo = (image.select(list(coeffs.keys()))
                   .multiply(list(coeffs.values()))
                   .reduce(ee.Reducer.sum())
-                  .clamp(0.0, 0.80).rename('ALBEDO'))
+                  .clamp(0.0, 1.0).rename('ALBEDO'))
 
     return image.addBands([albedo] + diag)
 
@@ -269,46 +314,11 @@ def compute_transmissivity(image):
     tau_sw = (dem.multiply(tcfg['elev_coeff'])
               .add(tcfg['base'])
               .rename('TAU_SW'))
+    
+    # MUHIM: Fizik chegarani explicit majburlash [0, 1]
+    tau_sw_clamped = tau_sw.clamp(0, 1)
 
-    return image.addBands(tau_sw)
-
-
-# ==============================================================
-# LAI — Leaf Area Index (qo'shimcha, optional)
-# ==============================================================
-
-def compute_lai(image):
-    """
-    LAI — SEBAL_ID (yangi SEBAL), L=0.1 li SAVI'dan.
-
-    SAVI(0.1) = (1+0.1)×(NIR-Red)/(NIR+Red+0.1)
-    LAI = -ln((0.69 - SAVI) / 0.59) / 0.91
-
-    MUHIM: SEBAL_ID LAI uchun SAVI L=0.1 ishlatiladi (umumiy SAVI L=0.5 EMAS).
-    z₀m = 0.018×LAI shu LAI'dan hisoblanadi (compute_z0m).
-    SAVI ≥ 0.687 → LAI = 6.0 (maks);  SAVI < 0.1 → LAI = 0.
-    """
-    nir = image.select(cfg.BAND_NAMES['nir'])
-    red = image.select(cfg.BAND_NAMES['red'])
-    L = cfg.SAVI_L_LAI   # 0.1
-
-    savi = (nir.subtract(red)
-            .divide(nir.add(red).add(L))
-            .multiply(1.0 + L)
-            .rename('SAVI_LAI'))
-
-    lai_formula = (ee.Image(0.69).subtract(savi)
-                   .divide(0.59)
-                   .log().multiply(-1.0)
-                   .divide(0.91))
-
-    lai = (ee.Image(0.0)
-           .where(savi.gte(0.1).And(savi.lt(0.687)), lai_formula)
-           .where(savi.gte(0.687), 6.0)
-           .clamp(0.0, 6.0)
-           .rename('LAI'))
-
-    return image.addBands(lai)
+    return image.addBands(tau_sw_clamped)
 
 
 # ==============================================================

@@ -441,95 +441,6 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
     return et_monthly
 
 
-# def _interpolate_lambda(lambda_collection, target_date):
-#     """
-#     Lineer interpolyatsiya — ikkita eng yaqin Landsat sana orasida.
-
-#     Agar target_date barcha tasvirlardan OLDIN bo'lsa:
-#       → eng yaqin (birinchi) tasvirning Λ sini olish
-#     Agar target_date barcha tasvirlardan KEYIN bo'lsa:
-#       → eng yaqin (oxirgi) tasvirning Λ sini olish
-#     Aks holda:
-#       → oldingi va keyingi orasida lineer interpolyatsiya
-
-#     weight = (target - before) / (after - before)
-#     Λ_interp = Λ_before × (1 - weight) + Λ_after × weight
-#     """
-#     target_millis = target_date.millis()
-
-#     # Oldingi tasvir (target_date dan oldin yoki teng)
-#     before_col = (lambda_collection
-#                   .filter(ee.Filter.lte('system:time_start', target_millis))
-#                   .sort('system:time_start', False))  # eng yaqini birinchi
-
-#     # Keyingi tasvir (target_date dan keyin yoki teng)
-#     after_col = (lambda_collection
-#                  .filter(ee.Filter.gte('system:time_start', target_millis))
-#                  .sort('system:time_start', True))  # eng yaqini birinchi
-
-#     # Oldingi bor-yo'qligini tekshirish
-#     has_before = before_col.size().gt(0)
-#     has_after = after_col.size().gt(0)
-
-#     # Default: to'liq collection ning o'rtachasi (fallback)
-#     default_image = lambda_collection.mean()
-
-#     # # Faqat oldingi bor
-#     # before_image = ee.Image(ee.Algorithms.If(
-#     #     has_before,
-#     #     before_col.first(),
-#     #     default_image
-#     # ))
-    
-#     before_image = ee.Image(ee.Algorithms.If(
-#     has_before,
-#     ee.Image(before_col.first()).unmask(default_image),
-#     default_image
-#     ))
-
-#     # # Faqat keyingi bor
-#     # after_image = ee.Image(ee.Algorithms.If(
-#     #     has_after,
-#     #     after_col.first(),
-#     #     default_image
-#     # ))
-    
-#     after_image = ee.Image(ee.Algorithms.If(
-#     has_after,
-#     ee.Image(after_col.first()).unmask(default_image),
-#     default_image
-#     ))
-
-#     # Ikkalasi ham bor — interpolyatsiya
-#     before_millis = ee.Number(ee.Algorithms.If(
-#         has_before,
-#         ee.Date(before_image.get('system:time_start')).millis(),
-#         target_millis
-#     ))
-
-#     after_millis = ee.Number(ee.Algorithms.If(
-#         has_after,
-#         ee.Date(after_image.get('system:time_start')).millis(),
-#         target_millis
-#     ))
-
-#     # Weight hisoblash
-#     time_range = after_millis.subtract(before_millis).max(1)  # div by 0 himoya
-#     weight = target_millis.subtract(before_millis).divide(time_range).min(1).max(0)
-
-#     # Lineer interpolyatsiya: Λ = before×(1-w) + after×w
-#     interpolated = (before_image.multiply(ee.Image(1).subtract(weight))
-#                     .add(after_image.multiply(weight)))
-
-#     # Agar faqat bir tomoni bor bo'lsa — eng yaqinini olish
-#     result = ee.Image(ee.Algorithms.If(
-#         has_before.And(has_after),
-#         interpolated,
-#         ee.Algorithms.If(has_before, before_image, after_image)
-#     ))
-
-#     return result.unmask(default_image)
-
 def _nearest_scene(collection, target_date):
     """
     SEBAL_ID (Tasumi Eq 5.9) — ENG YAQIN sahna (vaqt bo'yicha) hukmron.
@@ -593,13 +504,6 @@ def _interpolate_lambda(lambda_collection, target_date):
     default_image
     ))
  
-    # # Faqat keyingi bor
-    # after_image = ee.Image(ee.Algorithms.If(
-    #     has_after,
-    #     after_col.first(),
-    #     default_image
-    # ))
-    
     after_image = ee.Image(ee.Algorithms.If(
     has_after,
     ee.Image(after_col.first()).unmask(default_image),
