@@ -107,7 +107,7 @@ def s30_indices(img):
     Regressiya predictorlari — S30 (B2/B3/B4/B8A/B11/B12) dan.
       NDVI = (NIR-RED)/(NIR+RED)
       EVI2 = 2.5(NIR-RED)/(NIR+2.4·RED+1)
-      SAVI = 1.5(NIR-RED)/(NIR+RED+0.5)            (Huete 1988)
+      SAVI = (1+L)(NIR-RED)/(NIR+RED+L), L=cfg.SAVI_L  (Huete 1988)
       NDWI = (GREEN-NIR)/(GREEN+NIR)               (McFeeters 1996, suv)
       LSWI = (NIR-SWIR1)/(NIR+SWIR1)               (Xiao 2004, o'simlik namligi)
       Albedo_idx = Tasumi (2008) sodda albedo
@@ -122,8 +122,9 @@ def s30_indices(img):
     ndvi = nir.subtract(red).divide(nir.add(red)).clamp(-1, 1).rename('NDVI')
     evi2 = (nir.subtract(red).multiply(2.5)
             .divide(nir.add(red.multiply(2.4)).add(1.0))).rename('EVI2')
-    savi = (nir.subtract(red).multiply(1.5)
-            .divide(nir.add(red).add(0.5))).clamp(-1, 1).rename('SAVI')
+    L = cfg.SAVI_L   # yagona manba (SEBAL sahna SAVI bilan bir xil L)
+    savi = (nir.subtract(red).multiply(1.0 + L)
+            .divide(nir.add(red).add(L))).clamp(-1, 1).rename('SAVI')
     ndwi = green.subtract(nir).divide(green.add(nir)).clamp(-1, 1).rename('NDWI')
     lswi = nir.subtract(sw1).divide(nir.add(sw1)).clamp(-1, 1).rename('LSWI')
     albedo = (blue.multiply(0.254).add(green.multiply(0.149))

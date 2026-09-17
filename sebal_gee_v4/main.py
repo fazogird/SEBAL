@@ -167,7 +167,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     collection = preprocessing.build_collection(
         roi=roi, date_start=date_start, date_end=date_end,
         satellite=satellite, cloud_max=cloud_max,
-        mosaic_same_date=not bool(tile_label),
+        mosaic_same_date=True,   # 1 tasvirli sanaga tegmaydi (tile rejimida ham xavfsiz)
         wrs_path=path_num, wrs_row=row_num,
         mgrs_tile=mgrs_tile,
         cloud_roi=cloud_roi, cloud_use_cropland=cloud_use_cropland)
@@ -186,7 +186,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         return [], info
 
     # Surface props (mode → SEBAL_ID emissivity Eq.4.28 uchun)
-    collection = collection.map(lambda im: surface_props.compute_all(im, mode))
+    collection = collection.map(lambda im: surface_props.compute_all(im, mode, roi))
 
     # ---- Anchor zonalari — TILE uchun BIR MARTA (cold=cropland, hot=bare+shrub) ----
     # (radiation'dan OLDIN — SEBAL_B L↓ Tref cold_mask'ga bog'liq.)
@@ -202,6 +202,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     n = info['image_count']
 
     scene_images = []
+    scene_dates = []   # FAQAT saqlangan sahnalar sanasi (scene_images bilan indeksma-indeks)
 
     for i in range(n):
         print(f"{prefix} Sahna {i + 1}/{n}...")
@@ -261,10 +262,49 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             img = img.addBands(kc)
 
         scene_images.append(img)
+        scene_dates.append(info['dates'][i])
 
+    # info['dates']       — kolleksiyadagi BARCHA sanalar (oylar ro'yxati uchun)
+    # info['scene_dates'] — faqat saqlangan sahnalar; scenes[i] ↔ scene_dates[i].
+    # Anchor topilmay o'tkazilgan sahna bo'lsa ikkalasi farq qiladi.
+    info['scene_dates'] = scene_dates
     info['utc_offset'] = utc_offset   # oylik hisob shu offsetni ishlatishi uchun
     info['sloping_terrain'] = sloping_terrain
     return scene_images, info
+
+
+# ==============================================================
+# EXPORT — yumaloqlash (verguldan keyingi xonalar)
+# ==============================================================
+
+def _round_export(img):
+    """
+    Export oldidan verguldan keyin cfg.EXPORT_DECIMALS xona → float32.
+    FAQAT eksport nusxasi yumaloqlanadi — oraliq hisob to'liq aniqlikda qoladi.
+    cfg.EXPORT_DECIMALS_BY_BAND — alohida bandlar uchun boshqa xona soni.
+    EXPORT_DECIMALS=None va override yo'q → faqat float32 (yumaloqlashsiz).
+    """
+    img = ee.Image(img)
+    dec = cfg.EXPORT_DECIMALS
+    over = cfg.EXPORT_DECIMALS_BY_BAND or {}
+    if not over:
+        if dec is None:
+            return img.toFloat()
+        f = 10 ** int(dec)
+        return img.multiply(f).round().divide(f).toFloat()
+
+    over_d = ee.Dictionary(over)
+    names = img.bandNames()
+
+    def _one(n):
+        n = ee.String(n)
+        band = img.select([n])
+        d = ee.Number(over_d.get(n, -1 if dec is None else int(dec)))
+        f = ee.Number(10).pow(d)
+        rounded = band.multiply(f).round().divide(f)
+        return ee.Image(ee.Algorithms.If(d.lt(0), band, rounded)).toFloat()
+
+    return ee.ImageCollection.fromImages(names.map(_one)).toBands().rename(names)
 
 
 # ==============================================================
@@ -308,7 +348,7 @@ def _export_daily(scene_images, roi, mode, folder, scale, crs,
             return None
 
         task = ee.batch.Export.image.toDrive(
-            image=img.select(existing_bands).toFloat(),
+            image=_round_export(img.select(existing_bands)),
             description=name, folder=folder, fileNamePrefix=name,
             region=roi, scale=scale, crs=crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
@@ -339,10 +379,10 @@ def _viirs_export_month(scenes, info, tile_roi, year, month, month_key,
     m_start = f'{year}-{month:02d}-01'
     m_end = f'{year}-{month:02d}-{days:02d}'
 
-    # Shu oydagi anchor sahnalar
-    idx = [i for i, d in enumerate(info['dates']) if d[:7] == month_key]
+    # Shu oydagi anchor sahnalar (scene_dates — scenes bilan indeksma-indeks)
+    idx = [i for i, d in enumerate(info['scene_dates']) if d[:7] == month_key]
     m_scenes = [scenes[i] for i in idx]
-    m_info = {'dates': [info['dates'][i] for i in idx]}
+    m_info = {'dates': [info['scene_dates'][i] for i in idx]}
     if not m_scenes:
         print(f"  ⚠️ VIIRS {month_key}: anchor yo'q")
         return
@@ -354,7 +394,7 @@ def _viirs_export_month(scenes, info, tile_roi, year, month, month_key,
         suffix = f'_{tile_label}' if tile_label else ''
         name = f'SEBAL_VIIRS_ET_{month_key}{suffix}'
         task = ee.batch.Export.image.toDrive(
-            image=monthly.toFloat(), description=name, folder=folder,
+            image=_round_export(monthly), description=name, folder=folder,
             fileNamePrefix=name, region=tile_roi, scale=scale, crs=crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
         task.start()
@@ -381,9 +421,9 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
     m_start = f'{year}-{month:02d}-01'
     m_end = f'{year}-{month:02d}-{days:02d}'
 
-    idx = [i for i, d in enumerate(info['dates']) if d[:7] == month_key]
+    idx = [i for i, d in enumerate(info['scene_dates']) if d[:7] == month_key]
     m_scenes = [scenes[i] for i in idx]
-    m_info = {'dates': [info['dates'][i] for i in idx]}
+    m_info = {'dates': [info['scene_dates'][i] for i in idx]}
     if not m_scenes:
         print(f"  ⚠️ S30 {month_key}: anchor yo'q")
         return
@@ -399,7 +439,7 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
 
         name = f'SEBAL_S30_ET_{month_key}{suffix}'
         task = ee.batch.Export.image.toDrive(
-            image=monthly.toFloat(), description=name, folder=folder,
+            image=_round_export(monthly), description=name, folder=folder,
             fileNamePrefix=name, region=tile_roi, scale=scale, crs=crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
         task.start()
@@ -523,7 +563,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
                               'N_IRRIG', 'TAW']
             cu_name = f'SEBAL_monthly_ETCU_{month_str}{prefix}'
             cu_task = ee.batch.Export.image.toDrive(
-                image=combined.select(out_bands).toFloat().clip(roi),
+                image=_round_export(combined.select(out_bands)).clip(roi),
                 description=cu_name, folder=folder, fileNamePrefix=cu_name,
                 region=roi, scale=scale, crs=crs, maxPixels=1e13,
                 fileFormat='GeoTIFF')
@@ -548,7 +588,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
             name = f'SEBAL_monthly_{prod_name}_{month_str}{prefix}'
 
             task = ee.batch.Export.image.toDrive(
-                image=prod_image.toFloat().clip(roi),
+                image=_round_export(prod_image).clip(roi),
                 description=name,
                 folder=folder,
                 fileNamePrefix=name,
@@ -586,8 +626,8 @@ CSV_LYS_BANDS = [
     'RN', 'G0', 'H', 'RN_G0', 'G_RATIO',
     # --- yuza / radiometriya ---
     'LST', 'ALBEDO', 'NDVI', 'SAVI', 'LAI', 'EMISSIVITY',
-    # --- 5 albedo usuli (diagnostika — qaysi oyда qaysi usul lizimetrga mos) ---
-    'ALB_OLMEDO', 'ALB_LIANG', 'ALB_KE', 'ALB_TASUMI', 'ALB_AVG3',
+    # --- albedo usullari (diagnostika — qaysi oyда qaysi usul lizimetrga mos) ---
+    'ALB_OLMEDO_BRDF', 'ALB_OLMEDO', 'ALB_LIANG', 'ALB_KE', 'ALB_TASUMI', 'ALB_AVG3',
     # --- radiatsiya komponentlari (Rn xatosini ajratish: vs lizimetr Rs/LWdn/LWup) ---
     'K_DOWN', 'L_DOWN', 'L_UP', 'TAU_SW',
     # --- aerodinamika / H motori ---
@@ -851,11 +891,12 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         crop_type=None,
 
         # Broadband albedo usuli — production 'ALBEDO' bandini tanlaydi:
-        #   'config' (DEFAULT, o'zgarmagan) → cfg.OLMEDO_COEFFICIENTS (ofsetsiz)
+        #   'olmedo_brdf' (DEFAULT) → cfg.OLMEDO_COEFFICIENTS − (0.001464·θ_elev − 0.079103)
+        #   'config' → cfg.OLMEDO_COEFFICIENTS (ofsetsiz, BRDF tuzatishsiz)
         #   'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → foydalanuvchi koeffitsientlari.
-        # ⚠️ 'olmedo'(foydalanuvchi,ofsetli) ≠ 'config'(cfg). Har run'da 5 usul
-        # ALB_* diagnostika bandi CSV'ga chiqadi (qaysi oyда qaysi usul lizimetrга mos).
-        albedo_method='config',
+        # ⚠️ 'olmedo'(foydalanuvchi,ofsetli) ≠ 'config'(cfg). Har run'da ALB_*
+        # diagnostika bandlari CSV'ga chiqadi.
+        albedo_method='olmedo_brdf',
 
         # Export sozlamalari
         folder='SEBAL_Output',
@@ -893,7 +934,18 @@ def run(roi_type='gaul', date_start=None, date_end=None,
       tiles=None, process_by_tile=False → ROI bo'yicha ishlash (kichik hududlar)
       tiles=None, process_by_tile=True  → avtomatik tile aniqlash
       tiles=[(156,32),(156,33)], process_by_tile=True → faqat shu tilelar
+      tiles=[...],               process_by_tile=False → XATO (ValueError)
     """
+    # tiles faqat tile rejimida ishlatiladi. ROI rejimida build_collection
+    # filterBounds(roi) bilan ROI ga tekkan BARCHA path/row ni oladi — tiles
+    # jimgina e'tiborsiz qolardi. Chalkashlik bo'lmasin: aniq to'xtatamiz.
+    if tiles is not None and not process_by_tile:
+        raise ValueError(
+            f"tiles faqat process_by_tile=True bilan ishlaydi "
+            f"(berildi: tiles={tiles}, process_by_tile=False). "
+            f"Aniq tile'lar kerak → process_by_tile=True; "
+            f"ROI ga tekkan barcha tile'lar kerak → tiles=None.")
+
     roi = cfg.build_roi(roi_type, **roi_kwargs)
     cfg.CROP_ASSETS = crop_assets      # PER-CROP Kc: ndvi_kc cfg.CROP_ASSETS'ni o'qiydi
 
@@ -919,11 +971,10 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     if cold_etrf != 1.05:
         print(f"  🧊 cold anchor ETrF = {cold_etrf} (default 1.05 dan farqli)")
 
-    # Broadband albedo usuli — production 'ALBEDO' (default 'config' = o'zgarmagan).
-    # 5 usul ALB_* diagnostika bandi har doim CSV'ga chiqadi (usuldan qat'i nazar).
+    # Broadband albedo usuli — production 'ALBEDO' (default 'olmedo_brdf').
+    # ALB_* diagnostika bandlari har doim CSV'ga chiqadi (usuldan qat'i nazar).
     surface_props.ALBEDO_METHOD = albedo_method
-    if albedo_method != 'config':
-        print(f"  🎨 albedo usuli = '{albedo_method}' (production ALBEDO; default 'config' dan farqli)")
+    print(f"  🎨 albedo usuli = '{albedo_method}' (production ALBEDO)")
 
     # Ekin-spetsifik z0m — FAQAT export_csv rejimida (nuqta ekin turi ma'lum).
     # Boshqa rejimda None (default z0m=0.018·LAI), chunki butun tile ekin turi noma'lum.
@@ -1396,7 +1447,7 @@ def run_polygons(polygon_asset,
             img = monthly.select('ET_MONTHLY').clip(poly_geom)
             name = f'polyET_raster_{year}-{m:02d}'
             tr = ee.batch.Export.image.toDrive(
-                image=img.toFloat(), description=name, folder=out_folder,
+                image=_round_export(img), description=name, folder=out_folder,
                 fileNamePrefix=name, region=poly_geom.bounds(), scale=30,
                 crs=crs, maxPixels=1e13, fileFormat='GeoTIFF')
             tr.start(); tasks.append(tr.id)

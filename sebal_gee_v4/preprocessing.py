@@ -96,10 +96,11 @@ def apply_qa_mask_hls(image):
  
 def apply_scale_factors_hls(image):
     '''HLS bandlarni Landsat formatiga moslashtirish.'''
-    # Optik — allaqachon 0-1, faqat Landsat nomlariga rename
+    # Optik — allaqachon 0-1, faqat Landsat nomlariga rename.
+    # B1 (coastal) = Landsat SR_B1 bilan bir xil OLI bandi (albedo 'ke'/'avg3').
     sr = (image.select(
-              ['B2',    'B3',     'B4',    'B5',    'B6',     'B7'])
-          .rename(['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
+              ['B1',    'B2',    'B3',     'B4',    'B5',    'B6',     'B7'])
+          .rename(['SR_B1', 'SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7'])
           .clamp(0.001, 1.0))
  
     # Thermal — Celsius → Kelvin
@@ -120,12 +121,14 @@ def apply_scale_factors(image):
     """
     C2L2 scale factors qo'llash.
 
-    SR bands (B2-B7): DN × 0.0000275 - 0.2 → reflectance (0–1)
+    SR bands (B1-B7): DN × 0.0000275 - 0.2 → reflectance (0–1)
     ST band (B10):    DN × 0.00341802 + 149.0 → Kelvin
 
     SR qiymatlari [-0.199972 : 1.602213] oralig'iga clamp qilinadi.
+    SR_B1 (coastal) ham shu yerda — albedo 'ke'/'avg3' uni tayyor oladi.
     """
     sr_bands = [
+        cfg.BAND_NAMES['coastal'],
         cfg.BAND_NAMES['blue'],
         cfg.BAND_NAMES['green'],
         cfg.BAND_NAMES['red'],
@@ -308,25 +311,49 @@ def add_air_density(image):
 # COLLECTION BUILDER — Landsat yoki HLS
 # ==============================================================
 
-def _best_per_date_factory(collection):
+def _mosaic_same_date(collection):
     """
-    Berilgan kolleksiya uchun 'per-date mosaic' funksiyasi yaratadi.
-    
-    Bir kunda bir nechta tile bo'lsa — birlashtirib bitta image qiladi,
-    lekin BIRINCHI tile ning REAL UTC overpass vaqtini saqlaydi.
-    Bu ERA5 ni to'g'ri yuklash uchun MUHIM.
+    Bir UTC sanada tushgan tasvirlarni BITTA tasvirga birlashtirish.
+
+    Nega kerak: katta ROI bir path'ning 2 row'iga tushsa (masalan 156/R31 va
+    156/R32) — bitta o'tish, bitta kun, ~25 s farq. SEBAL: 1 sana = 1 tasvir.
+
+    Qoidalar:
+      - Sanada 1 ta tasvir → O'ZGARISHSIZ qaytadi (native UTM proyeksiya,
+        footprint, barcha property saqlanadi). Tile rejimida odatda shunday.
+      - Sanada >1 tasvir → mosaic(). mosaic() yo'qotadigan narsalar birinchi
+        tasvirdan TIKLANADI:
+          * default proyeksiya (EPSG:4326 1° o'rniga UTM 30 m). Bir kunda
+            birlashadiganlar bitta path = bitta UTM zona → to'g'ri.
+          * barcha property (SUN_ELEVATION, SPACECRAFT_ID, ...) va REAL UTC
+            overpass vaqti (system:time_start — ERA5 / kunlik oyna uchun).
+          * footprint (kun tasvirlari birlashmasi, cheksiz emas).
+
+    MUHIM: preprocessingdan KEYIN chaqiriladi — QA mask, DEM (Landsat UTM
+    gridida) va ERA5 har sahnaning O'ZIDA hisoblanadi; overlap'da bulutli
+    piksel ikkinchi sahnadan to'ldiriladi.
+
+    ee.List.map() funksiyaga faqat sanani beradi — collection ichki funksiyaga
+    closure orqali o'tadi.
     """
-    def best_per_date(date_str):
+    dates = (collection.aggregate_array('system:time_start')
+             .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
+             .distinct())
+
+    def per_date(date_str):
         date = ee.Date(date_str)
         daily = collection.filterDate(date, date.advance(1, 'day'))
-        # ⭐ REAL UTC overpass vaqti (NOT date.millis() = 00:00)
-        actual_time = ee.Image(daily.first()).get('system:time_start')
-        return (daily.mosaic()
-                .set('system:time_start', actual_time)
-                .copyProperties(daily.first(),
-                                ['CLOUD_COVERAGE', 'CLOUD_COVER',
-                                 'WRS_PATH', 'WRS_ROW', 'SUN_ELEVATION']))
-    return best_per_date
+        first = ee.Image(daily.first())
+        merged = (daily.mosaic()
+                  .setDefaultProjection(
+                      first.select(cfg.BAND_NAMES['red']).projection())
+                  .copyProperties(first)
+                  .set({'system:time_start': first.get('system:time_start'),
+                        'system:index': first.get('system:index'),
+                        'system:footprint': daily.geometry()}))
+        return ee.Algorithms.If(daily.size().gt(1), merged, first)
+
+    return ee.ImageCollection(dates.map(per_date))
 
 
 def build_collection(roi, date_start, date_end, satellite='BOTH',
@@ -359,15 +386,6 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
         # Cropland cloud precheck
         merged = filter_by_crop_cloud_hls(merged, roi, cfg.CROP_CLOUD_MAX)
 
-        # Sana bo'yicha mosaic (per-date)
-        if mgrs_tile is not None:
-            distinct_dates = (merged
-                .aggregate_array('system:time_start')
-                .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-                .distinct())
-            best_per_date = _best_per_date_factory(merged)
-            merged = ee.ImageCollection(distinct_dates.map(best_per_date))
-
         # HLS preprocessing
         def preprocess_hls(image):
             processed = apply_qa_mask_hls(image)
@@ -378,7 +396,12 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
             return processed
 
         clean_collection = merged.map(preprocess_hls)
-        return clean_collection
+
+        # Preprocessingdan KEYIN — bir sanada bir nechta granula bo'lsa
+        if mosaic_same_date:
+            clean_collection = _mosaic_same_date(clean_collection)
+        # Xronologik tartib (sahna sikli, log, kunlik export)
+        return clean_collection.sort('system:time_start')
 
     # ── LANDSAT REJIM ────────────────────
     if satellite == 'BOTH':
@@ -410,15 +433,6 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
     merged = filter_by_crop_cloud(merged, cloud_geom, cfg.CROP_CLOUD_MAX,
                                   cloud_use_cropland, cloud_scale)
 
-    # Sana bo'yicha mosaic (per-date) — Landsat
-    if wrs_path is not None:
-        distinct_dates = (merged
-            .aggregate_array('system:time_start')
-            .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-            .distinct())
-        best_per_date = _best_per_date_factory(merged)   # ⭐ shu yerda yaratiladi
-        merged = ee.ImageCollection(distinct_dates.map(best_per_date))
-
     # Landsat preprocessing
     def preprocess_image(image):
         processed = apply_qa_mask(image)
@@ -430,28 +444,14 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
 
     clean_collection = merged.map(preprocess_image)
 
-    # ERA5 dan keyingi mosaic — bir kunda bir nechta path yoki tile bo'lsa
+    # Preprocessingdan KEYIN — bir sanada bir nechta row/sahna bo'lsa
     if mosaic_same_date:
-        distinct_dates = (clean_collection
-                          .aggregate_array('system:time_start')
-                          .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))
-                          .distinct())
+        clean_collection = _mosaic_same_date(clean_collection)
 
-        def mosaic_by_date(date_str):
-            date = ee.Date(date_str)
-            daily = clean_collection.filterDate(date, date.advance(1, 'day'))
-            # ⭐ REAL vaqt — kelajak xavfsizligi uchun
-            actual_time = ee.Image(daily.first()).get('system:time_start')
-            return (daily.mosaic()
-                    .set('system:time_start', actual_time)
-                    .copyProperties(daily.first(),
-                                    ['CLOUD_COVERAGE', 'CLOUD_COVER',
-                                     'SUN_ELEVATION']))
-
-        clean_collection = ee.ImageCollection(
-            distinct_dates.map(mosaic_by_date))
-
-    return clean_collection
+    # Xronologik tartib: merge(L8, L9) avval barcha L8, keyin barcha L9 beradi.
+    # Natijaga ta'sir yo'q (interpolyatsiyalar o'zi saralaydi) — sahna sikli,
+    # log va kunlik export tartibi uchun.
+    return clean_collection.sort('system:time_start')
 
 # # ==============================================================
 # UTILITY: Collection info
@@ -559,17 +559,21 @@ def add_crop_cloud_pct_hls(image, roi):
     cropland = get_cropland_mask()
     crop_bad = bad.updateMask(cropland).unmask(0)
  
-    crop_cloud_pct = crop_bad.reduceRegion(
+    d = crop_bad.reduceRegion(
         reducer=ee.Reducer.mean(),
         geometry=roi,
         scale=120,
         maxPixels=1e8,
         bestEffort=True
-    ).get('Fmask')
- 
-    crop_cloud_pct = ee.Number(
-        ee.Algorithms.If(crop_cloud_pct, crop_cloud_pct, 1)
     )
+
+    # contains() bilan — Landsat add_crop_cloud_pct kabi. Oldingi
+    # If(crop_cloud_pct, ...) 0 ni "yo'q" deb olib, TOZA (0%) sahnani 100% qilardi.
+    # Kalit yoki qiymat yo'q bo'lsa → 1 (100%, sahna tashlanadi).
+    crop_cloud_pct = ee.Number(ee.Algorithms.If(
+        d.contains('Fmask'),
+        ee.Algorithms.If(ee.Algorithms.IsEqual(d.get('Fmask'), None), 1, d.get('Fmask')),
+        1))
  
     return image.set('crop_cloud_pct', crop_cloud_pct.multiply(100))
 

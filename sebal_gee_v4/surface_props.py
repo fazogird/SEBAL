@@ -5,8 +5,8 @@ Satellite ma'lumotlaridan yer yuzasi parametrlarini hisoblash.
 
 Formulalar:
   - NDVI:        (B5-B4)/(B5+B4)
-  - SAVI:        ((B5-B4)/(B5+B4+0.5)) × 1.5   [Huete 1988]
-  - Albedo:      Olmedo (2016) — 6 band weighted sum
+  - SAVI:        ((B5-B4)/(B5+B4+L)) × (1+L), L = cfg.SAVI_L   [Huete 1988]
+  - Albedo:      Olmedo (2016) 6 band + quyosh balandligi (BRDF) tuzatishi
   - Emissivity:  Bastiaanssen F.6 + edge cases
   - z₀m:         exp(-5.809 + 5.62×SAVI) [Gediz]
   - τsw:         0.75 + 2×10⁻⁵ × elevation [Allen 2007]
@@ -61,15 +61,15 @@ def compute_savi(image):
     """
     SAVI = ((NIR - Red) / (NIR + Red + L)) × (1 + L)
 
-    L = 0.5 (Huete 1988)
+    L = cfg.SAVI_L (YAGONA manba, default 0.1 — SEBAL_ID/Tasumi).
 
     NDVI dan farqi: tuproq fon ta'sirini kamaytiradi.
     Siyrak o'simliklarda (cho'l, quruq dalalar) NDVI dan aniqroq.
-    z₀m hisoblashda SAVI ishlatamiz.
+    SAVI shu yerda BIR MARTA hisoblanadi; LAI (compute_lai) shu bandni oladi.
     """
     nir = image.select(cfg.BAND_NAMES['nir'])
     red = image.select(cfg.BAND_NAMES['red'])
-    L = cfg.ROUGHNESS['savi_L']  # 0.5
+    L = cfg.SAVI_L
 
     savi = (nir.subtract(red)
             .divide(nir.add(red).add(L))
@@ -84,23 +84,17 @@ def compute_savi(image):
 
 def compute_lai(image):
     """
-    LAI — SEBAL_ID (yangi SEBAL), L=0.1 li SAVI'dan.
+    LAI — SEBAL_ID (yangi SEBAL), 'SAVI' bandidan (compute_savi, L = cfg.SAVI_L).
 
-    SAVI(0.1) = (1+0.1)×(NIR-Red)/(NIR+Red+0.1)
     LAI = -ln((0.69 - SAVI) / 0.59) / 0.91
 
-    MUHIM: SEBAL_ID LAI uchun SAVI L=0.1 ishlatiladi (umumiy SAVI L=0.5 EMAS).
+    SAVI QAYTA hisoblanmaydi — compute_savi oldin chaqirilgan bo'lishi SHART
+    (compute_all tartibi). 'SAVI' band yo'q bo'lsa GEE xato beradi (jimgina emas).
     z₀m = 0.018×LAI shu LAI'dan hisoblanadi (compute_z0m).
     SAVI ≥ 0.687 → LAI = 6.0 (maks);  SAVI < 0.1 → LAI = 0.
+    ⚠️ Formula koeffitsientlari ma'lum L uchun moslangan (config.SAVI_L izohi).
     """
-    nir = image.select(cfg.BAND_NAMES['nir'])
-    red = image.select(cfg.BAND_NAMES['red'])
-    L = cfg.SAVI_L_LAI   # 0.1
-
-    savi = (nir.subtract(red)
-            .divide(nir.add(red).add(L))
-            .multiply(1.0 + L)
-            .rename('SAVI_LAI'))
+    savi = image.select('SAVI')
 
     lai_formula = (ee.Image(0.69).subtract(savi)
                    .divide(0.59)
@@ -119,23 +113,50 @@ def compute_lai(image):
 # ==============================================================
 
 # Production 'ALBEDO' bandini qaysi usul beradi. main.run(albedo_method=) o'rnatadi.
-#   'config' (DEFAULT) → hozirgi cfg.OLMEDO_COEFFICIENTS (O'ZGARMAGAN natija).
+#   'olmedo_brdf' (DEFAULT) → cfg.OLMEDO_COEFFICIENTS − (0.001464·θ_elev − 0.079103)
+#   'config' → cfg.OLMEDO_COEFFICIENTS, BRDF tuzatishsiz (2026-09-17 gacha default)
 #   'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → foydalanuvchi koeffitsientlari (pastda).
 # ⚠️ DIQQAT: 'olmedo' (foydalanuvchi, ofsetli) ≠ 'config' (cfg, ofsetsiz) — BOSHQA
-#    koeffitsientlar. Har run'da 5 usul ALB_* diagnostika bandi ham qo'shiladi.
-ALBEDO_METHOD = 'config'
+#    koeffitsientlar. Har run'da ALB_* diagnostika bandlari ham qo'shiladi.
+ALBEDO_METHOD = 'olmedo_brdf'
+
+
+def _sun_elevation(image):
+    """
+    Quyosh balandligi θ_elev (gradus) — albedo BRDF tuzatishi uchun.
+      Landsat: SUN_ELEVATION sahna metama'lumoti (skalyar).
+      HLS:     90 − SZA band.
+    Metama'lumot yo'q bo'lsa GEE xato beradi — fake qiymat ISHLATILMAYDI.
+    """
+    has_sza = image.bandNames().contains('SZA')
+    return ee.Image(ee.Algorithms.If(
+        has_sza,
+        ee.Image(90).subtract(image.select('SZA')),
+        ee.Image.constant(ee.Number(image.get('SUN_ELEVATION')))
+    )).rename('SUN_ELEV')
 
 
 def _albedo_variants(image):
     """
-    5 broadband-albedo usuli (foydalanuvchi koeffitsientlari) — diagnostika.
-    Coastal (B_UB) = SR_B1; preprocessing uni scale qilmaydi → shu yerda inline.
+    Broadband-albedo usullari — production tanlovi + ALB_* diagnostika.
+      olmedo_brdf : cfg.OLMEDO_COEFFICIENTS (ofsetsiz) − (slope·θ_elev − intercept)
+      olmedo|liang|ke|tasumi|avg3 : foydalanuvchi koeffitsientlari
+    Coastal (B_UB) = SR_B1 — preprocessing'da (Landsat va HLS) reflektansga
+    o'tkazilgan, shu yerda qayta scale QILINMAYDI.
     """
     b = image.select('SR_B2'); g = image.select('SR_B3'); r = image.select('SR_B4')
     nir = image.select('SR_B5'); s1 = image.select('SR_B6'); s2 = image.select('SR_B7')
-    ub = (image.select('SR_B1').multiply(cfg.SCALE_FACTORS['sr_mult'])
-          .add(cfg.SCALE_FACTORS['sr_add']).clamp(-0.199972, 1.602213))
+    ub = image.select(cfg.BAND_NAMES['coastal'])
 
+    # α = 0.246·B + 0.146·G + 0.191·R + 0.304·NIR + 0.105·SWIR1 + 0.008·SWIR2
+    oc = cfg.OLMEDO_COEFFICIENTS
+    a_olmedo_cfg = (b.multiply(oc['SR_B2']).add(g.multiply(oc['SR_B3']))
+                    .add(r.multiply(oc['SR_B4'])).add(nir.multiply(oc['SR_B5']))
+                    .add(s1.multiply(oc['SR_B6'])).add(s2.multiply(oc['SR_B7'])))
+    # α_final = α − (0.001464·θ_elev − 0.079103)
+    brdf = (_sun_elevation(image).multiply(cfg.ALBEDO_BRDF['slope'])
+            .subtract(cfg.ALBEDO_BRDF['intercept']))
+    a_olmedo_brdf = a_olmedo_cfg.subtract(brdf)
     a_olmedo = (b.multiply(0.4739).add(g.multiply(-0.4372)).add(r.multiply(0.1652))
                 .add(nir.multiply(0.2831)).add(s1.multiply(0.1072))
                 .add(s2.multiply(0.1029)).add(0.0366))
@@ -147,7 +168,8 @@ def _albedo_variants(image):
     a_tasumi = (b.multiply(0.300).add(g.multiply(0.277)).add(r.multiply(0.233))
                 .add(nir.multiply(0.143)).add(s1.multiply(0.036)).add(s2.multiply(0.012)))
     a_avg3 = a_olmedo.add(a_liang).add(a_ke).divide(3)
-    return {'olmedo': a_olmedo, 'liang': a_liang, 'ke': a_ke,
+    return {'olmedo_brdf': a_olmedo_brdf,
+            'olmedo': a_olmedo, 'liang': a_liang, 'ke': a_ke,
             'tasumi': a_tasumi, 'avg3': a_avg3}
 
 
@@ -156,11 +178,12 @@ def compute_albedo(image):
     Broadband albedo — production 'ALBEDO' + 5 usul diagnostika bandi.
 
     Production 'ALBEDO' ni ALBEDO_METHOD tanlaydi:
-      'config' (default) → cfg.OLMEDO_COEFFICIENTS (R `water`, ofsetsiz — O'ZGARMAGAN)
+      'olmedo_brdf' (default) → cfg.OLMEDO_COEFFICIENTS − (0.001464·θ_elev − 0.079103)
+      'config' → cfg.OLMEDO_COEFFICIENTS (R `water`, ofsetsiz, BRDF tuzatishsiz)
       'olmedo'|'liang'|'ke'|'tasumi'|'avg3' → _albedo_variants (foydalanuvchi koeff.)
-    Har doim ALB_OLMEDO/ALB_LIANG/ALB_KE/ALB_TASUMI/ALB_AVG3 diagnostika bandlari ham
-    qo'shiladi — lizimetr bilan solishtirib, qaysi oyда qaysi usul mosligini topish.
-    Input: C2L2 SR (0–1 scaled) + SR_B1 (xom DN, inline scale).
+    Har doim ALB_OLMEDO_BRDF/ALB_OLMEDO/ALB_LIANG/ALB_KE/ALB_TASUMI/ALB_AVG3
+    diagnostika bandlari ham qo'shiladi.
+    Input: SR_B1..SR_B7 reflektans (preprocessing: Landsat C2L2 scale / HLS rename).
     """
     var = _albedo_variants(image)
     diag = [v.clamp(0.0, 1.0).rename('ALB_' + k.upper()) for k, v in var.items()]
@@ -243,14 +266,17 @@ def compute_emissivity(image, mode='SEBAL_B'):
 # ROUGHNESS LENGTH z₀m — SAVI-based (Gediz)
 # ==============================================================
 
-def compute_z0m(image):
+def compute_z0m(image, roi=None):
     """
     Momentum roughness length — SEBAL_ID (Tasumi & Allen 2003; Bastiaanssen liniyasi).
 
-    Per-piksel u* uchun:   z₀m = 0.018 × LAI   (LAI compute_lai'dan, L=0.1 SAVI)
+    Per-piksel u* uchun:   z₀m = 0.018 × LAI   (LAI compute_lai'dan, L = cfg.SAVI_L)
     Shamol ekstrapolyatsiyasi (10→200m) uchun ALOHIDA z₀m:
         h        = h_max × (NDVI-NDVI_min)/(NDVI_max-NDVI_min)   [ekin balandligi]
         z₀m,wind = 0.123 × h                                     [Brutsaert 1982]
+    NDVI_min / NDVI_max — SAHNA persentillari (cfg.WIND_ROUGHNESS: p20 / p80),
+    `roi` ichidagi NDVI dan (roi=None → tasvir footprint'i). NDVI_min ≥ floor,
+    NDVI_max ≥ NDVI_min + span. Qiymatlar Z0MW_NDVI_MIN/MAX property'siga yoziladi.
 
     (Eski Gediz SAVI-exp formulasi olib tashlandi.)
     z₀h = z₀m / exp(kB⁻¹).
@@ -281,18 +307,28 @@ def compute_z0m(image):
     z0h = (z0m.divide(ee.Number(rcfg['kB_inv']).exp())
            .rename('Z0H'))
 
-    # ---- Shamol z₀m,wind = 0.123 × h(NDVI) ----
+    # ---- Shamol z₀m,wind = 0.123 × h(NDVI) — NDVI chegaralari SAHNADAN ----
     wc = cfg.WIND_ROUGHNESS
     ndvi = image.select('NDVI')
-    h = (ndvi.subtract(wc['ndvi_min'])
-         .divide(wc['ndvi_max'] - wc['ndvi_min'])
+    region = roi if roi is not None else image.geometry()
+    p_lo, p_hi = wc['ndvi_pct_min'], wc['ndvi_pct_max']
+    pct = ndvi.reduceRegion(
+        reducer=ee.Reducer.percentile([p_lo, p_hi]), geometry=region,
+        scale=wc['pct_scale'], maxPixels=1e9, bestEffort=True, tileScale=4)
+    # Sahnada NDVI yo'q bo'lsa (null) GEE xato beradi — soxta qiymat ishlatilmaydi.
+    ndvi_lo = ee.Number(pct.get(f'NDVI_p{p_lo}')).max(wc['ndvi_min_floor'])
+    ndvi_hi = ee.Number(pct.get(f'NDVI_p{p_hi}')).max(ndvi_lo.add(wc['ndvi_min_span']))
+
+    h = (ndvi.subtract(ndvi_lo)
+         .divide(ndvi_hi.subtract(ndvi_lo))
          .clamp(0.0, 1.0)
          .multiply(wc['h_max']))
     z0m_wind = (h.multiply(wc['z0m_coef'])
                 .max(wc['z0m_min'])
                 .rename('Z0M_WIND'))
 
-    return image.addBands(z0m).addBands(z0h).addBands(z0m_wind)
+    return (image.addBands(z0m).addBands(z0h).addBands(z0m_wind)
+            .set({'Z0MW_NDVI_MIN': ndvi_lo, 'Z0MW_NDVI_MAX': ndvi_hi}))
 
 
 # ==============================================================
@@ -325,7 +361,7 @@ def compute_transmissivity(image):
 # MAIN: Compute all surface properties
 # ==============================================================
 
-def compute_all(image, mode='SEBAL_B'):
+def compute_all(image, mode='SEBAL_B', roi=None):
     """
     Barcha yer yuzasi parametrlarini ketma-ket hisoblash.
 
@@ -334,13 +370,14 @@ def compute_all(image, mode='SEBAL_B'):
 
     Tartib muhim — LAI → z₀m (0.018·LAI) VA (SEBAL_ID) LAI → emissivity (Eq.4.28),
     shuning uchun compute_lai emissivity'dan OLDIN chaqiriladi.
+    roi — Z0M_WIND NDVI persentillari hududi (None → tasvir footprint'i).
     """
     image = compute_ndvi(image)
     image = compute_savi(image)
     image = compute_albedo(image)
     image = compute_lai(image)             # OLDIN: z₀m VA SEBAL_ID emissivity LAI'ga bog'liq
     image = compute_emissivity(image, mode) # SEBAL_ID → Eq.4.28 (LAI); SEBAL_B → F.6 (NDVI)
-    image = compute_z0m(image)             # 0.018·LAI + z₀m,wind(NDVI)
+    image = compute_z0m(image, roi)        # 0.018·LAI + z₀m,wind(NDVI, sahna p20/p80)
     image = compute_transmissivity(image)
 
     return image

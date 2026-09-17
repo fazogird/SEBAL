@@ -49,6 +49,7 @@ LANDSAT_COLLECTIONS = {
 
 # Band mapping — L8 va L9 bir xil band nomlari
 BAND_NAMES = {
+    'coastal': 'SR_B1',     # coastal aerosol — albedo 'ke'/'avg3' uchun
     'blue':   'SR_B2',
     'green':  'SR_B3',
     'red':    'SR_B4',
@@ -97,6 +98,15 @@ OLMEDO_COEFFICIENTS = {
     'SR_B5': 0.304,   # NIR
     'SR_B6': 0.105,   # SWIR1
     'SR_B7': 0.008,   # SWIR2
+}
+
+# Quyosh balandligi (BRDF) tuzatishi — 'olmedo_brdf' usuli (DEFAULT production ALBEDO):
+#   α_final = α_olmedo − (slope · θ_elev − intercept)
+#   θ_elev — quyosh balandligi (gradus): Landsat SUN_ELEVATION (sahna metama'lumoti),
+#            HLS: 90 − SZA band. Metama'lumot yo'q bo'lsa — script TO'XTAYDI (fake qiymat yo'q).
+ALBEDO_BRDF = {
+    'slope':     0.001464,   # 1/gradus
+    'intercept': 0.079103,
 }
 
 # ==============================================================
@@ -207,13 +217,12 @@ SOIL_HEAT_FLUX = {
 # ==============================================================
 # z₀m = exp(a + b × SAVI)
 # Source: Bastiaanssen et al. (2001) Gediz basin
-# SAVI = ((NIR - Red) / (NIR + Red + L)) × (1 + L)
+# SAVI = ((NIR - Red) / (NIR + Red + L)) × (1 + L),  L = SAVI_L (pastda)
 
 ROUGHNESS = {
     'z0m_a': -5.809,         # intercept coefficient (eski Gediz — endi ishlatilmaydi)
     'z0m_b':  5.62,          # SAVI coefficient (eski Gediz)
-    'savi_L': 0.5,           # soil adjustment factor (Huete 1988) — SAVI (umumiy)
-    'kB_inv': 2.3,           # kB⁻¹ = ln(z₀m/z₀h) — Bastiaanssen standard
+    'kB_inv': 2.3,         # kB⁻¹ = ln(z₀m/z₀h) — Bastiaanssen standard
     'z0m_min': 0.005,        # min roughness — SEBAL_ID agriculture (Tasumi Table 4.11)
     'z0m_max': 1.0,          # maximum roughness (tall vegetation)
 }
@@ -221,10 +230,16 @@ ROUGHNESS = {
 # ── SEBAL_ID (yangi SEBAL) z₀m va LAI — Bastiaanssen liniyasi, METRIC EMAS ──
 # Per-piksel momentum roughness — LAI dan (Gediz SAVI-exp o'rniga):
 #   z₀m = 0.018 × LAI
-# LAI esa L=0.1 li SAVI dan (SEBAL_ID; umumiy SAVI L=0.5 emas):
-#   SAVI(0.1) = 1.1×(NIR-Red)/(NIR+Red+0.1),  LAI = -ln((0.69-SAVI)/0.59)/0.91
+# LAI esa SAVI dan:
+#   SAVI = (1+L)×(NIR-Red)/(NIR+Red+L),  LAI = -ln((0.69-SAVI)/0.59)/0.91
 Z0M_LAI_COEF = 0.018
-SAVI_L_LAI = 0.1
+
+# SAVI tuproq koeffitsienti L — YAGONA manba. SAVI bir marta hisoblanadi
+# (surface_props.compute_savi → 'SAVI' band); LAI va S30 SAVI ham shu L dan.
+# 0.1 — SEBAL_ID / Tasumi (Idaho). ⚠️ LAI formulasi (0.69, 0.59, 0.91) ma'lum L
+# uchun moslangan: L o'zgarsa LAI → z₀m, emissivity, u*, rah, H, ET zanjiri o'zgaradi
+# (GEE, NDVI>0.5: L=0.1 → LAI 1.54;  L=0.5 → 0.78;  L=1.0 → 0.58).
+SAVI_L = 0.1
 
 # ── EKIN-SPETSIFIK z0m: h = f(LAI) → z0m = Z0M_HEIGHT_COEF · h ─────────────
 # Tasumi (Univ. Idaho), Wright (USDA-ARS Kimberly) ma'lumotidan; R² 0.98-0.99.
@@ -245,11 +260,16 @@ CROP_H_LAI = {
 
 # Shamol ekstrapolyatsiyasi (10→200m) uchun z₀m — vegetatsiya balandligidan:
 #   h = h_max × (NDVI-NDVI_min)/(NDVI_max-NDVI_min),  z₀m,wind = 0.123 × h  [Brutsaert 1982]
+# NDVI_min / NDVI_max — SAHNA persentillari (ROI ichidagi NDVI; user qarori 2026-09-17,
+# oldin skalyar 0.20 / 0.85 edi). Min floor'dan past tushmaydi, max ≥ min + span.
 WIND_ROUGHNESS = {
     'z0m_coef': 0.123,
     'h_max':    2.0,         # maks ekin balandligi (m)
-    'ndvi_min': 0.20,        # yalang'och tuproq
-    'ndvi_max': 0.85,        # to'liq qoplam
+    'ndvi_pct_min': 20,      # NDVI_min = sahna p20
+    'ndvi_pct_max': 80,      # NDVI_max = sahna p80
+    'ndvi_min_floor': 0.05,  # NDVI_min bundan past bo'lmaydi (0 ga tushib ketmasin)
+    'ndvi_min_span': 0.10,   # NDVI_max ≥ NDVI_min + 0.10 (bir xil sahnada 0 ga bo'lishdan himoya)
+    'pct_scale': 100,        # persentil hisoblash masshtabi (m)
     'z0m_min':  0.001,       # ln himoyasi (juda kichik z₀m'dan)
 }
 
@@ -477,6 +497,15 @@ PIPELINE = {
     ],
 }
 
+# Raster EXPORT: verguldan keyingi xonalar soni (faqat eksport oldidan yumaloqlanadi —
+# oraliq hisob-kitob to'liq aniqlikda qoladi). None → yumaloqlamaslik.
+# Fayl turi float32: 2.45 diskda 2.4500000477 bo'lib saqlanadi (float32 tabiati),
+# GIS 2.45 ko'rsatadi.
+EXPORT_DECIMALS = 2
+# Alohida bandlar uchun boshqa xona soni (ixtiyoriy), masalan:
+#   {'EMISSIVITY': 4, 'Z0M': 4, 'ALBEDO': 3, 'TAU_SW': 3}
+EXPORT_DECIMALS_BY_BAND = {}
+
 # ==============================================================
 # 17. MONTEITH BIOMASS — Formula (1)-(12), crop-type'siz
 # ==============================================================
@@ -573,6 +602,7 @@ def build_roi(roi_type, **kwargs):
 # ==============================================================
 HLS_COLLECTION = 'NASA/HLS/HLSL30/v002'
 HLS_BAND_NAMES = {
+    'coastal': 'B1',
     'blue':    'B2',
     'green':   'B3',
     'red':     'B4',
@@ -622,12 +652,11 @@ REGION_PRESETS = {
         # z0m usuli: SEBAL_ID  →  z0m = Z0M_LAI_COEF × LAI
         'z0m_method':       'sebal_id_lai',
         'Z0M_LAI_COEF':     0.018,           # config.Z0M_LAI_COEF
-        'SAVI_L_LAI':       0.1,             # config.SAVI_L_LAI (LAI uchun SAVI L)
+        'SAVI_L':           0.1,             # config.SAVI_L (SAVI va LAI uchun L)
         'roughness_z0m_min': 0.005,          # config.ROUGHNESS['z0m_min']
         # Shamol z0m (vegetatsiya balandligi)
         'h_max':            2.0,             # WIND_ROUGHNESS['h_max'] — dala ekini
-        'wind_ndvi_min':    0.20,            # WIND_ROUGHNESS['ndvi_min']
-        'wind_ndvi_max':    0.85,            # WIND_ROUGHNESS['ndvi_max']
+        'wind_ndvi_pct':    (20, 80),        # WIND_ROUGHNESS['ndvi_pct_min'/'ndvi_pct_max'] — sahna persentili
         # Radiatsiya / iqlim
         'transmissivity_base': 0.75,         # TRANSMISSIVITY['base'] (arid, ochiq osmon)
         'rn24_constant':    110.0,           # DAILY_ET['rn24_constant'] (De Bruin)
@@ -656,8 +685,7 @@ REGION_PRESETS = {
         'roughness_z0m_min': 0.005,
         # Shamol z0m — Gediz'да paxta/makkajo'xori ~1.5–2.5m (mahalliy tekshiring)
         'h_max':            2.0,             # ⚠️ asosiy ekin balandligiga moslang
-        'wind_ndvi_min':    0.20,            # ⚠️ tuproq foniga qarab tekshiring
-        'wind_ndvi_max':    0.85,
+        'wind_ndvi_pct':    (20, 80),        # sahna persentili (WIND_ROUGHNESS)
         # Radiatsiya / iqlim — Egey iqlimi (yozда quruq). Mahalliy kalibratsiya
         # bo'lmasa De Bruin standart 110 qoladi (taxminiy son o'ylab topmang).
         'transmissivity_base': 0.75,         # ⚠️ nam mavsumда pasaytiring
