@@ -61,6 +61,14 @@ BAND_NAMES = {
     'radsat': 'QA_RADSAT',
 }
 
+# TIRS band 10 Planck konstantalari (K1 W/m²/sr/µm, K2 K) — Landsat C2 L1 metadata
+# (K1_CONSTANT_BAND_10 / K2_CONSTANT_BAND_10). SMW Tb uchun SPACECRAFT_ID bo'yicha
+# tanlanadi; ro'yxatda yo'q sensor → xato (L8 konstantasi L9 ga ishlatilmaydi).
+TIRS10_PLANCK = {
+    'LANDSAT_8': (774.8853, 1321.0789),
+    'LANDSAT_9': (799.0284, 1329.2405),
+}
+
 # Scale factors — C2L2 raw DN → physical units
 SCALE_FACTORS = {
     'sr_mult':  0.0000275,   # Surface reflectance multiplicative
@@ -134,6 +142,31 @@ EMISSIVITY = {
 # Yangi komponent tuzatishlari (LST bias, G, z0m) shu rejimga bosqichma-bosqich
 # qo'shiladi; SEBAL_ID asl (Tasumi 2003) nusxa sifatida O'ZGARMASDAN qoladi.
 SEBAL_ID_FAMILY = ('SEBAL_ID', 'SEBAL_Milliy')
+
+# ── Tushuvchi uzun to'lqin L↓ — mode bo'yicha YAGONA manba ──────────────────
+# ERA5 rejimlari: L↓ = ERA5-Land STRD/3600 (har piksel).
+# Empirik rejimlar: L↓ = c1·σ·[-ln τsw]^c2·Tref⁴, Tref = COLD ANCHOR LST (bitta
+# yaxshi sug'orilgan referens — butun maydon statistikasi EMAS). Tref anchor
+# tanlangandan KEYIN olinadi; topilmasa sahna to'xtaydi (default harorat YO'Q).
+#   SEBAL_ID → Tasumi (2003) Eq. 4.13 (Allen 2000, Kimberly ID): 0.85, 0.09
+#   SEBAL_B, pysebal → Bastiaanssen (1995), Eq. 3.13:          1.08, 0.265
+LDOWN_ERA5_MODES = ('yangiliklar', 'SEBAL_Milliy')
+LDOWN_EMPIRICAL = {
+    'SEBAL_ID': (0.85, 0.09),
+    'SEBAL_B':  (1.08, 0.265),
+    'pysebal':  (1.08, 0.265),
+}
+
+
+def ldown_is_empirical(mode):
+    """L↓ empirik (Tref) mi? ERA5 → False. Noma'lum mode → xato (jim default YO'Q)."""
+    if mode in LDOWN_ERA5_MODES:
+        return False
+    if mode in LDOWN_EMPIRICAL:
+        return True
+    raise ValueError(
+        f"L↓ usuli noma'lum mode='{mode}'. ERA5: {LDOWN_ERA5_MODES}; "
+        f"empirik: {tuple(LDOWN_EMPIRICAL)} (config.LDOWN_*).")
 
 
 def is_id_mode(mode):
@@ -369,6 +402,11 @@ ANCHOR_MODES = ('median_anchor', 'point_anchor')
 ANCHOR_LANDCOVER = {
     'cold': (40,),        # Cropland
     'hot':  (60, 20),     # Bare/sparse + Shrubland
+    # Zona = anchor masshtabidagi (ANCHOR_SCALE) piksel ICHIDAGI sinf ULUSHI
+    # (10 m WorldCover → reduceResolution mean), eng yaqin piksel EMAS.
+    # Sahnada zona nomzodi yetmasa ketma-ket yumshatiladi: 0.80 → 0.70 → 0.60 → ROI.
+    'purity_steps': (0.80, 0.70, 0.60),
+    'min_pixels': 20,     # zona "yetarli": valid piksel soni > shu (100 m da sanaladi)
 }
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration

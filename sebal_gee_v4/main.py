@@ -189,13 +189,22 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     collection = collection.map(lambda im: surface_props.compute_all(im, mode, roi))
 
     # ---- Anchor zonalari — TILE uchun BIR MARTA (cold=cropland, hot=bare+shrub) ----
-    # (radiation'dan OLDIN — SEBAL_B L↓ Tref cold_mask'ga bog'liq.)
-    cold_mask, hot_mask = energy_balance.compute_tile_anchor_zones(roi)
+    # Sinf ULUSHI rasmlari; sahnada ulush ≥0.80 → 0.70 → 0.60 → ROI.
+    cold_zone, hot_zone = energy_balance.compute_tile_anchor_zones(roi)
 
-    # Radiation — mode L↓ usulini tanlaydi (SEBAL_B empirik Tref, yangiliklar ERA5)
-    collection = collection.map(
-        lambda im: radiation.compute_all(im, mode, roi, cold_mask,
-                                         sloping_terrain=sloping_terrain))
+    # Radiation — L↓ usuli mode'dan (config.LDOWN_*). Noma'lum mode → xato.
+    #   ERA5 (SEBAL_Milliy, yangiliklar): to'liq radiatsiya shu yerda (map).
+    #   Empirik (SEBAL_ID, SEBAL_B, pysebal): Tref = cold anchor LST → map'da
+    #   faqat L↓ ga bog'liq bo'lmagan qism; L↓/Rn/G₀ anchor tanlangandan KEYIN.
+    ldown_empirical = cfg.ldown_is_empirical(mode)
+    if ldown_empirical:
+        collection = collection.map(
+            lambda im: radiation.compute_pre_longwave(
+                im, mode, sloping_terrain=sloping_terrain))
+    else:
+        collection = collection.map(
+            lambda im: radiation.compute_all(
+                im, mode, sloping_terrain=sloping_terrain))
 
     # Energy balance — har sahna alohida
     image_list = collection.toList(collection.size())
@@ -209,36 +218,66 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         img = ee.Image(image_list.get(i))
 
-        # ---- L↓ Tref manbai (FAQAT empirik L↓: SEBAL_B/pysebal) ----
-        # radiation.compute_incoming_longwave xususiyat sifatida yozib qo'ygan.
-        # ⚠️ SEBAL_Milliy/'yangiliklar' → ERA5 L↓ (property YO'Q) → bu getInfo BEHUDA
-        # va katta tile'da interaktiv "User memory limit exceeded" beradi — SKIP.
-        if mode not in ('SEBAL_Milliy', 'yangiliklar'):
-            _tref_src = img.get('LDOWN_TREF_SRC').getInfo()
-            if _tref_src is not None:
-                _tref_val = img.get('LDOWN_TREF').getInfo()
-                print(f"{prefix}   L↓ Tref: {_tref_src} = {_tref_val:.2f} K")
-
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
         # munosabati LST_DEM bilan qurilgani uchun (energy_balance.compute_all
         # ichida). Aks holda cold/hot skalyarlari asl LST da, raster dT esa
         # LST_DEM da bo'lib, c5 (kesma) 0.0065·z ga siljib ketadi.
-        img_anchor = img
-        if sloping_terrain:
-            from . import sloping_terrain as _slt
-            img_anchor = img.addBands(_slt.lst_dem(img), overwrite=True)
-        anchors = energy_balance.select_anchor_pixels(
-            img_anchor, roi, cold_mask=cold_mask, hot_mask=hot_mask,
-            method=anchor_method, anchor_mode=anchor_mode)
+        def _anchor_view(im):
+            if sloping_terrain:
+                from . import sloping_terrain as _slt
+                return im.addBands(_slt.lst_dem(im), overwrite=True)
+            return im
 
-        if not anchors['valid'].getInfo():
+        img_anchor = _anchor_view(img)
+        # Empirik L↓: Rn−G₀ hali yo'q → anchor zona/LST tanlanadi (need_rn=False).
+        anchors = energy_balance.select_anchor_pixels(
+            img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
+            method=anchor_method, anchor_mode=anchor_mode,
+            need_rn=not ldown_empirical)
+
+        probe = {'valid': anchors['valid']}
+        if ldown_empirical:
+            probe['tref'] = energy_balance.cold_anchor_surface_temp(
+                img, img_anchor, anchors, roi, anchor_mode)
+            probe['cold_lst_1'] = anchors['cold_lst']
+        chk = ee.Dictionary(probe).getInfo()
+
+        if not chk['valid']:
             print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor topilmadi — "
                   f"O'TKAZIB YUBORILADI")
             continue   # bu sahna scene_images ga QO'SHILMAYDI
 
+        def _pur(v):
+            return f"ulush ≥{v:.2f}" if v else "ROI (zona yetmadi)"
+        print(f"{prefix}   anchor zona: cold {_pur(anchors['cold_zone_purity'])} | "
+              f"hot {_pur(anchors['hot_zone_purity'])}")
+
+        if ldown_empirical:
+            # L↓ Tref = cold anchor pikselning asl LST — topilmasa TO'XTAYDI.
+            if chk.get('tref') is None:
+                raise RuntimeError(
+                    f"{prefix} Sahna {i + 1}/{n}: cold anchor LST (L↓ Tref) "
+                    f"topilmadi — default harorat ishlatilmaydi.")
+            tref = chk['tref']
+            print(f"{prefix}   L↓ Tref = cold anchor LST ({anchor_mode}) = {tref:.2f} K")
+            img = radiation.compute_longwave_balance(img, mode, tref=tref)
+            # AYNI cold/hot maskalardan yakuniy qiymatlar (LST, Rn−G₀)
+            img_anchor = _anchor_view(img)
+            anchors = energy_balance.finalize_anchor_values(
+                img_anchor, roi, anchors, anchor_mode)
+            chk2 = ee.Dictionary({'valid': anchors['valid'],
+                                  'cold_lst': anchors['cold_lst']}).getInfo()
+            if not chk2['valid']:
+                print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor Rn−G₀ topilmadi — "
+                      f"O'TKAZIB YUBORILADI")
+                continue
+            if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
+                print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
+                      f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
+
         img = energy_balance.compute_all(
-            img, roi, cold_mask=cold_mask, hot_mask=hot_mask, anchors=anchors,
+            img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
             mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws)
         img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
                                         utc_offset=utc_offset,

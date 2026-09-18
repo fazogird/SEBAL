@@ -120,7 +120,7 @@ def compute_incoming_shortwave(image, sloping_terrain=False):
 # (Laipelt et al., 2021; geeSSEBI, 2025) va ERA5'ning downward longwave radiation aniqligi mustaqil validatsiyalarda quruqlik yuzasida sun'iy yo'ldosh mahsulotlaridan (CERES) yuqori ekani ko'rsatilgan (Wang et al., 2021)."
 #
 
-def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=None):
+def compute_incoming_longwave(image, mode='yangiliklar', tref=None):
     """
     Tushuvchi uzun to'lqin radiatsiyasi L↓ (W/m²) — atmosferadan yerga.
 
@@ -132,10 +132,14 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
               R_L↓ = 0.85 · σ · [-ln(τsw)]^0.09 · Tref^4
           bu yerda Tref — referens nuqtadagi (odatda yaxshi sug'orilgan piksel,
           yer va havo harorati o'xshash bo'lgan joy) yer yuzasi harorati.
-      'SEBAL_B' / boshqa      → empirik (Bastiaanssen 1995; Tasumi Eq. 3.13):
+      'SEBAL_B' / 'pysebal'   → empirik (Bastiaanssen 1995; Tasumi Eq. 3.13):
           L↓ = 1.08 · σ · [-ln(τsw)]^0.265 · Tref^4
-          Tref = cold (well-watered) referens SURFACE temp — cropland'ning eng
-          sovuq (past LST, p10) piksellari (cold anchor mantig'i).
+      Koeffitsientlar va rejimlar ro'yxati: config.LDOWN_EMPIRICAL / LDOWN_ERA5_MODES.
+      Empirik Tref = COLD ANCHOR pikselning asl LST'i (point_anchor: o'sha bitta
+      piksel; median_anchor: cold nomzodlar mediani) — butun maydon statistikasi
+      EMAS. Anchor tanlangandan keyin main.py beradi
+      (energy_balance.cold_anchor_surface_temp). Tref berilmasa — XATO
+      (default harorat ishlatilmaydi). Noma'lum mode — XATO.
 
     2 ta usul mavjud (pySEBAL/METRIC an'anasi):
 
@@ -178,53 +182,31 @@ def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=Non
     #   'yangiliklar'  — asl ERA5 rejimi
     #   'SEBAL_Milliy' — SEBAL_ID oilasi, lekin L↓ ERA5 (Bushland validatsiya:
     #                    ERA5 R²=0.97/RMSE 13.7 >> Bastiaanssen R²=0.72/RMSE 44.9)
-    if mode == 'yangiliklar' or mode == 'SEBAL_Milliy':
+    if mode in cfg.LDOWN_ERA5_MODES:
         # ERA5 strd — hourly accumulated (J/m²) → W/m²
         strd = image.select('STRD').divide(3600.0)
         l_down = strd.rename('L_DOWN').max(0)
         return image.addBands(l_down)
 
     # ---- Empirik L↓ = c1 · σ · [-ln(τsw)]^c2 · Tref^4 ----
-    #   SEBAL_ID → Eq. (4.13): c1=0.85, c2=0.09  (Allen et al. 2000, RAPID/Kimberly ID)
-    #   SEBAL_B  → Eq. (3.13): c1=1.08, c2=0.265 (Bastiaanssen 1995)
-    tau_sw = image.select('TAU_SW') #.clamp(0.01, 0.99)
-    lst = image.select('LST')
+    if mode not in cfg.LDOWN_EMPIRICAL:
+        raise ValueError(
+            f"compute_incoming_longwave: noma'lum mode='{mode}'. ERA5: "
+            f"{cfg.LDOWN_ERA5_MODES}; empirik: {tuple(cfg.LDOWN_EMPIRICAL)}")
+    if tref is None:
+        raise ValueError(
+            f"compute_incoming_longwave(mode='{mode}'): empirik L↓ uchun Tref "
+            f"(cold anchor LST, K) berilishi SHART — default harorat ishlatilmaydi.")
 
-    # Tref — cold (well-watered) referens SURFACE temp: cropland'ning past-
-    # percentil (p10) LST. (Referens: "Tref approximated from surface temp of
-    # a water/well-watered pixel".)
-    base = lst.mask()
-    if cold_mask is not None:
-        base = base.And(cold_mask.gt(0))
-    tref_lst = lst.updateMask(base).reduceRegion(
-        ee.Reducer.percentile([10]), roi, 100, maxPixels=1e9,
-        bestEffort=True, tileScale=4).get('LST')
-    # fallback (bo'sh zona): ERA5 AIR_TEMP median
-    tref_fb = image.select('AIR_TEMP').reduceRegion(
-        ee.Reducer.median(), roi, 1000, maxPixels=1e9,
-        bestEffort=True).get('AIR_TEMP', 293.0)
-    # tref_lst null bo'lsa (cold zona bo'sh/bulutli) → ERA5 AIR_TEMP fallback
-    tref = ee.Number(ee.Algorithms.If(tref_lst, tref_lst, tref_fb))
-
-    # Tref manbai — LST p10 (cold anchor) yoki ERA5 AIR_TEMP fallback?
-    # DIQQAT: bu funksiya collection.map() ICHIDA ishlaydi — shu yerda
-    # getInfo/print QILIB BO'LMAYDI (map trace'da ishlamaydi, crash beradi).
-    # Manbani XUSUSIYAT sifatida yozamiz; main.py sahna sikli (map'dan tashqarida)
-    # uni bir marta o'qib PRINT qiladi ("fallback ishladimi yo LST dan olindimi").
-    tref_src = ee.Algorithms.If(tref_lst,
-                                'LST p10 (cold anchor)',
-                                "ERA5 AIR_TEMP fallback (bo'sh/bulutli cold zona)")
-
-    # mode bo'yicha koeffitsientlar (Eq. 4.13 vs 3.13)
-    c_mult, c_pow = (0.85, 0.09) if mode == 'SEBAL_ID' else (1.08, 0.265)
+    c_mult, c_pow = cfg.LDOWN_EMPIRICAL[mode]
+    tref = ee.Number(tref)
+    tau_sw = image.select('TAU_SW')
     emiss_a = tau_sw.log().multiply(-1).pow(c_pow).multiply(c_mult)   # εa
     l_down = (emiss_a.multiply(sigma)
               .multiply(ee.Image.constant(tref).pow(4))
               .rename('L_DOWN').max(0))
 
-    return (image.addBands(l_down)
-            .set('LDOWN_TREF_SRC', tref_src)
-            .set('LDOWN_TREF', tref))
+    return image.addBands(l_down).set('LDOWN_TREF', tref)
 
 
 # ==============================================================
@@ -415,7 +397,37 @@ _SMW_L8 = {
     'C': [212.7173, 230.5698, 238.9548, 244.0772, 251.8341,
           257.2740, 263.5599, 268.9405, 275.0895, 277.9953],
 }
-_TIRS10_K1, _TIRS10_K2 = 774.8853, 1321.0789   # L8/9 TIRS band 10 Planck (C2 metadata)
+# TIRS10 Planck K1/K2 — config.TIRS10_PLANCK (SPACECRAFT_ID bo'yicha: L8 va L9 BOSHQA).
+
+
+def _era5_tcwv_cm(image):
+    """
+    ERA5 total column water vapour (TPW, cm) — overpass vaqtiga CHIZIQLI
+    interpolyatsiya. TCWV INSTANT o'zgaruvchi: yorliqlar floor(t) va floor(t)+1,
+    og'irlik = soatning kasr qismi (preprocessing.get_era5_for_image dagi instant
+    bandlar bilan bir xil). Oldingi filterDate(t±1h).first() doim floor(t) soatni
+    olardi (overpass :52 da — 52 daqiqa uzoqdagi soat). Soat topilmasa GEE xato beradi.
+    """
+    t = ee.Date(image.get('system:time_start'))
+    day0 = ee.Date(t.format('YYYY-MM-dd'))
+    t_h = t.difference(day0, 'hour')
+    h0 = t_h.floor()
+    w = t_h.subtract(h0)
+    col = ee.ImageCollection('ECMWF/ERA5/HOURLY').select('total_column_water_vapour')
+
+    def _at(h):
+        start = day0.advance(h, 'hour')
+        return ee.Image(col.filterDate(start, start.advance(1, 'hour')).first())
+
+    tcwv = (_at(h0).multiply(ee.Number(1).subtract(w))
+            .add(_at(h0.add(1)).multiply(w)))
+    return tcwv.divide(10.0)                              # kg/m² (mm) → cm
+
+
+def _tirs10_planck(image):
+    """(K1, K2) — SPACECRAFT_ID bo'yicha config.TIRS10_PLANCK dan; yo'q → GEE xato."""
+    kk = ee.List(ee.Dictionary(cfg.TIRS10_PLANCK).get(image.get('SPACECRAFT_ID')))
+    return ee.Number(kk.get(0)), ee.Number(kk.get(1))
 
 
 def compute_lst_smw(image):
@@ -426,18 +438,16 @@ def compute_lst_smw(image):
     Kirish: image'da ST_TRAD (C2L2 thermal radiance) va EMISSIVITY bo'lishi shart.
     """
     # 1) Brightness temperature Tb — ST_TRAD (C2L2 thermal radiance, ×0.001 → W/m²/sr/µm)
+    #    K1/K2 — sensorga mos (L8 ≠ L9), SPACECRAFT_ID bo'yicha.
     l10 = image.select('ST_TRAD').multiply(0.001)
+    k1, k2 = _tirs10_planck(image)
     tb = l10.expression('K2 / log(K1 / L + 1.0)',
-                        {'K1': _TIRS10_K1, 'K2': _TIRS10_K2, 'L': l10})
+                        {'K1': ee.Image.constant(k1), 'K2': ee.Image.constant(k2),
+                         'L': l10})
     eps = image.select('EMISSIVITY')
 
-    # 2) TPW (cm) — to'liq ERA5 hourly total column water vapour (ERA5-Land'da YO'Q)
-    t = ee.Date(image.get('system:time_start'))
-    tcwv = (ee.ImageCollection('ECMWF/ERA5/HOURLY')
-            .select('total_column_water_vapour')
-            .filterDate(t.advance(-1, 'hour'), t.advance(1, 'hour'))
-            .first())
-    tpw_cm = ee.Image(tcwv).divide(10.0)                 # kg/m² (mm) → cm
+    # 2) TPW (cm) — to'liq ERA5 hourly TCWV (ERA5-Land'da YO'Q), overpass vaqtiga interpolyatsiya
+    tpw_cm = _era5_tcwv_cm(image)
     pos = tpw_cm.divide(0.6).floor().min(9).max(0).toInt()
 
     # 3) TPW bin → A,B,C (remap)
@@ -527,12 +537,8 @@ def add_lst_footprint_diagnostics(image, scale=30):
         has_qa, image.select('ST_QA').multiply(0.01),
         ee.Image.constant(-1))).rename('ST_QA')
 
-    # WATER_VAPOR — SMW bilan AYNAN bir xil ERA5 TCWV (TPW, cm)
-    t = ee.Date(image.get('system:time_start'))
-    tcwv = (ee.ImageCollection('ECMWF/ERA5/HOURLY')
-            .select('total_column_water_vapour')
-            .filterDate(t.advance(-1, 'hour'), t.advance(1, 'hour')).first())
-    wv = ee.Image(tcwv).divide(10.0).rename('WATER_VAPOR')
+    # WATER_VAPOR — SMW bilan AYNAN bir xil ERA5 TCWV (TPW, cm, vaqtga interpolyatsiya)
+    wv = _era5_tcwv_cm(image).rename('WATER_VAPOR')
 
     return image.addBands([
         lst_center, lst_m3, lst_md3, lst_m5, lst_p10, lst_sd5, lst_psf,
@@ -544,29 +550,43 @@ def add_lst_footprint_diagnostics(image, scale=30):
 # MAIN: Compute all radiation components
 # ==============================================================
 
-def compute_all(image, mode='yangiliklar', roi=None, cold_mask=None,
-                sloping_terrain=False):
+def compute_pre_longwave(image, mode='yangiliklar', sloping_terrain=False):
     """
-    Barcha radiatsiya va tuproq issiqlik oqimini hisoblash.
-
-    mode → L↓ usulini tanlaydi (compute_incoming_longwave):
-      'yangiliklar' → ERA5 STRD; boshqa (SEBAL_B/pysebal) → empirik (Tref).
-    roi, cold_mask → SEBAL_B L↓ Tref (cold referens LST) uchun.
-    sloping_terrain → K↓ uchun qiyalik/ekspozitsiyali cosθ (Tasumi Eq 5.12-5.13).
-
-    Input:  Image with surface properties
-    Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
+    1-bosqich — L↓ ga BOG'LIQ BO'LMAGAN qism (anchor tanlashdan OLDIN ham xavfsiz):
+      SEBAL_Milliy → Ermida SMW LST ('LST' ustiga yoziladi); K↓.
     """
     # SEBAL_Milliy: C2L2 ST band o'rniga Ermida SMW LST (vegetatsiya-anomaliyasidan
     # mustaqil). L↑, G₀, anchor, dT — hammasi shu tuzatilgan LST'ni ishlatadi.
     if mode == 'SEBAL_Milliy':
         image = compute_lst_smw(image)
+    return compute_incoming_shortwave(image, sloping_terrain=sloping_terrain)
 
-    image = compute_incoming_shortwave(image, sloping_terrain=sloping_terrain)
-    image = compute_incoming_longwave(image, mode, roi, cold_mask)
+
+def compute_longwave_balance(image, mode='yangiliklar', tref=None):
+    """
+    2-bosqich — L↓, L↑, Rn, G₀, Rn−G₀.
+      ERA5 rejimlari (config.LDOWN_ERA5_MODES): tref kerak emas.
+      Empirik rejimlar (config.LDOWN_EMPIRICAL): tref = cold anchor LST (K) SHART.
+    """
+    image = compute_incoming_longwave(image, mode, tref)
     image = compute_outgoing_longwave(image)
     image = compute_net_radiation(image)
     image = compute_soil_heat_flux(image)
     image = compute_net_available_energy(image)
-
     return image
+
+
+def compute_all(image, mode='yangiliklar', tref=None, sloping_terrain=False):
+    """
+    Barcha radiatsiya va tuproq issiqlik oqimi (1- + 2-bosqich birga).
+
+    mode → L↓ usuli (config.LDOWN_*): ERA5 STRD yoki empirik (Tref = cold anchor LST).
+    Empirik rejimda tref berilmasa XATO — main.py bu rejimlarda 1-bosqichni map()
+    da, 2-bosqichni anchor tanlangandan keyin sahna siklida chaqiradi.
+    sloping_terrain → K↓ uchun qiyalik/ekspozitsiyali cosθ (Tasumi Eq 5.12-5.13).
+
+    Input:  Image with surface properties
+    Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
+    """
+    image = compute_pre_longwave(image, mode, sloping_terrain=sloping_terrain)
+    return compute_longwave_balance(image, mode, tref)

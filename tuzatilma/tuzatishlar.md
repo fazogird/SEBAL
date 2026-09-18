@@ -6,16 +6,21 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | # | Sana | Nima qilindi | Holat | Fayllar |
 |---|---|---|---|---|
 | 00 | 2026-09-17 | `tile_roi.geometry()` xato qatori olib tashlandi | ✅ commit 69d0ca4 | main.py |
-| 01 | 2026-09-17 | `mosaic_same_date` / `best_per_date` → `_mosaic_same_date` (preprocessingdan keyin, UTM/property saqlanadi) | ✅ commit qilinmagan | preprocessing.py, main.py |
-| 04 | 2026-09-17 | `tiles` + `process_by_tile=False` → aniq `ValueError` | ✅ commit qilinmagan | main.py |
-| 06 | 2026-09-17 | Kolleksiya xronologik tartibi (`sort`) | ✅ commit qilinmagan | preprocessing.py |
-| 07 | 2026-09-17 | SAVI bitta marta, yagona `cfg.SAVI_L` | ✅ commit qilinmagan | config.py, surface_props.py, hls_s30_etrf.py |
-| 08 | 2026-09-17 | `info['scene_dates']` — sahna ↔ sana indeksi (VIIRS/S30) | ✅ commit qilinmagan | main.py |
-| 09 | 2026-09-17 | Raster export: verguldan keyin 2 xona (`EXPORT_DECIMALS`) | ✅ commit qilinmagan | config.py, main.py |
-| 10 | 2026-09-17 | Albedo `olmedo_brdf` — DEFAULT | ✅ commit qilinmagan | config.py, surface_props.py, main.py |
-| 11 | 2026-09-17 | SR_B1 scale → preprocessing (Landsat + HLS) | ✅ commit qilinmagan | config.py, preprocessing.py, surface_props.py |
-| 12 | 2026-09-17 | HLS cloud precheck `contains()` | ✅ commit qilinmagan | preprocessing.py |
-| 13 | 2026-09-17 | Z0M_WIND NDVI chegaralari: skalyar → sahna p20/p80 | ✅ commit qilinmagan | config.py, surface_props.py, main.py |
+| 01 | 2026-09-17 | `mosaic_same_date` / `best_per_date` → `_mosaic_same_date` (preprocessingdan keyin, UTM/property saqlanadi) | ✅ commit 22d96df | preprocessing.py, main.py |
+| 04 | 2026-09-17 | `tiles` + `process_by_tile=False` → aniq `ValueError` | ✅ commit 22d96df | main.py |
+| 06 | 2026-09-17 | Kolleksiya xronologik tartibi (`sort`) | ✅ commit 22d96df | preprocessing.py |
+| 07 | 2026-09-17 | SAVI bitta marta, yagona `cfg.SAVI_L` | ✅ commit 22d96df | config.py, surface_props.py, hls_s30_etrf.py |
+| 08 | 2026-09-17 | `info['scene_dates']` — sahna ↔ sana indeksi (VIIRS/S30) | ✅ commit 22d96df | main.py |
+| 09 | 2026-09-17 | Raster export: verguldan keyin 2 xona (`EXPORT_DECIMALS`) | ✅ commit 22d96df | config.py, main.py |
+| 10 | 2026-09-17 | Albedo `olmedo_brdf` — DEFAULT | ✅ commit 22d96df | config.py, surface_props.py, main.py |
+| 11 | 2026-09-17 | SR_B1 scale → preprocessing (Landsat + HLS) | ✅ commit 22d96df | config.py, preprocessing.py, surface_props.py |
+| 12 | 2026-09-17 | HLS cloud precheck `contains()` | ✅ commit 22d96df | preprocessing.py |
+| 13 | 2026-09-17 | Z0M_WIND NDVI chegaralari: skalyar → sahna p20/p80 | ✅ commit 22d96df | config.py, surface_props.py, main.py |
+| 14 | 2026-09-17 | Anchor zonalari: eng yaqin piksel → sinf ULUSHI (0.80 → 0.70 → 0.60 → ROI) | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
+| 15 | 2026-09-17 | SMW LST: ERA5 TCWV vaqtga interpolyatsiya + TIRS10 K1/K2 sensor bo'yicha (L8 ≠ L9) | ✅ commit qilinmagan | config.py, radiation.py |
+| 16 | 2026-09-17 | Empirik L↓ Tref = cold anchor LST (p10 va 293 K olib tashlandi); L↓ konstantalari mode bo'yicha | ✅ commit qilinmagan | config.py, radiation.py, energy_balance.py, main.py |
+| 17 | 2026-09-18 | SEBAL_ID oilasi: anchor ETr topilmasa 0 emas — xato bilan to'xtaydi | ✅ commit qilinmagan | energy_balance.py |
+| 18 | 2026-09-18 | pysebal anchor metodi: soxta default qiymatlar olib tashlandi; `_pn` 0 ni null deb olmaydi | ✅ commit qilinmagan | energy_balance.py |
 
 ---
 
@@ -627,3 +632,313 @@ GEE sinovi (`scratchpad/test_z0m_p20p80.py`, P155/R32, Samarqand 20 km, haqiqiy 
 | 2023-10-15 | 0.164 | 0.429 | 0.029 → **0.103** | 0.1 % → **22.7 %** | 1.511 → 1.653 | 0.076 → 0.219 |
 
 `roi=None` (butun tasvir footprint'i) bilan persentillar boshqacha: mart 0.180/0.539, iyul 0.133/0.383, oktabr 0.118/0.320 — natija persentil hisoblanadigan hududga bog'liq.
+
+---
+
+## #14 — Anchor zonalari: eng yaqin piksel → sinf ULUSHI (0.80 → 0.70 → 0.60 → ROI)
+
+User qarori: "categorical mask → fractional purity mask; cold ≥ 0.80, hot ≥ 0.80; nomzod yetmasa 0.70 → 0.60 → ROI fallback".
+
+**Muammo (oldin):** 10 m WorldCover 0/1 maskasi anchor masshtabida (30 / 100 m) eng yaqin piksel bilan olinardi. Samarqand 30 km, GEE:
+
+| Zona | Masshtab | Zona piksellarida haqiqiy sinf ulushi (o'rt.) | Ulushi < 50 % bo'lganlar |
+|---|---|---|---|
+| cold (40) | 100 m | 0.87 | 8.0 % |
+| hot (60+20) | 100 m | **0.62** | **36.4 %** |
+
+**Oldin** (`energy_balance.py`):
+```python
+def compute_tile_anchor_zones(tile_roi, min_pixel_count=20):
+    cold_r = _landcover_mask(cfg.ANCHOR_LANDCOVER['cold'])      # 10 m 0/1
+    hot_r = _landcover_mask(cfg.ANCHOR_LANDCOVER['hot'])
+    ...
+    cold_mask = cold_r.selfMask().rename('COLD_LC') if cold_px >= min_pixel_count else None
+
+# _select_anchor_default ichida:
+    def _zone_base(lc):
+        b = base_flat.And(lc.gt(0))                               # nearest sampling
+        px = ... reduceRegion(sum, roi, 100) ...
+        return ee.Image(ee.Algorithms.If(px.gt(20), b, base_flat))
+# select_anchor_pixels (kaskad): cold_base = base_flat.And(cold_mask.gt(0))
+```
+**Keyin:**
+```python
+# config.py
+ANCHOR_LANDCOVER = {'cold': (40,), 'hot': (60, 20),
+                    'purity_steps': (0.80, 0.70, 0.60), 'min_pixels': 20}
+
+# energy_balance.py
+def _landcover_fraction(classes, proj):          # 10 m 0/1 → reduceResolution(mean) → UTM @ANCHOR_SCALE
+    return (_landcover_mask(classes).toFloat()
+            .reduceResolution(ee.Reducer.mean(), maxPixels=1024).reproject(proj))
+
+def compute_tile_anchor_zones(tile_roi, min_pixel_count=None):
+    # → (cold_zone, hot_zone): ulush rasmlari 'COLD_FRAC'/'HOT_FRAC' (0..1)
+    # tile darajasida har bosqich (≥0.80/0.70/0.60) piksel soni print qilinadi
+
+def _purity_zones(base_flat, cold_zone, hot_zone, roi):
+    # sahna uchun: base_flat ∧ ulush≥0.80 soni > min_pixels ? → 0.70 → 0.60 → ROI
+    # chegara BIR getInfo bilan client-side tanlanadi (keyingi so'rov grafiga If kirmaydi)
+    return cold_base, cold_thr, hot_base, hot_thr     # thr float, 0.0 = ROI
+```
+- `_select_anchor_default` va kaskad (`select_anchor_pixels`) ikkalasi ham `_purity_zones` dan foydalanadi.
+- Anchor dict'ga `cold_zone_purity` / `hot_zone_purity` qo'shildi; `main.py` har sahnada chiqaradi: `anchor zona: cold ulush ≥0.80 | hot ulush ≥0.80` (ROI bo'lsa "ROI (zona yetmadi)").
+- Argument nomlari: `cold_mask/hot_mask` → `cold_zone/hot_zone` (`select_anchor_pixels`, `energy_balance.compute_all`, `main.py`).
+- Ulush rasmi grid'i: ROI markazining UTM zonasi, `ANCHOR_SCALE` (30 yoki 100 m).
+
+GEE sinovi — tile darajasida piksel soni:
+
+| Hudud | Zona | Oldin (nearest 0/1) | ≥0.80 | ≥0.70 | ≥0.60 |
+|---|---|---|---|---|---|
+| Samarqand 30 km @100 m | cold | 185 911 | 106 217 | 118 390 | 129 821 |
+| Samarqand 30 km @100 m | hot | 7 844 | 1 812 | 2 494 | 3 343 |
+| Butun tile P155/R32 @100 m | cold | — | 611 322 | 675 761 | 735 714 |
+| Butun tile P155/R32 @100 m | hot | — | 38 544 | 54 790 | 74 168 |
+
+Tile zonasini hisoblash vaqti: 30 km @100 m 7 s, @30 m 5 s, butun tile @100 m 31 s (tile uchun bir marta). End-to-end sinovlarda (Samarqand 20 km, 2023-07, 3 sahna, barcha rejim) har sahnada cold va hot zona **≥ 0.80** bilan topildi.
+
+---
+
+## #15 — SMW LST: ERA5 TCWV vaqtga interpolyatsiya + TIRS10 K1/K2 sensor bo'yicha
+
+**Muammo (oldin):**
+1. `filterDate(t−1h, t+1h).first()` — eng yaqin soat emas, doim `floor(t)` soati. Overpass daqiqalari (GEE, 2023): Samarqand :11, Buxoro :17–:23, Toshkent :04, Bushland :20–:26 → tasodifan eng yaqin; **Xorazm :35 / :41, Farg'ona–Andijon :52 → eng yaqin EMAS** (52 daqiqa uzoq soat). Bushland 2021-07-09 da TPW bin almashib, LST −0.26 K (max −1.74 K).
+2. Planck K1/K2 har ikki sensorga L8 qiymati (774.8853, 1321.0789). L9 metadata: K1 = 799.0284, K2 = 1329.2405 → L9 da Tb +0.13…+0.33 K issiq.
+Ikkala muammo `add_lst_footprint_diagnostics` (WATER_VAPOR) da ham bor edi (TCWV).
+
+**Oldin** (`radiation.py`):
+```python
+_TIRS10_K1, _TIRS10_K2 = 774.8853, 1321.0789
+...
+    tb = l10.expression('K2 / log(K1 / L + 1.0)', {'K1': _TIRS10_K1, 'K2': _TIRS10_K2, 'L': l10})
+    tcwv = (ee.ImageCollection('ECMWF/ERA5/HOURLY').select('total_column_water_vapour')
+            .filterDate(t.advance(-1, 'hour'), t.advance(1, 'hour')).first())
+    tpw_cm = ee.Image(tcwv).divide(10.0)
+```
+**Keyin:**
+```python
+# config.py
+TIRS10_PLANCK = {'LANDSAT_8': (774.8853, 1321.0789), 'LANDSAT_9': (799.0284, 1329.2405)}
+
+# radiation.py
+def _era5_tcwv_cm(image):      # instant o'zgaruvchi: floor(t) va floor(t)+1 soat, og'irlik = kasr qism
+    ...
+    tcwv = _at(h0).multiply(1 - w).add(_at(h0 + 1).multiply(w))
+    return tcwv.divide(10.0)
+
+def _tirs10_planck(image):     # SPACECRAFT_ID bo'yicha; ro'yxatda yo'q / property yo'q → GEE xato
+    kk = ee.List(ee.Dictionary(cfg.TIRS10_PLANCK).get(image.get('SPACECRAFT_ID')))
+
+# compute_lst_smw:
+    k1, k2 = _tirs10_planck(image)
+    tb = l10.expression('K2 / log(K1 / L + 1.0)', {'K1': ee.Image.constant(k1), 'K2': ee.Image.constant(k2), 'L': l10})
+    tpw_cm = _era5_tcwv_cm(image)
+# add_lst_footprint_diagnostics:
+    wv = _era5_tcwv_cm(image).rename('WATER_VAPOR')
+```
+
+GEE sinovi (20 km, LST yangi − eski, `compute_lst_smw`):
+
+| Sahna | Sensor | TPW eski (first) → yangi (interp), cm | LST farqi o'rt. [min, max] |
+|---|---|---|---|
+| Samarqand 2023-06-01 06:10 | L9 | 0.731 → 0.733 | **−0.317 K** [−0.43, −0.23] |
+| Samarqand 2023-07-11 06:10 | L8 | 0.939 → 0.942 | 0.000 |
+| Farg'ona 2023-07-14 05:52 | L9 | 2.114 → 2.117 | **−0.340 K** [−0.48, −0.16] |
+| Farg'ona 2023-07-22 05:52 | L8 | 2.400 → 2.349 | 0.000 (bin almashmadi) |
+| `SPACECRAFT_ID` yo'q rasm | — | — | **to'xtadi** ✅ |
+
+End-to-end SEBAL_Milliy (Samarqand, 2023-07): L8 sahnasi (07-11) aynan bir xil; L9 sahnalari (07-03, 07-19) L↑ −2.3 W/m², ET24 +0.01 mm.
+
+---
+
+## #16 — Empirik L↓: Tref = cold anchor LST (p10 va 293 K olib tashlandi); L↓ konstantalari mode bo'yicha
+
+User qarori: "Tref faqat o'sha yaxshi sug'orilgan piksel qiymati olinsin, butun maydonniki emas"; "293 kabi default qo'ymasin, topilmasa to'xtasin"; "boshqa rejim/konstanta/vaziyatlarni ham inobatga ol".
+
+**Muammo (oldin):** SEBAL_ID / SEBAL_B / pysebal da L↓ = c1·σ·[−ln τsw]^c2·Tref⁴, Tref = butun cropland zonasining **LST p10** (anchor emas). Zona bo'sh bo'lsa ERA5 AIR_TEMP mediani, u ham bo'lmasa **293 K**. Radiatsiya anchor tanlashdan oldin hisoblangani uchun haqiqiy cold anchor ishlatilmagan. L↓ koeffitsientlari `mode == 'SEBAL_ID'` bo'lmasa har qanday mode uchun (1.08, 0.265) — noma'lum mode ham jimgina shu.
+
+**Oldin** (`radiation.py`, `main.py`):
+```python
+def compute_incoming_longwave(image, mode='yangiliklar', roi=None, cold_mask=None):
+    if mode == 'yangiliklar' or mode == 'SEBAL_Milliy': ... ERA5 STRD
+    base = lst.mask().And(cold_mask.gt(0))
+    tref_lst = lst.updateMask(base).reduceRegion(ee.Reducer.percentile([10]), roi, 100, ...).get('LST')
+    tref_fb = image.select('AIR_TEMP').reduceRegion(ee.Reducer.median(), roi, 1000, ...).get('AIR_TEMP', 293.0)
+    tref = ee.Number(ee.Algorithms.If(tref_lst, tref_lst, tref_fb))
+    c_mult, c_pow = (0.85, 0.09) if mode == 'SEBAL_ID' else (1.08, 0.265)
+
+# main.py process_tile
+    collection = collection.map(lambda im: radiation.compute_all(im, mode, roi, cold_mask, sloping_terrain=...))
+    for i in range(n):
+        anchors = energy_balance.select_anchor_pixels(img_anchor, roi, cold_mask=cold_mask, hot_mask=hot_mask, ...)
+```
+**Keyin:**
+```python
+# config.py
+LDOWN_ERA5_MODES = ('yangiliklar', 'SEBAL_Milliy')
+LDOWN_EMPIRICAL = {'SEBAL_ID': (0.85, 0.09), 'SEBAL_B': (1.08, 0.265), 'pysebal': (1.08, 0.265)}
+def ldown_is_empirical(mode):      # noma'lum mode → ValueError
+
+# radiation.py
+def compute_incoming_longwave(image, mode='yangiliklar', tref=None):
+    if mode in cfg.LDOWN_ERA5_MODES: ... ERA5 STRD (o'zgarmagan)
+    if mode not in cfg.LDOWN_EMPIRICAL: raise ValueError(...)
+    if tref is None: raise ValueError("... Tref (cold anchor LST) SHART — default harorat ishlatilmaydi")
+    c_mult, c_pow = cfg.LDOWN_EMPIRICAL[mode]
+    ...  return image.addBands(l_down).set('LDOWN_TREF', tref)
+def compute_pre_longwave(image, mode, sloping_terrain)   # SMW (Milliy) + K↓ — L↓ ga bog'liq emas
+def compute_longwave_balance(image, mode, tref=None)     # L↓, L↑, Rn, G₀, Rn−G₀
+def compute_all(image, mode, tref=None, sloping_terrain=False)   # ikkalasi birga
+
+# energy_balance.py
+select_anchor_pixels(..., need_rn=True)       # need_rn=False: zona/LST tanlanadi, Rn−G₀ hali yo'q
+finalize_anchor_values(image, roi, anchors, anchor_mode)   # AYNI maskalardan LST + Rn−G₀
+cold_anchor_surface_temp(image, image_anchor, anchors, roi, anchor_mode)
+    # point_anchor: anchor tanlagan AYNI piksel (image_anchor LST min) dagi ASL LST (min(2))
+    # median_anchor: cold nomzodlarning asl LST mediani
+
+# main.py process_tile
+    ldown_empirical = cfg.ldown_is_empirical(mode)
+    ERA5 rejim   → map: radiation.compute_all(im, mode, sloping_terrain)          (oldingidek)
+    Empirik rejim → map: radiation.compute_pre_longwave(im, mode, sloping_terrain)
+      har sahna: 1) select_anchor_pixels(need_rn=False)
+                 2) Tref = cold_anchor_surface_temp(...)  (getInfo; None → RuntimeError, sahna/tile to'xtaydi)
+                 3) img = radiation.compute_longwave_balance(img, mode, tref)
+                 4) anchors = finalize_anchor_values(...)  (valid emas → sahna o'tkaziladi)
+                 5) 1- va 4-bosqich cold LST farqi > 0.01 K bo'lsa ogohlantirish
+```
+Qamrab olingan holatlar: `SEBAL_ID`, `SEBAL_B`, `pysebal` (empirik); `SEBAL_Milliy`, `yangiliklar`, `Kc_ETo`/`SEBAL_Milliy_Kc` (→ Milliy) — ERA5, o'zgarmagan; `point_anchor` va `median_anchor`; `default` va kaskad (`cimec`/`plan_a`/`plan_b`/`pysebal`) anchor metodlari; `sloping_terrain=True` (anchor LST_DEM da, Tref ASL LST da).
+
+GEE sinovi — birlik darajasi:
+
+| Holat | Natija |
+|---|---|
+| `ldown_is_empirical`: SEBAL_B / SEBAL_ID / pysebal | True |
+| `ldown_is_empirical`: SEBAL_Milliy / yangiliklar | False |
+| `ldown_is_empirical('Kc_ETo')`, noma'lum mode | ValueError ✅ (process_tile Kc ni avval Milliy'ga o'giradi) |
+| `compute_incoming_longwave(mode='SEBAL_ID')` Tref'siz | ValueError ✅ |
+
+GEE sinovi — end-to-end `process_tile` (Samarqand 20 km, 2023-07-01..20; OLDIN = HEAD 22d96df):
+
+| Rejim | Sana | Tref oldin (p10) → keyin | cold anchor (keyin) | L↓ oldin → keyin | Rn | ET24 oldin → keyin |
+|---|---|---|---|---|---|---|
+| SEBAL_ID point | 07-03 | 310.19 → **303.19** | 303.19 | 396.3 → 361.8 | 582.9 → 549.9 | 5.72 → 5.86 |
+| SEBAL_ID point | 07-11 | 312.56 → **305.55** | 305.55 | 408.6 → 373.1 | 569.9 → 536.0 | 4.77 → 4.84 |
+| SEBAL_ID point | 07-19 | 308.19 → **301.88** | 301.88 | 386.2 → 355.6 | 579.1 → 549.8 | 5.80 → 5.88 |
+| SEBAL_B median | 07-03 | 310.19 → **308.47** | 308.47 | 400.0 → 391.2 | 586.4 → 578.1 | 4.26 → 4.24 |
+| SEBAL_B median | 07-11 | 312.56 → **310.84** | 310.84 | 412.4 → 403.4 | 573.4 → 564.7 | 5.41 → 5.41 |
+| SEBAL_B median | 07-19 | 308.19 → **306.86** | 306.86 | 389.8 → 383.1 | 582.5 → 576.1 | 4.27 → 4.22 |
+| pysebal median | 07-11 | 312.56 → **310.84** | 310.84 | 412.4 → 403.4 | 573.4 → 564.7 | 5.41 → 5.41 |
+| SEBAL_ID + sloping | 07-03 | 310.19 → **303.19** | 308.01 (LST_DEM) | 396.3 → 361.8 | 582.2 → 549.2 | 5.22 → 5.18 |
+| SEBAL_ID + sloping | 07-11 | 312.56 → **305.55** | 310.19 (LST_DEM) | 408.6 → 373.1 | 568.9 → 535.0 | 4.41 → 4.44 |
+| SEBAL_ID + sloping | 07-19 | 308.19 → **301.88** | 306.78 (LST_DEM) | 386.2 → 355.6 | 578.0 → 548.7 | 5.38 → 5.31 |
+| SEBAL_ID cimec (kaskad) | 07-03 | 310.19 → **306.82** | 306.82 | 396.3 → 379.4 | 582.9 → 566.7 | 5.77 → 6.32 |
+| SEBAL_ID cimec (kaskad) | 07-11 | 312.56 → **308.94** | 308.94 | 408.6 → 390.0 | 569.9 → 552.1 | 4.68 → 4.75 |
+| SEBAL_ID cimec (kaskad) | 07-19 | 308.19 → **305.07** | 305.07 | 386.2 → 370.8 | 579.1 → 564.4 | 6.29 → 5.42 |
+| SEBAL_Milliy (ERA5) | 07-03 / 07-11 / 07-19 | — | — | 364.0 / 355.7 / 378.6 (o'zgarmadi) | ±2.3 | 4.50→4.51 / 3.69→3.69 / 4.57→4.58 |
+
+(o'rtachalar ROI bo'yicha, 300 m; L↓/Rn W/m², ET24 mm/kun)
+
+- Barcha empirik rejimlarda **Tref = cold anchor LST** (point: aynan o'sha piksel; median: nomzodlar mediani).
+- `sloping_terrain`: Tref = ASL LST (303.19 K), anchor esa LST_DEM (308.01 K) — farq 4.8 K ≈ 0.0065·z (z ≈ 740 m).
+- SEBAL_ID da L↓ −30…−35 W/m² (ERA5 STRD bilan solishtirish: shu hududda 355.7–378.6).
+- Hech bir sahnada "1-bosqich ≠ yakuniy cold LST" ogohlantirishi chiqmadi.
+- cimec kaskadida 07-03 (+0.55) va 07-19 (−0.87 mm) katta farq: hot anchor biroz o'zgargan (07-19: dT_hot 4.20 → 4.96) — #14 ulush zonalari va L↓ birga ta'sir qiladi.
+- Ishlash vaqti (bir vaqtda parallel testlar — shovqinli): SEBAL_ID 67 → 79 s, pysebal 43 → 82 s, sloping 132 → 302 s — har sahnaga qo'shimcha getInfo (zona ulushi, Tref, yakuniy anchor).
+
+---
+
+## #17 — SEBAL_ID oilasi: anchor ETr topilmasa 0 emas — xato bilan to'xtaydi
+
+User qarori: "0 default qiymat olmasin; natija chiqmasa muammoni aytib to'xtasin".
+
+Qayerda: `energy_balance.compute_all` — SEBAL_ID oilasi (SEBAL_ID, **SEBAL_Milliy** — hozirgi asosiy rejim): λET_cold = COLD_ETRF·ETr_c, λET_hot = ETrF_hot·ETr_h.
+
+**Oldin:**
+```python
+        vals = ee.Dictionary({
+            'etr_c': etr.updateMask(cm).reduceRegion(...).get('ETR_INST', 0),
+            'etr_h': etr.updateMask(hm).reduceRegion(...).get('ETR_INST', 0),
+        }).getInfo()
+        etr_c = vals['etr_c'] or 0.0          # null → 0 → λET_cold = 0 (jimgina)
+        etr_h = vals['etr_h'] or 0.0
+```
+**Keyin:**
+```python
+def anchor_etr_inst(image, roi, cold_mask, hot_mask):
+    vals = ee.Dictionary({
+        'etr_c': etr.updateMask(cold_mask).reduceRegion(...).get('ETR_INST'),   # default yo'q
+        'etr_h': etr.updateMask(hot_mask).reduceRegion(...).get('ETR_INST'),
+    }).getInfo()
+    missing = [side for side, k in (('cold', 'etr_c'), ('hot', 'etr_h')) if vals.get(k) is None]
+    if missing:
+        raise RuntimeError(f"{date}: {missing} anchor nomzodlarida instant ETr (ETR_INST) topilmadi — "
+                           f"λET_... hisoblab bo'lmaydi. Default 0 ishlatilmaydi. Tekshiring: ERA5 meteo ...")
+    return vals['etr_c'], vals['etr_h']
+
+# compute_all ichida:
+        etr_c, etr_h = anchor_etr_inst(image, roi, cm, hm)
+```
+Eslatma: `run()` tile rejimida har tile `try/except` ichida — xato matni chiqadi va o'sha tile to'xtaydi (keyingi tile davom etadi); ROI rejimida run to'xtaydi.
+
+GEE sinovi (Samarqand 20 km, 2023-07-11, SEBAL_ID):
+
+| Holat | Natija |
+|---|---|
+| Oddiy anchor maskalari | ETr cold 0.841, hot 0.823 mm/soat (oldingi bilan bir xil yo'l) |
+| Bo'sh cold maska | **RuntimeError** ✅ `2023-07-11: cold anchor nomzodlarida instant ETr (ETR_INST) topilmadi — λET_cold hisoblab bo'lmaydi. Default 0 ishlatilmaydi. ...` |
+
+---
+
+## #18 — pysebal anchor metodi: soxta default qiymatlar olib tashlandi; `_pn` 0 ni null deb olmaydi
+
+User qarori: "soxta qiymatlarni qo'yma, tuzat".
+
+**Oldin** (`energy_balance._anchor_pysebal`, kaskadning 4-metodi):
+```python
+    ndvi_max = _safe_num(ns, 'NDVI_max', 0.7)
+    ndvi_std = _safe_num(ns, 'NDVI_stdDev', 0.05)
+    cold_mean = _safe_num(cs, 'LST_mean', 295.0)
+    cold_std = _safe_num(cs, 'LST_stdDev', 2.0)
+    ndvi_p10 = _safe_num(np_, 'NDVI', 0.1).max(0.05)
+    hot_mean = _safe_num(hs, 'LST_mean', 305.0)
+    hot_std = _safe_num(hs, 'LST_stdDev', 2.0)
+
+def _safe_num(d, key, default):
+    v = d.get(key, default)
+    return ee.Number(ee.Algorithms.If(v, v, default))      # 0 ham "yo'q" → default
+
+def _pn(d, key, sentinel):
+    v = d.get(key, sentinel)
+    return ee.Number(ee.Algorithms.If(v, v, sentinel))     # 0 ham "yo'q" → sentinel
+```
+**Keyin:**
+```python
+    ndvi_max = _pn(ns, 'NDVI_max', _HI)        # yo'q → maska bo'sh → metod "topilmadi"
+    ndvi_std = _pn(ns, 'NDVI_stdDev', _LO)
+    cold_mean = _pn(cs, 'LST_mean', _LO)
+    cold_std = _pn(cs, 'LST_stdDev', _HI)
+    p10 = _pn(np_, 'NDVI', _LO)
+    ndvi_p10 = ee.Number(ee.Algorithms.If(p10.gt(_LO), p10.max(0.05), p10))   # 0.05 chegara faqat haqiqiy qiymatga
+    hot_mean = _pn(hs, 'LST_mean', _HI)
+    hot_std = _pn(hs, 'LST_stdDev', _HI)
+
+def _pn(d, key, sentinel):
+    v = d.get(key, sentinel)
+    return ee.Number(ee.Algorithms.If(ee.Algorithms.IsEqual(v, None), sentinel, v))   # faqat null → sentinel
+```
+- Statistika chiqmasa maska **bo'sh** bo'ladi (sentinel ±1e6 — "qiymat yo'q" belgisi, anchor qiymati sifatida ishlatilmaydi) → metod "topilmadi" → kaskad keyingi metodga o'tadi. Fizik default (295 K, 305 K, 0.7 …) YO'Q.
+- `_safe_num` o'chirildi (boshqa joyda ishlatilmagan).
+- `_pn` endi faqat null ni sentinel qiladi — cimec va plan_b ham shu funksiyani ishlatadi; haqiqiy 0.0 qiymat endi saqlanadi.
+
+GEE sinovi:
+
+| Tekshiruv | Oldin | Keyin |
+|---|---|---|
+| `_pn`: qiymat 0 | sentinel | **0** ✅ |
+| `_pn`: null / kalit yo'q | sentinel | sentinel (−1e6 / +1e6) |
+| pysebal, Samarqand 20 km 2023-07-11: cold nomzodlar | **0 ta** (cold LST = None → metod topilmasdi) | **1 ta**, LST 307.04 K |
+| pysebal: hot nomzodlar / hot LST | 18 715 / 329.154 K | 18 715 / 329.154 K |
+| pysebal, bo'sh base | 0 / 0 | 0 / 0 |
+
+Oldin cold nomzodlar bo'sh chiqishining sababi: NDVI eng yuqori guruhida bitta piksel qolgan, uning LST_stdDev = 0; `If(0, 0, 2.0)` bu 0 ni "yo'q" deb olib **2.0 K** qo'ygan → `LST ≤ mean − 2.0` → bo'sh maska. Ya'ni soxta default haqiqiy sahnada pysebal metodini ishdan chiqarib qo'ygan.
