@@ -237,73 +237,103 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                 return im.addBands(_slt.lst_dem(im), overwrite=True)
             return im
 
-        img_anchor = _anchor_view(img)
-        # Empirik L↓: Rn−G₀ hali yo'q → anchor zona/LST tanlanadi (need_rn=False).
-        anchors = energy_balance.select_anchor_pixels(
-            img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
-            method=anchor_method, anchor_mode=anchor_mode,
-            need_rn=not ldown_empirical,
-            hot_soil=cfg.is_id_mode(mode))   # SEBAL_ID oilasi: hot — faqat tuproq piksel
-
-        # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
-        # keyingi barcha bosqichlar AYNI qiymat va AYNI pikselni ishlatadi.
-        extra = {}
-        if ldown_empirical:
-            extra['tref'] = energy_balance.cold_anchor_surface_temp(
-                img, img_anchor, anchors, roi, anchor_mode)
-        anchors, chk = energy_balance.materialize_anchors(anchors, extra)
-        chk['cold_lst_1'] = chk.get('cold_lst')
-        c_, h_ = chk.get('cold_lst'), chk.get('hot_lst')
-        if c_ is not None and h_ is not None and c_ > 200 and h_ > 200:
-            qc.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
-
-        if not chk['valid']:
-            rn_bad = [sd for sd in ('cold', 'hot')
-                      if f'{sd}_rn_g0' in chk and (chk[f'{sd}_rn_g0'] is None
-                                                   or chk[f'{sd}_rn_g0'] <= -900)]
-            if 'dT_LST' in qc and qc['dT_LST'] < cfg.ANCHOR['min_dt']:
-                why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
-                       f"(cold {c_:.1f} K, hot {h_:.1f} K)")
-            elif 'dT_LST' in qc and rn_bad:
-                why = f"anchor Rn−G₀ topilmadi ({'/'.join(rn_bad)})"
-            else:
-                why = "anchor: cold/hot nomzod topilmadi"
-            _reject(info['dates'][i], why, qc)
-            continue   # bu sahna scene_images ga QO'SHILMAYDI
-
-        def _pur(v):
-            return f"ulush ≥{v:.2f}" if v else "ROI (zona yetmadi)"
-        print(f"{prefix}   anchor zona: cold {_pur(anchors['cold_zone_purity'])} | "
-              f"hot {_pur(anchors['hot_zone_purity'])}")
-
-        if ldown_empirical:
-            # L↓ Tref = cold anchor pikselning asl LST — topilmasa TO'XTAYDI.
-            if chk.get('tref') is None:
-                raise RuntimeError(
-                    f"{prefix} Sahna {i + 1}/{n}: cold anchor LST (L↓ Tref) "
-                    f"topilmadi — default harorat ishlatilmaydi.")
-            tref = chk['tref']
-            print(f"{prefix}   L↓ Tref = cold anchor LST ({anchor_mode}) = {tref:.2f} K")
-            img = radiation.compute_longwave_balance(img, mode, tref=tref)
-            # AYNI cold/hot maskalardan yakuniy qiymatlar (LST, Rn−G₀)
+        # Anchor → energiya balansi. Anchor topilib, FIZIK QC'dan o'tmasa (SceneQCError)
+        # — o'sha (metod, zona) chetlanadi va kaskad KEYINGI metoddan davom etadi
+        # (user qarori 2026-09-19). Har urinish L↓/energiya balansidan OLDINGI toza
+        # tasvirdan boshlanadi; muvaffaqiyatsiz urinishlar QC'ga yoziladi.
+        img_pre = img
+        tried = []                      # [(metod, zona, fizik QC sababi)]
+        img_ok = None
+        while True:
+            att = {}                    # shu urinishning QC maydonlari
+            img = img_pre
             img_anchor = _anchor_view(img)
-            anchors = energy_balance.finalize_anchor_values(
-                img_anchor, roi, anchors, anchor_mode)
-            anchors, chk2 = energy_balance.materialize_anchors(anchors)
-            if not chk2['valid']:
-                _reject(info['dates'][i], "anchor Rn−G₀ topilmadi (yakuniy bosqich)", qc)
-                continue
-            if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
-                print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
-                      f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
+            # Empirik L↓: Rn−G₀ hali yo'q → anchor zona/LST tanlanadi (need_rn=False).
+            anchors = energy_balance.select_anchor_pixels(
+                img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
+                method=anchor_method, anchor_mode=anchor_mode,
+                need_rn=not ldown_empirical,
+                hot_soil=cfg.is_id_mode(mode),   # SEBAL_ID oilasi: hot — faqat tuproq piksel
+                exclude={(m_, z_) for m_, z_, _ in tried})
 
-        try:
-            img = energy_balance.compute_all(
-                img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
-                mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=qc)
-        except energy_balance.SceneQCError as e:
-            _reject(info['dates'][i], str(e), qc)
-            continue
+            # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
+            # keyingi barcha bosqichlar AYNI qiymat va AYNI pikselni ishlatadi.
+            extra = {}
+            if ldown_empirical:
+                extra['tref'] = energy_balance.cold_anchor_surface_temp(
+                    img, img_anchor, anchors, roi, anchor_mode)
+            anchors, chk = energy_balance.materialize_anchors(anchors, extra)
+            chk['cold_lst_1'] = chk.get('cold_lst')
+            c_, h_ = chk.get('cold_lst'), chk.get('hot_lst')
+            if c_ is not None and h_ is not None and c_ > 200 and h_ > 200:
+                att.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
+            qc_tried = ("; fizik QC'dan o'tmagan anchor: " + "; ".join(
+                f"{m_}/{z_} ({r_})" for m_, z_, r_ in tried)) if tried else ''
+
+            if not chk['valid']:
+                rn_bad = [sd for sd in ('cold', 'hot')
+                          if f'{sd}_rn_g0' in chk and (chk[f'{sd}_rn_g0'] is None
+                                                       or chk[f'{sd}_rn_g0'] <= -900)]
+                if 'dT_LST' in att and att['dT_LST'] < cfg.ANCHOR['min_dt']:
+                    why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
+                           f"(cold {c_:.1f} K, hot {h_:.1f} K)")
+                elif 'dT_LST' in att and rn_bad:
+                    why = f"anchor Rn−G₀ topilmadi ({'/'.join(rn_bad)})"
+                else:
+                    why = anchors.get('fail_reason') or "anchor: cold/hot nomzod topilmadi"
+                qc.update(att)
+                _reject(info['dates'][i], why + qc_tried, qc)
+                break   # bu sahna scene_images ga QO'SHILMAYDI
+
+            def _pur(v):
+                return f"ulush ≥{v:.2f}" if v else "ROI (zona yetmadi)"
+            print(f"{prefix}   anchor: {anchors.get('method')}/{anchors.get('zone')} | zona: cold "
+                  f"{_pur(anchors['cold_zone_purity'])} | hot {_pur(anchors['hot_zone_purity'])}")
+            att['anchor'] = f"{anchors.get('method')}/{anchors.get('zone')}"
+            if anchors.get('note'):              # default zaxirasi ishlatilgan — QC'ga
+                att.setdefault('warnings', []).append(anchors['note'])
+
+            if ldown_empirical:
+                # L↓ Tref = cold anchor pikselning asl LST — topilmasa TO'XTAYDI.
+                if chk.get('tref') is None:
+                    raise RuntimeError(
+                        f"{prefix} Sahna {i + 1}/{n}: cold anchor LST (L↓ Tref) "
+                        f"topilmadi — default harorat ishlatilmaydi.")
+                tref = chk['tref']
+                print(f"{prefix}   L↓ Tref = cold anchor LST ({anchor_mode}) = {tref:.2f} K")
+                img = radiation.compute_longwave_balance(img, mode, tref=tref)
+                # AYNI cold/hot maskalardan yakuniy qiymatlar (LST, Rn−G₀)
+                img_anchor = _anchor_view(img)
+                anchors = energy_balance.finalize_anchor_values(
+                    img_anchor, roi, anchors, anchor_mode)
+                anchors, chk2 = energy_balance.materialize_anchors(anchors)
+                if not chk2['valid']:
+                    qc.update(att)
+                    _reject(info['dates'][i],
+                            "anchor Rn−G₀ topilmadi (yakuniy bosqich)" + qc_tried, qc)
+                    break
+                if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
+                    print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
+                          f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
+
+            try:
+                img = energy_balance.compute_all(
+                    img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
+                    mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=att)
+            except energy_balance.SceneQCError as e:
+                tried.append((anchors.get('method'), anchors.get('zone'), str(e)))
+                print(f"{prefix}   ↪ {anchors.get('method')}/{anchors.get('zone')}: {e} "
+                      f"— keyingi metod sinaladi")
+                continue
+            img_ok = img
+            qc.update(att)
+            if tried:
+                qc.setdefault('warnings', []).append(qc_tried.lstrip('; '))
+            break
+
+        if img_ok is None:
+            continue   # sahna rad etildi (sababi _reject'da)
+        img = img_ok
         _grid_tpw_qc(img, roi, mode, qc, prefix)   # qiymatlarga TEGMAYDI
         img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
                                         utc_offset=utc_offset,
@@ -407,7 +437,7 @@ def _grid_tpw_qc(img, roi, mode, qc, prefix):
 def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
     """Sahna sifat jadvali (print) + CSV (joriy papkada) — eksportdan OLDIN."""
     import csv
-    cols = ['sana', 'status', 'sabab', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
+    cols = ['sana', 'status', 'sabab', 'anchor', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
             'P_sum', 'window', 'converged', 'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
             'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
             'Ta_hot', 'Ta_era5_hot', 'Ta_cold', 'Ta_era5_cold', 'pct_Ta_out15',
@@ -1034,11 +1064,11 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         process_by_tile=False, # True=har tile alohida
 
         # Anchor tanlash strategiyasi (beton kaskad):
-        #   'cimec' (DEFAULT) | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
-        #   | 'default'. Nomlangan metod birinchi sinaladi, keyin qolganlari
-        #   (cimec → plan_a → plan_b → pysebal), avval ekin zonasida, so'ng
-        #   ROI'da; hech biri chiqmasa 'default' persentil fallback.
-        #   'cascade' = 'cimec' bilan bir xil tartib. Har qadam log'da chiqadi.
+        #   'cimec' (DEFAULT) | 'plan_a' | 'plan_b' | 'default' | 'pysebal'
+        #   | 'cascade'. Tartib: cimec → plan_a → plan_b → default → pysebal;
+        #   nomlangan metod birinchi, keyin qolganlari shu tartibda; avval ekin
+        #   zonasida, so'ng ROI'da. Hech biri topmasa — sahna rad etiladi.
+        #   'cascade' = 'cimec'. default zaxirasi loglanadi (QC). Har qadam log'da.
         anchor_method='cimec',
         # anchor_mode: kandidatlardan qiymat olish qadami (anchor_method'dan
         #   ALOHIDA emas — o'sha metod topgan kandidatlar ustida ishlaydi):

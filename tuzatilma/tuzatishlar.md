@@ -40,13 +40,15 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 35 | 2026-09-19 | LAI va EMISSIVITY (→ Z0M, Z0H) Landsat gridida (ee.Image(konstanta).where o'rniga Landsat band asos) | ✅ commit 0e170ab | surface_props.py |
 | 36 | 2026-09-19 | Yagona tahlil gridi analysis_proj (Landsat NDVI) — barcha anchor va CSV reduksiyalarida crs aniq | ✅ commit 0e170ab | energy_balance.py, main.py |
 | 37 | 2026-09-19 | Sahna QC: grid (6 band proyeksiyasi = Landsat gridi) + SMW TPW (min/max, klasslar soni) | ✅ commit 0e170ab | main.py, radiation.py |
-| 38 | 2026-09-19 | Cold anchor Ta QC ogohlantirishi: \|Ta_cold − Ta_ERA5\| > 5 K (cfg.ANCHOR['cold_ta_warn']) | ✅ commit qilinmagan | config.py, energy_balance.py |
-| 39 | 2026-09-19 | Konstanta asosli `where` (Kr ×2, sug'orish klassi) → Landsat band asos; CHIRPS yog'ini yo'q kun → xato (soxta P = 0 va unmask(0) olib tashlandi) | ✅ commit qilinmagan | water_balance.py, consumptive_use.py, ndvi_kc.py, root_zone_water.py, irrigation.py |
-| 40 | 2026-09-19 | Anchor valid: cold_rn_g0 ham hot kabi tekshiriladi; cold → hot Rn−G₀ zaxirasi olib tashlandi | ✅ commit qilinmagan | energy_balance.py, main.py |
-| 41 | 2026-09-19 | Rs24 (get_daily_solar_radiation): mahalliy kalendar kun — sana yarim tunga qirqiladi | ✅ commit qilinmagan | daily_et.py |
-| 42 | 2026-09-19 | λ = (2.501 − 0.00236·(Ts − 273.15))·10⁶ — 273.0 → 273.15 | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py |
-| 43 | 2026-09-19 | ANCHOR_SCALE = 100 m — BARCHA rejimlarda (oldin ROI 30 m / CSV-tile 100 m) | ✅ commit qilinmagan | energy_balance.py, main.py |
-| 44 | 2026-09-19 | point_anchor: default va pysebal (chegarasiz LST dumlari) — nomzodlarning eng chetdagi 5 % i tashlanadi | ✅ commit qilinmagan | energy_balance.py, config.py |
+| 38 | 2026-09-19 | Cold anchor Ta QC ogohlantirishi: \|Ta_cold − Ta_ERA5\| > 5 K (cfg.ANCHOR['cold_ta_warn']) | ✅ commit 3667e04 | config.py, energy_balance.py |
+| 39 | 2026-09-19 | Konstanta asosli `where` (Kr ×2, sug'orish klassi) → Landsat band asos; CHIRPS yog'ini yo'q kun → xato (soxta P = 0 va unmask(0) olib tashlandi) | ✅ commit 3667e04 | water_balance.py, consumptive_use.py, ndvi_kc.py, root_zone_water.py, irrigation.py |
+| 40 | 2026-09-19 | Anchor valid: cold_rn_g0 ham hot kabi tekshiriladi; cold → hot Rn−G₀ zaxirasi olib tashlandi | ✅ commit 3667e04 | energy_balance.py, main.py |
+| 41 | 2026-09-19 | Rs24 (get_daily_solar_radiation): mahalliy kalendar kun — sana yarim tunga qirqiladi | ✅ commit 3667e04 | daily_et.py |
+| 42 | 2026-09-19 | λ = (2.501 − 0.00236·(Ts − 273.15))·10⁶ — 273.0 → 273.15 | ✅ commit 3667e04 | daily_et.py, monthly_analytics.py |
+| 43 | 2026-09-19 | ANCHOR_SCALE = 100 m — BARCHA rejimlarda (oldin ROI 30 m / CSV-tile 100 m) | ✅ commit 3667e04 | energy_balance.py, main.py |
+| 44 | 2026-09-19 | point_anchor: default va pysebal (chegarasiz LST dumlari) — nomzodlarning eng chetdagi 5 % i tashlanadi | ✅ commit 3667e04 | energy_balance.py, config.py |
+| 45 | 2026-09-19 | Anchor kaskadi: cimec → plan_a → plan_b → default → pysebal (default kaskad ichida); default zaxirasi LOGLANADI (QC); hech biri topmasa — sahna sababi bilan rad | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 46 | 2026-09-19 | Anchor fizik QC'dan o'tmasa — kaskad KEYINGI metoddan davom etadi (metod/zona chetlanadi); urinishlar QC'ga yoziladi | ✅ commit qilinmagan | main.py, energy_balance.py |
 
 ---
 
@@ -1617,4 +1619,69 @@ GEE sinovi (100 m, SEBAL_Milliy):
 Kuzatuv: 07-11 (100 m) cold juda barqaror qatlamda (rah_cold 197 s/m) — cold iteratsiyasi 15 qadamda yaqinlashmadi → OGOHLANTIRISH (#29 mexanizmi); raster yopilishi baribir aniq.
 
 To'liq yil sinovi (#38–#44 kodi, 100 m, SEBAL_Milliy, Samarqand 20 km, 2023): **to'xtamadi** — 24 sahna, **23 qabul**, 1 rad (03-13 nam tasvir: H_hot −37.1, dT_hot −11.30 ≤ 2.29). Mart (03-21) va dekabr (12-10) endi yaroqli sahnaga ega (oldingi yillik run'larda ikkalasi bo'sh edi). Ogohlantirishlar: cold Ta > 5 K — 06-01 (**+14.4 K**, |ΔTa| > 15 K piksellar 98 %), 06-09 (+6.1 K), 08-04 (+5.4 K); 07-11 — cold iteratsiyasi 15 qadamda yaqinlashmadi; TPW 2 klass — 10 sahna.
+
+---
+
+## #45 — Anchor kaskadi: cimec → plan_a → plan_b → default → pysebal; default zaxirasi loglanadi
+
+User qarori: "logga chiqar, tashlab ketma"; "default rejimida turmasin — boshidan cimec, a, b, default, keyin pysebal shu tartibda; birida topilmasa boshqasiga o'tsin".
+
+**Oldin:**
+- `_CANON_ORDER = (cimec, plan_a, plan_b, pysebal)`; `default` — alohida funksiya (`_select_anchor_default`): `anchor_method='default'` bo'lsa kaskadsiz yolg'iz ishlardi, aks holda barcha metodlar (lc + ROI) yiqilgandan keyin so'nggi zaxira;
+- default ichida: qat'iy nomzod (NDVI + albedo + LST) yo'q bo'lsa — JIM zaxira (faqat LST sharti), hech qayerda ko'rinmasdi.
+
+**Keyin:**
+```python
+_CANON_ORDER = ('cimec', 'plan_a', 'plan_b', 'default', 'pysebal')
+def _anchor_default(image, geom, base, diag=None):   # boshqa metodlar kabi (cold_mask, hot_mask)
+    ... qat'iy nomzodlar soni n_cold/n_hot → diag; n = 0 → zaxira (faqat LST) — SAQLANADI
+# kaskad (lc, keyin ROI): har metod → _finalize_anchor(..., extra=diag)
+#   zaxira ishlatilsa: "⚠️ default zaxirasi (lc): cold (NDVI ≥ p95 ∧ albedo < 0.20 nomzodi yo'q → faqat LST ≤ p20)"
+#   → anchors['note'] → sahna QC warnings (CSV sabab, status OGOHLANTIRISH)
+# hech biri topmasa: valid=0, fail_reason = "anchor: barcha metodlar (cimec → … → pysebal) lc va ROI da topilmadi"
+_UNBOUNDED_METHODS = ('default', 'pysebal')     # point_anchor: 5 % kesish (#44)
+# main: QC CSV'ga 'anchor' ustuni (metod/zona); log: "anchor: cimec/lc | zona: …"
+```
+`_select_anchor_default` olib tashlandi; `anchor_method` — kaskadning birinchi metodi (main default 'cimec' → to'liq tartib).
+
+GEE sinovi (SEBAL_Milliy, 100 m, point):
+
+| Sinov | Natija |
+|---|---|
+| 07-11, kaskad | cimec/lc (o'zgarmadi) |
+| 12-10, kaskad | cimec (ΔT 3.8) → plan_a (bo'sh) → plan_b (ΔT 3.4) → **default/lc topdi** → fizik QC: RAD (`2.37 ≤ 2.53`). Oldingi tartibda pysebal (#44) qabul qilingan edi |
+| 07-11, `default`, sun'iy cold_albedo_max = 0 | `⚠️ default zaxirasi (lc): cold (… nomzodi yo'q → faqat LST ≤ p20)` → CSV `OGOHLANTIRISH` (zaxira pikselida cold Ta ham +16.4 K) |
+| 07-11, sun'iy min_dt = 100 | 10 urinish (5 metod × lc/ROI) → `❌ anchor: barcha metodlar (cimec → plan_a → plan_b → default → pysebal) lc va ROI da topilmadi` → sahna shu sabab bilan rad |
+
+---
+
+## #46 — Anchor fizik QC'dan o'tmasa, kaskad keyingi metoddan davom etadi
+
+User qarori: "ha qo'sh, keyingi metodni sinasin".
+
+**Oldin:** kaskad faqat "nomzod topilmadi" (bo'sh maska, ΔT < 5 K, Rn−G₀ yo'q) holatida keyingi metodga o'tardi. Metod anchor topib, u energiya balansida fizik QC'dan o'tmasa (`SceneQCError`: H_hot ≤ 0, dT_hot ≤ dT_cold, ΔT himoyasi, anchor Rn−G₀ yo'q) — sahna darhol rad etilardi (2023-12-10: default/lc → RAD, pysebal sinalmasdi).
+
+**Keyin** (`main.process_tile`):
+```python
+img_pre = img; tried = []
+while True:
+    att = {}                                  # shu urinish QC maydonlari
+    img = img_pre                             # L↓ / energiya balansidan OLDINGI toza tasvir
+    anchors = select_anchor_pixels(..., exclude={(metod, zona) for tried})
+    ... (materialize, Tref/L↓/finalize — avvalgidek)
+    try:   img = compute_all(..., qc=att)
+    except SceneQCError as e:
+        tried.append((metod, zona, str(e)));  print("↪ metod/zona: … — keyingi metod sinaladi");  continue
+    qc.update(att);  if tried: qc warnings += "fizik QC'dan o'tmagan anchor: …";  break
+# hech biri qolmasa: RAD — "anchor: barcha metodlar … topilmadi; fizik QC'dan o'tmagan anchor: …"
+```
+`energy_balance.select_anchor_pixels(..., exclude=…)` — chetlangan (metod, zona) qadamlarini o'tkazib yuboradi.
+
+GEE sinovi (SEBAL_Milliy, 100 m, point):
+
+| Sahna | Natija |
+|---|---|
+| 12-10 | default/lc: `dT_hot 2.37 ≤ dT_cold 2.53` → keyingisi → **pysebal/lc qabul** (dT_hot 2.37 > dT_cold 2.18); CSV: `anchor=pysebal/lc`, sabab: "fizik QC'dan o'tmagan anchor: default/lc (…)" |
+| 07-11 | cimec/lc — o'zgarmadi |
+| 03-13 (nam tasvir) | 6 ta topilgan anchor ham fizik QC'dan o'tmadi: cimec/lc, default/lc, pysebal/lc, cimec/ROI, default/ROI, pysebal/ROI (H_hot ≤ 0 yoki dT_hot ≤ dT_cold) → RAD, sababi hammasi ro'yxati bilan |
 
