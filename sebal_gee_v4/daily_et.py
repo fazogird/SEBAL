@@ -3,15 +3,22 @@ SEBAL-GEE v4 — M9: Daily & Monthly ET
 =======================================
 Lahzali λE dan kunlik va oylik ET ga o'tish.
 
-Daily mode:
-  ET₂₄ = Λ × Rn24 / λ  (mm/day)
-  Rn24 = (1 - α) × Rs24 - 110 × τsw  [De Bruin/Slob]
+Kunlik (sahna kuni):
+  SEBAL_B / pysebal : ET₂₄ = Λ × Rn24 × 86400 / λ
+                      Rn24 = (1 − α)·Rs24 − 110·τ24,  τ24 = Rs24 / Ra24  [de Bruin 1987;
+                      Bastiaanssen 2000] — Rs24 ERA5 (mahalliy kun), Ra24 FAO-56 Eq 21
+  SEBAL_ID          : ET₂₄ = ETrF_inst × ETr24   (Tasumi 2003, Eq 5.6–5.8)
+  SEBAL_Milliy      : ET₂₄ = ET_inst × Rs24·86400 / SSRD_inst — LOYIHAGA XOS quyosh
+                      masshtablash (kitobdan emas)
 
-Monthly mode:
-  1. Har Landsat sana uchun Λ hisoblash
-  2. Sanalar orasida Λ ni lineer interpolyatsiya
-  3. Har kun: ET_kun = Λ_interp × Rn24_kun / λ
-  4. Oylik yig'indi: ET_month = Σ ET_kun
+Oylik (Σ kunlar):
+  Har kun — VAQT BO'YICHA ENG YAQIN sahna (sahnaning vakillik davri; chegara —
+  qo'shni sahnalar o'rtasi; Tasumi Eq 5.9 / Bastiaanssen 2002), PIKSEL bo'yicha
+  eng yaqin YAROQLI sahna (bulutli piksel mavsum o'rtachasi bilan to'ldirilmaydi):
+    SEBAL_B : EF, ALBEDO, LST (λ) o'sha sahnadan; Rn24 — o'sha kunning Rs24/Ra24
+    SEBAL_ID: ETrF o'sha sahnadan × o'sha kunning ETr24
+    Milliy  : SOLAR_FRAC o'sha sahnadan × o'sha kunning Rs24
+  QC: kundan eng yaqin sahnagacha maks masofa > DAILY_ET['max_scene_gap_days'] → ogohlantirish.
 
 Kalit printsip: Λ (evaporative fraction) kunboyi va bir necha
 hafta oralig'ida nisbatan barqaror — Bastiaanssen (1998),
@@ -21,6 +28,7 @@ Input:  Image(s) with EVAP_FRAC + ERA5 daily radiation
 Output: ET₂₄ (mm/day) yoki ET_monthly (mm/month)
 """
 
+import math
 import ee
 from . import config as cfg
 from . import ref_et   # SEBAL_ID: kunlik alfalfa ETr24 (ETrF ekstrapolyatsiya)
@@ -109,6 +117,61 @@ def get_daily_solar_radiation(date, roi, utc_offset=0):
     return rs24
 
 
+def get_daily_ra24(date):
+    """
+    Kunlik atmosfera tashqarisi radiatsiyasi Ra24 (W/m², sutka o'rtachasi) — FAO-56
+    Eq 21, piksel kengligi bo'yicha; Rs24 bilan AYNI kalendar kun (sana yarim tunga
+    qirqiladi, get_daily_solar_radiation / get_daily_etr24 kabi).
+    """
+    day = ee.Date(ee.Date(date).format('YYYY-MM-dd'))
+    doy = ee.Number(day.getRelative('day', 'year')).add(1)
+    calc = ref_et.RefETCalculator()
+    dr, dec = calc._dr_decl(doy)
+    lat = ee.Image.pixelLonLat().select('latitude').multiply(math.pi / 180.0)
+    ra = calc.Ra_daily(lat, doy, dr, dec)                        # MJ/m²/kun
+    return ra.multiply(1e6 / cfg.DAILY_ET['seconds_per_day']).rename('RA24')
+
+
+def daily_rn24(albedo, rs24, ra24, rs24_surface=None):
+    """
+    Kunlik sof radiatsiya (SEBAL, de Bruin 1987; Bastiaanssen 2000):
+        Rn24 = (1 − α)·Rs24 − 110·τ24,   τ24 = Rs24 / Ra24
+    τ24 — O'SHA KUNNING haqiqiy o'tkazuvchanligi (ERA5 Rs24 / astronomik Ra24).
+    Ochiq osmon TAU_SW (0.75 + 2·10⁻⁵·z) EMAS — u ERA5 real Rs24 bilan aralashtirilsa
+    bulutli kunlarda Rn24 110·(τ_ochiq − τ24) ga kam chiqardi.
+    rs24_surface — qiya yuza: (1 − α) hadidagi Rs24 (τ24 gorizontal Rs24 dan).
+    Qaytaradi: (Rn24 'RN24', τ24 'TAU24').
+    """
+    tau24 = rs24.divide(ra24.max(1e-6)).clamp(0, 1).rename('TAU24')
+    rs_s = rs24 if rs24_surface is None else rs24_surface
+    rn24 = (albedo.multiply(-1).add(1.0).multiply(rs_s)
+            .subtract(tau24.multiply(cfg.DAILY_ET['rn24_constant']))
+            .max(0).rename('RN24'))
+    return rn24, tau24
+
+
+def month_scene_qc(image_list, year, month):
+    """
+    Oylik QC (klient, BITTA getInfo): (shu oydagi sahnalar soni, oyning biror kunidan
+    eng yaqin sahnagacha MAKS masofa, kun). Masofa > DAILY_ET['max_scene_gap_days']
+    → OGOHLANTIRISH (o'sha kunlar uzoq sahna qiymati bilan hisoblanadi). Sahna
+    darajasida — pikselning bulut maskasi hisobga olinmaydi.
+    """
+    import calendar
+    from datetime import datetime, timezone
+    ts = ee.List([ee.Image(im).get('system:time_start') for im in image_list]).getInfo()
+    days = calendar.monthrange(year, month)[1]
+    t_days = [t / 86400000.0 for t in ts]
+    d0 = datetime(year, month, 1, tzinfo=timezone.utc).timestamp() / 86400.0
+    gap = max(min(abs(d0 + k - s) for s in t_days) for k in range(days))
+    n_in = sum(1 for s in t_days if d0 <= s < d0 + days)
+    thr = cfg.DAILY_ET['max_scene_gap_days']
+    if gap > thr:
+        print(f"    ⚠️ {year}-{month:02d}: kundan eng yaqin sahnagacha maks {gap:.1f} kun "
+              f"(> {thr}) — shu kunlar uzoq sahna qiymati bilan hisoblanadi")
+    return n_in, round(gap, 1)
+
+
 # ==============================================================
 # ET₂₄ — Kunlik ET (bitta sana uchun)
 # ==============================================================
@@ -136,23 +199,27 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
     Kunlik ET hisoblash — bitta Landsat sahna uchun.
 
     SEBAL_B (EF o'z-o'zini saqlash — Bastiaanssen 1998):
-      ET₂₄ = Λ × Rn24 × 86400 / λ    (Rn24 = (1-α)·Rs24 − 110·τsw)
+      ET₂₄ = Λ × Rn24 × 86400 / λ    (Rn24 = (1-α)·Rs24 − 110·τ24, τ24 = Rs24/Ra24)
 
     SEBAL_ID (ETrF o'z-o'zini saqlash — Tasumi 2003, Eq 5.6–5.8):
       ETrF_inst = ET_inst / ETr_inst  (overpass)
       ET₂₄ = ETrF_inst × ETr24        (ETr24 = kunlik alfalfa referens ET)
       Advektiv muhitda (Idaho) ETr Rn−G'dan yaxshiroq umumiy bug'lanish indeksi.
 
+    SEBAL_Milliy — loyihaga xos quyosh masshtablash (kitobdan emas):
+      ET₂₄ = ET_inst × Rs24·86400 / SSRD_inst.
+
     λ = harorat bog'liq (Tasumi 3.48). 1 kg/m² = 1 mm.
-    Returns: Image with ET_24 (+ SEBAL_B: RN24; SEBAL_ID: ETRF_INST, ETR24) bands.
+    Returns: Image with ET_24 (+ RN24, TAU24; SEBAL_ID: ETRF_INST, ETR24) bands.
     """
     date = ee.Date(image.get('system:time_start'))
     evap_frac = image.select('EVAP_FRAC')
     albedo = image.select('ALBEDO')
-    tau_sw = image.select('TAU_SW')
 
-    # 1. Rs24 — ERA5 dan (mahalliy standart kun)
+    # 1. Rs24 — ERA5 dan (mahalliy standart kun); Ra24 — o'sha kun (τ24 uchun)
     rs24 = get_daily_solar_radiation(date, roi, utc_offset=utc_offset)
+    rs24_h = rs24                                      # gorizontal (τ24 uchun)
+    ra24 = get_daily_ra24(date)
     # QIYA YUZA: sutkalik radiatsiya qiyalik/ekspozitsiyaga qarab o'zgaradi.
     # Koeffitsientlar SAHNA BANDI sifatida saqlanadi ('RA24_RATIO', 'C_RAD') —
     # oylik hisobda ular ETrF bilan birga interpolyatsiya qilinadi.
@@ -164,13 +231,10 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
             rs24 = rs24.multiply(ra_ratio).rename('RS24')   # SEBAL_B: Rn24 orqali
     image = image.addBands(rs24)
 
-    # 2. Rn24 — De Bruin/Slob
-    rn24 = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
-            .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-            .max(0)
-            .rename('RN24'))
+    # 2. Rn24 — de Bruin: (1−α)·Rs24 − 110·τ24, τ24 = Rs24/Ra24 (o'sha kun)
+    rn24, tau24 = daily_rn24(albedo, rs24_h, ra24, rs24_surface=rs24)
 
-    image = image.addBands(rn24)
+    image = image.addBands(rn24).addBands(tau24)
 
     # λ HAROTARGA BOG'LIQ (Tasumi Eq. 3.48): (2.501 − 0.00236·(Ts−273.15))·10⁶ J/kg
     lam = (image.select('LST').subtract(273.15).multiply(-0.00236)
@@ -261,7 +325,7 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
     elif cfg.is_id_mode(mode):
         bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
     else:
-        bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST'] + \
+        bands = ['EVAP_FRAC', 'ALBEDO', 'LST'] + \
                 (['RA24_RATIO'] if sloping_terrain else [])
     coll = ee.ImageCollection(image_list).select(bands)
     dem_img = (ee.Image(image_list[0]).select('DEM')
@@ -271,12 +335,12 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
         off = ee.Number(off)
         d = month_start.advance(off, 'day')
         if mode == 'SEBAL_Milliy':
-            interp = _nearest_scene(coll, d)
+            interp = _nearest_valid(coll, d)
             rs24 = get_daily_solar_radiation(d, roi, utc_offset=utc_offset)
             return (interp.select('SOLAR_FRAC').multiply(rs24)
                     .multiply(cfg.DAILY_ET['seconds_per_day']).max(0).rename('ET_DAY'))
         elif cfg.is_id_mode(mode):
-            interp = _nearest_scene(coll, d)
+            interp = _nearest_valid(coll, d)
             etrf = interp.select('ETRF_INST')
             if sloping_terrain:
                 etrf = etrf.multiply(interp.select('C_RAD'))
@@ -284,13 +348,12 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
                                     utc_offset=utc_offset, source=etr24_source)
             return etrf.multiply(etr24).max(0).rename('ET_DAY')
         else:
-            interp = _interpolate_lambda(coll, d)
+            interp = _nearest_valid(coll, d)
             rs24 = get_daily_solar_radiation(d, roi, utc_offset=utc_offset)
-            if sloping_terrain:
-                rs24 = rs24.multiply(interp.select('RA24_RATIO'))
-            rn24 = ((ee.Image(1.0).subtract(interp.select('ALBEDO'))).multiply(rs24)
-                    .subtract(ee.Image(cfg.DAILY_ET['rn24_constant'])
-                              .multiply(interp.select('TAU_SW'))).max(0))
+            rs24_s = (rs24.multiply(interp.select('RA24_RATIO'))
+                      if sloping_terrain else rs24)
+            rn24, _ = daily_rn24(interp.select('ALBEDO'), rs24, get_daily_ra24(d),
+                                 rs24_surface=rs24_s)
             lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                    .add(2.501).multiply(1e6))
             return (interp.select('EVAP_FRAC').multiply(rn24)
@@ -308,22 +371,20 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
                        etrf_water_balance=False, ref_type='alfalfa',
                        utc_offset=0, etr24_source='era5', sloping_terrain=False):
     """
-    Oylik ET hisoblash — Λ interpolyatsiya + ERA5 kunlik radiatsiya.
-
-    Jarayon:
-      1. Oydagi barcha Landsat sahnalardan Λ va albedo olish
-      2. Sanalar orasida Λ ni lineer interpolyatsiya
-      3. Oyning har kuni uchun:
-         - Λ_interp = interpolated evaporative fraction
-         - Rs24 = ERA5 dan shu kungi quyosh radiatsiyasi
-         - Rn24 = (1-α)×Rs24 - 110×τsw
-         - ET_kun = Λ_interp × Rn24 × conversion
-      4. Oylik yig'indi: ET_month = Σ ET_kun
+    Oylik ET (mm/oy) = Σ kunlik ET. Har kun — VAQT BO'YICHA ENG YAQIN sahna
+    (vakillik davri; piksel bo'yicha eng yaqin YAROQLI sahna — _nearest_valid):
+      SEBAL_B / pysebal: EF, ALBEDO, LST (λ) o'sha sahnadan;
+                         Rn24 = (1−α)·Rs24 − 110·τ24, τ24 = Rs24/Ra24 (o'sha kun, ERA5);
+                         ET_kun = EF × Rn24 × 86400 / λ
+      SEBAL_ID : ET_kun = ETrF × ETr24 (Tasumi Eq 5.9)
+      SEBAL_Milliy : ET_kun = SOLAR_FRAC × Rs24 × 86400 (loyihaga xos)
+    Metadata: n_landsat_scenes (SHU oydagi sahnalar), max_gap_days (QC).
 
     Parameters
     ----------
     image_list : list of ee.Image
-        SEBAL natijasi bo'lgan tasvirlar (EVAP_FRAC, ALBEDO, TAU_SW)
+        SEBAL natijasi bo'lgan tasvirlar (SEBAL_B: EVAP_FRAC, ALBEDO, LST;
+        SEBAL_ID: ETRF_INST; SEBAL_Milliy: SOLAR_FRAC)
     roi : ee.Geometry
     year : int
     month : int
@@ -352,6 +413,7 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
 
     days_in_month = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
+    n_in_month, max_gap = month_scene_qc(image_list, year, month)   # QC (klient)
 
     # ---- 1. Landsat sanalar va Λ qiymatlarini olish ----
     # Har bir image dan: sana, Λ, albedo, τsw
@@ -369,14 +431,12 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
         interp_collection = ee.ImageCollection(image_list).select(bands)
         dem_img = ee.Image(image_list[0]).select('DEM')
     else:
-        bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST'] + \
+        # TAU_SW EMAS (u vaqtga bog'liq emas; kunlik τ24 = Rs24/Ra24 har kun hisoblanadi)
+        bands = ['EVAP_FRAC', 'ALBEDO', 'LST'] + \
                 (['RA24_RATIO'] if sloping_terrain else [])
         interp_collection = ee.ImageCollection(image_list).select(bands)
         dem_img = None
     lambda_collection = interp_collection
-
-    # Agar oyda bitta ham tasvir bo'lmasa — None qaytarish
-    count = lambda_collection.size()
 
     # ---- 2. Har kun uchun interpolyatsiya va ET hisoblash ----
     def compute_day_et(day_offset):
@@ -387,15 +447,14 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
         if mode == 'SEBAL_Milliy':
             # SOLAR upscaling monthly: SOLAR_FRAC (=ET_inst/SSRD) ENG YAQIN sahnadan,
             # × o'sha kunning Rs24 jami (get_daily_solar_radiation × 86400).
-            interp = _nearest_scene(lambda_collection, current_date)
+            interp = _nearest_valid(lambda_collection, current_date)
             solar_frac = interp.select('SOLAR_FRAC')
             rs24 = get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
             et_day = (solar_frac.multiply(rs24)
                       .multiply(cfg.DAILY_ET['seconds_per_day']).max(0))
         elif cfg.is_id_mode(mode):
             # Eq 5.9: har tasvir ±8 kunni ifodalaydi → ENG YAQIN sahna hukmron
-            # (o'rtachalash YO'Q — SEBAL_B ning midpoint usulidan farqli)
-            interp = _nearest_scene(lambda_collection, current_date)
+            interp = _nearest_valid(lambda_collection, current_date)
             etrf_interp = interp.select('ETRF_INST')
             # QIYA YUZA (Eq 5.18): ETrF24 = C_rad · ETrF_inst
             if sloping_terrain:
@@ -405,18 +464,15 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
                                     source=etr24_source)
             et_day = etrf_interp.multiply(etr24).max(0)
         else:
-            # SEBAL_B — o'zgarmagan: ikki sahna o'rtachasi (midpoint)
-            interp = _interpolate_lambda(lambda_collection, current_date)
-            # SEBAL_B: ET_kun = EF_interp × Rn24 × 86400 / λ
+            # SEBAL_B / pysebal: sahnaning vakillik davri (eng yaqin sahna) — EF,
+            # ALBEDO, LST AYNI sahnadan (oldin (oldingi+keyingi)/2 midpoint edi).
+            interp = _nearest_valid(lambda_collection, current_date)
+            # SEBAL_B: ET_kun = EF × Rn24 × 86400 / λ
             rs24 = get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
-            if sloping_terrain:
-                rs24 = rs24.multiply(interp.select('RA24_RATIO'))
-            albedo_interp = interp.select('ALBEDO')
-            tau_sw = interp.select('TAU_SW')
-            rn24 = ((ee.Image(1.0).subtract(albedo_interp)).multiply(rs24)
-                    .subtract(
-                        ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-                    .max(0))
+            rs24_s = (rs24.multiply(interp.select('RA24_RATIO'))
+                      if sloping_terrain else rs24)
+            rn24, _ = daily_rn24(interp.select('ALBEDO'), rs24,
+                                 get_daily_ra24(current_date), rs24_surface=rs24_s)
             evap_frac = interp.select('EVAP_FRAC')
             lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                    .add(2.501).multiply(1e6))
@@ -439,93 +495,37 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
                   .set('year', year)
                   .set('month', month)
                   .set('days_in_month', days_in_month)
-                  .set('n_landsat_scenes', count))
+                  .set('n_landsat_scenes', n_in_month)     # SHU oydagi sahnalar
+                  .set('max_gap_days', max_gap))           # QC: eng yaqin sahnagacha maks kun
 
     return et_monthly
 
 
-def _nearest_scene(collection, target_date):
+def _nearest_valid(collection, target_date):
     """
-    SEBAL_ID (Tasumi Eq 5.9) — ENG YAQIN sahna (vaqt bo'yicha) hukmron.
-
-    "every image represents a period of about 16 days, with 8 days before and
-     8 days after the day of the processed image" → har kun o'ziga eng yaqin
-    sahnaning ETrF sini oladi (O'RTACHALASH YO'Q).
-    Masalan 8 va 24 mart sahnalari: 1–16 mart → 8-mart ETrF; 16–31 mart → 24-mart.
+    Sahnaning VAKILLIK DAVRI — har PIKSEL uchun vaqt bo'yicha ENG YAQIN YAROQLI sahna
+    (Tasumi 2003 Eq 5.9: har sahna ±8 kunni ifodalaydi; chegara — qo'shni sahnalar
+    o'rtasi, shuning uchun L8+L9 zichligiga avtomatik moslashadi).
+    Sifat bandi = −|t_sahna − t_kun| (sahna bandlarining UMUMIY maskasi bilan) →
+    qualityMosaic: har piksel eng yaqin YAROQLI sahnaning BARCHA bandlarini oladi
+    (EF, ALBEDO, LST … — bitta sahnadan). Hech bir sahnada yaroqli bo'lmasa — piksel bo'sh.
+    Oldin: eng yaqin sahna, bulutli piksel → BUTUN DAVR O'RTACHASI (collection.mean());
+    SEBAL_B'da esa (oldingi + keyingi)/2 midpoint.
     """
-    t = ee.Number(target_date.millis())
+    t = ee.Number(ee.Date(target_date).millis())
+    bands = ee.Image(collection.first()).bandNames()
 
-    def _dt(img):
-        return img.set('dt', ee.Number(img.get('system:time_start'))
-                       .subtract(t).abs())
+    def _q(img):
+        dt = ee.Number(img.get('system:time_start')).subtract(t).abs()
+        valid = img.mask().reduce(ee.Reducer.min())
+        q = ee.Image.constant(dt.multiply(-1)).toDouble().rename('QNEAR').updateMask(valid)
+        return img.addBands(q)
 
-    nearest = ee.Image(collection.map(_dt).sort('dt').first())
-    return nearest.unmask(collection.mean())   # bulutli piksel → kolleksiya o'rtachasi
+    proj = ee.Image(collection.first()).select(0).projection()
+    return (collection.map(_q).qualityMosaic('QNEAR').select(bands)
+            .setDefaultProjection(proj))
 
 
-def _interpolate_lambda(lambda_collection, target_date):
-    """
-    Ikkita eng yaqin Landsat sana orasida — MIDPOINT (o'rtacha) qiymat.
- 
-    Agar target_date barcha tasvirlardan OLDIN bo'lsa:
-      -- eng yaqin (birinchi) tasvirning Lambda qiymatini olish (ekstrapolyatsiya)
-    Agar target_date barcha tasvirlardan KEYIN bo'lsa:
-      -- eng yaqin (oxirgi) tasvirning Lambda qiymatini olish (ekstrapolyatsiya)
-    Aks holda:
-      -- oldingi va keyingi sahna orasidagi BARCHA kunlarga bitta xil
-         qiymat: (Lambda_before + Lambda_after) / 2 (pog'onali,
-         chiziqli og'irlik EMAS -- vaqt masofasi hisobga olinmaydi)
- 
-    2/3/4+ ta sahna bo'lsa ham mantiq avtomatik moslashadi: har kun
-    o'ziga eng yaqin oldingi va keyingi sahnani qidiradi, shu ikkisi
-    orasida o'rtacha qiymat qo'llanadi (kesma-kesma pog'onali funksiya).
-    """
-    target_millis = target_date.millis()
- 
-    # Oldingi tasvir (target_date dan oldin yoki teng)
-    before_col = (lambda_collection
-                  .filter(ee.Filter.lte('system:time_start', target_millis))
-                  .sort('system:time_start', False))  # eng yaqini birinchi
- 
-    # Keyingi tasvir (target_date dan keyin yoki teng)
-    after_col = (lambda_collection
-                 .filter(ee.Filter.gte('system:time_start', target_millis))
-                 .sort('system:time_start', True))  # eng yaqini birinchi
- 
-    # Oldingi bor-yo'qligini tekshirish
-    has_before = before_col.size().gt(0)
-    has_after = after_col.size().gt(0)
- 
-    # Default: to'liq collection ning o'rtachasi (fallback)
-    default_image = lambda_collection.mean()
- 
-    # # Faqat oldingi bor
-
-    before_image = ee.Image(ee.Algorithms.If(
-    has_before,
-    ee.Image(before_col.first()).unmask(default_image),
-    default_image
-    ))
- 
-    after_image = ee.Image(ee.Algorithms.If(
-    has_after,
-    ee.Image(after_col.first()).unmask(default_image),
-    default_image
-    ))
- 
-    # O'rtacha (midpoint) qiymat: Lambda = (before + after) / 2
-    # Ikki sahna orasidagi BARCHA kunlarga bir xil qiymat beriladi
-    # (chiziqli og'irlik EMAS -- pog'onali/qadam funksiyasi)
-    interpolated = (before_image.add(after_image)).multiply(0.5)
- 
-    # Agar faqat bir tomoni bor bo'lsa — eng yaqinini olish
-    result = ee.Image(ee.Algorithms.If(
-        has_before.And(has_after),
-        interpolated,
-        ee.Algorithms.If(has_before, before_image, after_image)
-    ))
- 
-    return result.unmask(default_image)
 # ==============================================================
 # SEASONAL SUMMARY
 # ==============================================================

@@ -694,7 +694,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
 
     if mode == 'pysebal':
         monthly = monthly_analytics.compute_all_monthly(
-            scene_images, roi, year, month)
+            scene_images, roi, year, month, utc_offset=utc_offset)
     else:
         monthly = daily_et.compute_monthly_et(
             scene_images, roi, year, month, mode=mode,
@@ -952,7 +952,10 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
                 scenes, roi, yr, mo, utc_offset=utc_offset)
             monthly = monthly.addBands(awimg.select(
                 ['AW', 'AW_Eff', 'AVAILABLE_WATER', 'DP_MONTHLY', 'N_IRRIG', 'TAW']))
-        month_fcs.append(_reduce(monthly, mon_bands, {'year': yr, 'month': mo}))
+        month_fcs.append(_reduce(monthly, mon_bands, {
+            'year': yr, 'month': mo,
+            'n_landsat_scenes': monthly.get('n_landsat_scenes'),   # shu oydagi sahnalar
+            'max_gap_days': monthly.get('max_gap_days')}))          # QC
     if month_fcs:
         month_fc = ee.FeatureCollection(month_fcs).flatten()
         t2 = ee.batch.Export.table.toDrive(
@@ -1435,9 +1438,11 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 from datetime import datetime
                 start_dt = datetime.strptime(date_start, '%Y-%m-%d')
                 
-                # Oylik ET hisoblash
-                monthly = monthly_analytics.compute_all_monthly(
-                    scenes, roi, start_dt.year, start_dt.month)
+                # Oylik ET — HAR REJIM O'Z usulida (oldin barcha rejimlar uchun
+                # pysebal uslubidagi monthly_analytics ishlatilardi)
+                uo = utc_offset if utc_offset is not None else daily_et.utc_offset_from_roi(roi)
+                monthly = daily_et.compute_monthly_et(
+                    scenes, roi, start_dt.year, start_dt.month, mode=mode, utc_offset=uo)
                 
                 # OpenET oylik olish (mm/month)
                 openet = validation.get_openet_monthly(

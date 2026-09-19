@@ -492,16 +492,14 @@ def downscale_target_to_30m(coarse_target, weight, viirs_projection,
 # 12. Daily ET — Lambda mode
 # ==============================================================
 
-def daily_rn24(date, roi, albedo, tau_sw):
+def daily_rn24(date, roi, albedo):
     """
-    Daily RN24 — MAVJUD SEBAL formulasi bilan AYNAN bir xil
-    (daily_et.py / monthly_analytics): Rn24 = (1-α)·Rs24 - 110·τsw.
-    albedo/τsw anchorlardan interpolyatsiya qilinadi.
+    Daily RN24 — daily_et.daily_rn24 bilan AYNI formula:
+    Rn24 = (1-α)·Rs24 - 110·τ24, τ24 = Rs24/Ra24 (o'sha kun). albedo anchorlardan.
+    (Rs24 — bu modulning o'z kun konvensiyasi: ma._get_daily_rs24, UTC kun.)
     """
     rs24 = ma._get_daily_rs24(date, roi)
-    rn24 = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
-            .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-            .max(0).rename('RN24'))
+    rn24, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(date))
     return rn24
 
 
@@ -541,11 +539,10 @@ def compute_conservation_metrics(target_30, coarse_target, roi,
 # ==============================================================
 
 def interp_radiation_bands(anchor_images, target_date):
-    """albedo va τsw ni anchorlar orasidan interpolyatsiya (reuse)."""
+    """albedo ni anchorlar orasidan interpolyatsiya (reuse). τ endi kunlik τ24 = Rs24/Ra24."""
     col = ee.ImageCollection([a['image'] for a in anchor_images])
-    interp = ma._interpolate_bands(col, ee.Date(target_date),
-                                   ['ALBEDO', 'TAU_SW'])
-    return interp.select('ALBEDO'), interp.select('TAU_SW')
+    interp = ma._interpolate_bands(col, ee.Date(target_date), ['ALBEDO'])
+    return interp.select('ALBEDO')
 
 
 # ==============================================================
@@ -785,8 +782,8 @@ def build_daily_viirs_downscaled_collection(
         t30 = fill_temporal_gaps(source_col, d, temporal_fill)
 
         if target_mode == 'lambda':
-            albedo, tau = interp_radiation_bands(anchors, d)
-            rn24 = daily_rn24(d, roi, albedo, tau)
+            albedo = interp_radiation_bands(anchors, d)
+            rn24 = daily_rn24(d, roi, albedo)
             et = compute_daily_et_lambda_mode(t30, rn24)
         else:  # kc
             etref = _daily_etref(anchors, d, roi)
@@ -821,21 +818,16 @@ def _daily_etref(anchors, date, roi):
     """
     col = ee.ImageCollection([a['image'] for a in anchors])
     interp = ma._interpolate_bands(
-        col, ee.Date(date), ['ETREF_24', 'RN24', 'ALBEDO', 'TAU_SW'])
+        col, ee.Date(date), ['ETREF_24', 'RN24', 'ALBEDO'])
 
     etref_scene = interp.select('ETREF_24')
     rn_scene = interp.select('RN24').max(1)
     albedo = interp.select('ALBEDO')
-    tau_sw = interp.select('TAU_SW')
 
     rs24 = ma._get_daily_rs24(date, roi)
 
-    # Bugungi Rn24 — monthly_analytics.py bilan bir xil formula
-    rn24_actual = (
-        (ee.Image(1.0).subtract(albedo)).multiply(rs24)
-        .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-        .max(0)
-    )
+    # Bugungi Rn24 — daily_et.daily_rn24 bilan bir xil formula (τ24 = Rs24/Ra24)
+    rn24_actual, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(date))
 
     rad_ratio = rn24_actual.divide(rn_scene).clamp(0, 1.5)
     return etref_scene.multiply(rad_ratio).rename('ETREF_24')
@@ -912,8 +904,8 @@ def build_tile_monthly_et_viirs(scene_images, info, tile_roi, start, end,
     for d in _days_in_range(start, end):
         lam = fill_temporal_gaps(source_col, d, temporal_fill)
         if target_mode == 'lambda':
-            albedo, tau = interp_radiation_bands(anchors, d)
-            rn24 = daily_rn24(d, tile_roi, albedo, tau)
+            albedo = interp_radiation_bands(anchors, d)
+            rn24 = daily_rn24(d, tile_roi, albedo)
             et = compute_daily_et_lambda_mode(lam, rn24)
         else:
             etref = _daily_etref(anchors, d, tile_roi)

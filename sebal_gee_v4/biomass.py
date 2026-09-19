@@ -67,16 +67,13 @@ def compute_apar(image):
     Biz K_DOWN (lahzali) ni ishlatamiz — kunlik o'rtachaga moslash
     """
     fpar = image.select('FPAR')
-    rn24 = image.select('RN24')
-    albedo = image.select('ALBEDO')
-    tau_sw = image.select('TAU_SW')
 
-    # Rs24 ni RN24 dan tiklash:
-    # Rn24 = (1-α)×Rs24 - 110×τsw → Rs24 = (Rn24 + 110×τsw) / (1-α)
-    albedo_safe = albedo.max(0.05)
-    rs24 = (rn24.add(ee.Image(110.0).multiply(tau_sw))
-            .divide(ee.Image(1.0).subtract(albedo_safe))
-            .max(0))
+    # Rs24 — daily_et.compute_daily_et qo'shgan 'RS24' bandi (ERA5, mahalliy kun)
+    # TO'G'RIDAN-TO'G'RI. Oldin Rn24 formulasini ochiq osmon TAU_SW bilan teskari
+    # yechib tiklanardi: Rs24 = (Rn24 + 110·τsw)/(1−α). Rn24 endi kunlik
+    # τ24 = Rs24/Ra24 bilan hisoblanadi (#47) — teskari yechim mos kelmaydi
+    # (dekabrda Rs24 ~+19 %); haqiqiy Rs24 bandi esa bor.
+    rs24 = image.select('RS24')
 
     par = rs24.multiply(PAR_FRACTION)  # W/m²
     apar = fpar.multiply(par).rename('APAR')

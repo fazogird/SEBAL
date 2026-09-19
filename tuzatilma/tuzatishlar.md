@@ -47,8 +47,13 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 42 | 2026-09-19 | λ = (2.501 − 0.00236·(Ts − 273.15))·10⁶ — 273.0 → 273.15 | ✅ commit 3667e04 | daily_et.py, monthly_analytics.py |
 | 43 | 2026-09-19 | ANCHOR_SCALE = 100 m — BARCHA rejimlarda (oldin ROI 30 m / CSV-tile 100 m) | ✅ commit 3667e04 | energy_balance.py, main.py |
 | 44 | 2026-09-19 | point_anchor: default va pysebal (chegarasiz LST dumlari) — nomzodlarning eng chetdagi 5 % i tashlanadi | ✅ commit 3667e04 | energy_balance.py, config.py |
-| 45 | 2026-09-19 | Anchor kaskadi: cimec → plan_a → plan_b → default → pysebal (default kaskad ichida); default zaxirasi LOGLANADI (QC); hech biri topmasa — sahna sababi bilan rad | ✅ commit qilinmagan | energy_balance.py, main.py |
-| 46 | 2026-09-19 | Anchor fizik QC'dan o'tmasa — kaskad KEYINGI metoddan davom etadi (metod/zona chetlanadi); urinishlar QC'ga yoziladi | ✅ commit qilinmagan | main.py, energy_balance.py |
+| 45 | 2026-09-19 | Anchor kaskadi: cimec → plan_a → plan_b → default → pysebal (default kaskad ichida); default zaxirasi LOGLANADI (QC); hech biri topmasa — sahna sababi bilan rad | ✅ commit 7efafb2 | energy_balance.py, main.py |
+| 46 | 2026-09-19 | Anchor fizik QC'dan o'tmasa — kaskad KEYINGI metoddan davom etadi (metod/zona chetlanadi); urinishlar QC'ga yoziladi | ✅ commit 7efafb2 | main.py, energy_balance.py |
+| 47 | 2026-09-19 | Kunlik Rn24: τ24 = Rs24/Ra24 (o'sha kun) — ochiq osmon TAU_SW o'rniga (SEBAL_B, pysebal, VIIRS); TAU_SW interpolyatsiyadan chiqarildi | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py, viirs_downscaling.py, config.py |
+| 48 | 2026-09-19 | Oylik: sahnaning vakillik davri — har piksel uchun vaqt bo'yicha eng yaqin YAROQLI sahna (SEBAL_B midpoint va mavsum o'rtachasi bilan to'ldirish olib tashlandi) | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py |
+| 49 | 2026-09-19 | Oylik QC: max_gap_days (> 8 kun ogohlantirish); n_landsat_scenes — shu oydagi sahnalar; pysebal Rs24 mahalliy kun; CSV oylik qatorlariga QC | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py, main.py, config.py |
+| 50 | 2026-09-19 | validate: har rejim o'z oylik usulida (oldin barcha rejimlar pysebal uslubida) | ✅ commit qilinmagan | main.py |
+| 51 | 2026-09-19 | biomass APAR: Rs24 to'g'ridan-to'g'ri RS24 bandidan (Rn24 ni TAU_SW bilan teskari yechish olib tashlandi) | ✅ commit qilinmagan | biomass.py |
 
 ---
 
@@ -1684,4 +1689,68 @@ GEE sinovi (SEBAL_Milliy, 100 m, point):
 | 12-10 | default/lc: `dT_hot 2.37 ≤ dT_cold 2.53` → keyingisi → **pysebal/lc qabul** (dT_hot 2.37 > dT_cold 2.18); CSV: `anchor=pysebal/lc`, sabab: "fizik QC'dan o'tmagan anchor: default/lc (…)" |
 | 07-11 | cimec/lc — o'zgarmadi |
 | 03-13 (nam tasvir) | 6 ta topilgan anchor ham fizik QC'dan o'tmadi: cimec/lc, default/lc, pysebal/lc, cimec/ROI, default/ROI, pysebal/ROI (H_hot ≤ 0 yoki dT_hot ≤ dT_cold) → RAD, sababi hammasi ro'yxati bilan |
+
+To'liq yil sinovi (commit 7efafb2 kodi, SEBAL_Milliy, Samarqand 20 km, 2023): **to'xtamadi** — 24 sahna, 23 qabul, 1 rad (03-13 nam tasvir: 6 ta anchor ham fizik QC'dan o'tmadi). Anchor: 22 sahna cimec/lc; 12-10 — default/lc fizik QC'dan o'tmadi → pysebal/lc qabul. Barcha oylar (mart–dekabr, sahnasi bor) yaroqli.
+
+---
+
+## #47–#51 — Lahzalikdan kunlik va oylik ET'ga o'tish (upscaling) tuzatildi
+
+User qarori: "Bismillah, ha bos" (reja A–F + validate; GPT tahlili bilan birga ko'rib chiqilgan).
+
+**Muammolar (oldin):**
+
+| # | Joy | Oldin | Muammo |
+|---|---|---|---|
+| A | SEBAL_B / pysebal / VIIRS kunlik Rn24 | `(1−α)·Rs24 − 110·TAU_SW`, TAU_SW = 0.75 + 2·10⁻⁵·z | ERA5 REAL Rs24 bilan OCHIQ OSMON τ aralashgan; formula (de Bruin 1987; Bastiaanssen 2000) kunlik τ24 = Rs24/Ra24 ni talab qiladi. Qishda (1−α)Rs24 ≈ 81 < 84 W/m² → Rn24 ≈ 0 → ET ≈ 0 |
+| A | Oylik interpolyatsiya ro'yxati | `[EVAP_FRAC, ALBEDO, TAU_SW, LST]` | TAU_SW vaqtga bog'liq emas — interpolyatsiyasi ma'nosiz |
+| B | SEBAL_B / pysebal oylik | `_interpolate_lambda`: (oldingi + keyingi)/2 — sahnalar orasidagi BARCHA kunlarga | na chiziqli, na vakillik davri; sahnadan keyingi kundanoq o'rtachaga sakraydi |
+| C | Barcha modellar (B, ID, Milliy, CUirr seriyasi) | eng yaqin sahnada bulutli piksel → `collection.mean()` (BUTUN DAVR o'rtachasi) | vaqt mazmuni yo'qoladi |
+| D/E | Metadata | `n_landsat_scenes` = butun davrdagi sahnalar; bo'shliq QC yo'q | |
+| — | pysebal oylik (monthly_analytics) | Rs24 — UTC kun | mahalliy kun emas (#41 ning nusxasi) |
+| G | `validate=True` | barcha rejimlar uchun `monthly_analytics` (pysebal uslubi) | ID/Milliy begona usul bilan tekshirilardi |
+| #51 | `biomass.compute_apar` (pysebal) | Rs24 = (RN24 + 110·TAU_SW)/(1−α) (teskari yechim) | RN24 τ24 bilan (#47) → teskari yechim mos emas; haqiqiy RS24 bandi bor |
+
+**Keyin:**
+```python
+# daily_et.py
+def get_daily_ra24(date):          # FAO-56 Eq 21, piksel kengligi, AYNI kalendar kun → W/m²
+def daily_rn24(albedo, rs24, ra24, rs24_surface=None):
+    tau24 = (rs24 / ra24).clamp(0, 1)                      # KUNLIK o'tkazuvchanlik
+    rn24  = (1 − α)·rs24_surface − 110·tau24               # qiya yuza: τ24 gorizontal Rs24 dan
+    return rn24 ('RN24'), tau24 ('TAU24')
+def _nearest_valid(collection, date):   # sahnaning vakillik davri, PIKSEL bo'yicha eng yaqin YAROQLI sahna
+    q = −|t_sahna − t_kun| (bandlar umumiy maskasi bilan) → qualityMosaic('QNEAR') → bitta sahnaning barcha bandlari
+def month_scene_qc(image_list, year, month):   # (shu oydagi sahnalar, maks masofa kun); > 8 → ⚠️
+# compute_daily_et: RN24, TAU24 bandlari yangi formula bilan (barcha rejim; ET faqat SEBAL_B'da RN24 dan)
+# compute_monthly_et / daily_et_series: SEBAL_B → [EVAP_FRAC, ALBEDO, LST] _nearest_valid + daily_rn24;
+#   SEBAL_ID → ETRF_INST _nearest_valid; SEBAL_Milliy → SOLAR_FRAC _nearest_valid;
+#   metadata: n_landsat_scenes (shu oy), max_gap_days
+# monthly_analytics (pysebal): ET/biomassa/komponentlar — _nearest_valid + daily_rn24 + Rs24 MAHALLIY kun (utc_offset)
+# viirs_downscaling: faqat Rn24 → daily_et.daily_rn24 (τ24); o'z anchor-interpolyatsiya usuli o'zgarmagan
+# main: validate → daily_et.compute_monthly_et(mode=mode); CSV oylik qatorlariga n_landsat_scenes, max_gap_days
+# biomass.compute_apar: rs24 = image.select('RS24')
+```
+Config: `DAILY_ET['max_scene_gap_days'] = 8` (Tasumi Eq 5.9: har sahna ≈ ±8 kun). SEBAL_Milliy — hujjatlarda "loyihaga xos quyosh masshtablash" (kitobdan emas).
+
+**GEE sinovlari** (Samarqand 20 km, point, 100 m anchor):
+
+Ra24 mustaqil tekshiruv (FAO-56 Eq 21, Python): 2023-07-11 **475.8 = 475.8** W/m²; 12-10 161.7 = 161.7; 03-21 334.8 = 334.8. Sahna kunlarida τ24 = 0.729 / 0.628 / 0.645 (ochiq osmon 0.764).
+
+Oylik ET, ekinzor o'rtachasi — eski kod (`7efafb2` nusxasi) va yangi, AYNI sozlama:
+
+| Rejim, oy | Eski | Yangi | Farq |
+|---|---|---|---|
+| SEBAL_B, 2023-07 | 148.8 mm | 157.2 mm | +5.6 % |
+| SEBAL_B, 2023-12 | **2.5 mm** | 12.8 mm | qishki Rn24 ≈ 0 tuzatildi |
+| pysebal, 2023-07 / 12 | 148.8 / 2.5 | 157.2 / 12.8 | SEBAL_B bilan bir xil |
+| SEBAL_ID, 2023-07 | 211.04 | 211.04 | o'zgarmadi (ROI sahnalarida bulutli piksel yo'q) |
+| SEBAL_Milliy, 2023-07 / 12 | 165.08 / 30.39 | 165.08 / 30.39 | o'zgarmadi |
+| SEBAL_B sahna 07-11 ET_24 | 6.03 | 6.14 mm/kun | +1.9 % (τ24 0.729) |
+
+Metadata / QC: iyul `n_landsat_scenes` 5 → **4** (shu oydagi), `max_gap_days` 3.7; dekabr 2 → **1**, `max_gap_days` **20.7** → `⚠️ 2023-12: kundan eng yaqin sahnagacha maks 20.7 kun (> 8)`.
+
+pysebal 12-10 sahna (ekinzor o'rtachasi), eski → yangi: RN24 2.1 → 16.1 W/m²; ET_24 **0.066 → 0.50 mm/kun** (EF 0.886 — namlangan qishki ekin; dekabr ETo ~0.8–1 mm/kun); LUE 0.031 → 0.249 (namlik stressi ET orqali); PAR 49.36 → 48.91 = 0.48·RS24 (aniq). Oylik biomassa dekabr: 36.7 → 121.9 kg/ha (asosan sahna ET_24/LUE tuzatilishidan; bir xil sahnalarda oylik funksiyaning o'zi: 132.2 → 121.9, −7.8 % — 1–9 dekabr endi 12-10 sahnasidan).
+
+GEE'da sinalmagan: VIIRS yo'li (use_viirs=False, faqat kompilyatsiya), validate (OpenET — faqat AQSh).
 

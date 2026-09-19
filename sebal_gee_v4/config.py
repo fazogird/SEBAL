@@ -470,8 +470,11 @@ ITERATION = {
 # Rn24 = (1 - α) × Rs24 - 110 × τsw (De Bruin/Slob)
 
 DAILY_ET = {
-    'rn24_constant': 110.0,  # De Bruin (1987) empirik konstanta (W/m²)
+    'rn24_constant': 110.0,  # De Bruin (1987) empirik konstanta (W/m²): Rn24 = (1−α)Rs24 − 110·τ24
     'seconds_per_day': 86400,
+    # Oylik QC: oyning biror kunidan eng yaqin sahnagacha masofa shundan oshsa —
+    # OGOHLANTIRISH (Tasumi 2003 Eq 5.9: har sahna ≈ ±8 kunni ifodalaydi).
+    'max_scene_gap_days': 8,
 }
 
 # ==============================================================

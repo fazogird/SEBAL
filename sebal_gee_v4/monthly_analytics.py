@@ -115,8 +115,10 @@ def _interpolate_bands(scene_collection, target_date, bands):
     Ikkita eng yaqin Landsat sana orasida — MIDPOINT (o'rtacha) qiymat.
     Bulut/NoData teshiklari composite mean bilan to'ldiriladi.
 
-    daily_et.py dagi _interpolate_lambda() bilan BIR XIL mantiq
-    (izchillik uchun) — chiziqli og'irlik EMAS, pog'onali:
+    ⚠️ Endi FAQAT viirs_downscaling (o'z anchor-interpolyatsiya usuli) ishlatadi.
+    SEBAL oylik hisoblari (daily_et, bu modulning compute_* funksiyalari)
+    daily_et._nearest_valid (sahnaning vakillik davri) ga o'tkazilgan.
+    Mantiq — chiziqli og'irlik EMAS, pog'onali:
 
     Agar target_date barcha tasvirlardan OLDIN bo'lsa:
       -- eng yaqin (birinchi) tasvirning qiymati (ekstrapolyatsiya)
@@ -173,38 +175,34 @@ def _interpolate_bands(scene_collection, target_date, bands):
 # OYLIK ET — Λ interpolyatsiya + ERA5
 # ==============================================================
 
-def compute_monthly_et(scene_images, roi, year, month):
+def compute_monthly_et(scene_images, roi, year, month, utc_offset=0):
     """
-    Oylik ET (mm/month) — to'g'ri interpolyatsiya.
+    Oylik ET (mm/month) — daily_et.compute_monthly_et SEBAL_B bilan AYNI mantiq.
 
-    Har kun:
-      Rn24 = (1 - α) × Rs24 - 110 × τsw
+    Har kun (eng yaqin YAROQLI sahna — vakillik davri):
+      τ24 = Rs24/Ra24 ; Rn24 = (1 - α) × Rs24 - 110 × τ24
       ET_kun = Λ × Rn24 × 86400 / λ
-
-    Λ, α, τsw — Landsat orasida interpolyatsiya
-    Rs24 — ERA5 dan har kun alohida
+    Λ, α, LST — o'sha sahnadan; Rs24 — ERA5, MAHALLIY kun (utc_offset).
     """
+    from . import daily_et
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
     spd = cfg.DAILY_ET['seconds_per_day']
 
     scene_col = ee.ImageCollection(scene_images)
-    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST']
+    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'LST']
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
         current_date = month_start.advance(day_offset, 'day')
 
-        interp = _interpolate_bands(scene_col, current_date, interp_bands)
+        interp = daily_et._nearest_valid(scene_col.select(interp_bands), current_date)
 
-        rs24 = _get_daily_rs24(current_date, roi)
+        rs24 = daily_et.get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
         albedo = interp.select('ALBEDO')
-        tau_sw = interp.select('TAU_SW')
         evap_frac = interp.select('EVAP_FRAC')
 
-        rn24 = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
-                .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-                .max(0))
+        rn24, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(current_date))
 
         # λ haroratga bog'liq (Tasumi 3.48): (2.501-0.00236·(Ts-273.15))·10⁶
         lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
@@ -223,7 +221,7 @@ def compute_monthly_et(scene_images, roi, year, month):
 # OYLIK BIOMASS — FPAR/LUE interpolyatsiya + ERA5 PAR
 # ==============================================================
 
-def compute_monthly_biomass(scene_images, roi, year, month):
+def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0):
     """
     Oylik biomassa (kg DM/ha/month).
 
@@ -232,9 +230,10 @@ def compute_monthly_biomass(scene_images, roi, year, month):
       APAR_kun = FPAR_interp × PAR_kun
       Biomass_kun = APAR_kun(MJ) × LUE_interp × 10 × 2.0
 
-    FPAR, LUE — Landsat orasida interpolyatsiya
-    Rs24 — ERA5 dan har kun
+    FPAR, LUE — eng yaqin YAROQLI sahnadan (vakillik davri)
+    Rs24 — ERA5 dan har kun (MAHALLIY kun)
     """
+    from . import daily_et
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
 
@@ -245,9 +244,9 @@ def compute_monthly_biomass(scene_images, roi, year, month):
         day_offset = ee.Number(day_offset)
         current_date = month_start.advance(day_offset, 'day')
 
-        interp = _interpolate_bands(scene_col, current_date, interp_bands)
+        interp = daily_et._nearest_valid(scene_col.select(interp_bands), current_date)
 
-        rs24 = _get_daily_rs24(current_date, roi)
+        rs24 = daily_et.get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
         fpar = interp.select('FPAR')
         lue = interp.select('LUE')
 
@@ -276,7 +275,7 @@ def compute_monthly_biomass(scene_images, roi, year, month):
 # OYLIK ET DECOMPOSITION — ETref, ETpot, deficit, T/E
 # ==============================================================
 
-def compute_monthly_et_components(scene_images, roi, year, month):
+def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
     """
     Oylik ET komponentlari.
 
@@ -290,6 +289,7 @@ def compute_monthly_et_components(scene_images, roi, year, month):
     radiatsiya nisbati bilan masshtablanadi.
     """
     from . import ref_et
+    from . import daily_et
 
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
@@ -301,21 +301,19 @@ def compute_monthly_et_components(scene_images, roi, year, month):
 
     # ETREF_24/ETPOT_24 ENDI shu ro'yxatda YO'Q — Landsat'dan
     # interpolyatsiya qilinmaydi, alohida, to'g'ridan-to'g'ri hisoblanadi
-    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'TAU_SW', 'LST',
+    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'LST',
                     'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION']
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
         current_date = month_start.advance(day_offset, 'day')
 
-        interp = _interpolate_bands(scene_col, current_date, interp_bands)
-        rs24 = _get_daily_rs24(current_date, roi)
+        interp = daily_et._nearest_valid(scene_col.select(interp_bands), current_date)
+        rs24 = daily_et.get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
 
         albedo = interp.select('ALBEDO')
-        tau_sw = interp.select('TAU_SW')
-        rn24_actual = ((ee.Image(1.0).subtract(albedo)).multiply(rs24)
-                       .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
-                       .max(0))
+        rn24_actual, _ = daily_et.daily_rn24(albedo, rs24,
+                                             daily_et.get_daily_ra24(current_date))
 
         rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
 
@@ -492,7 +490,7 @@ def compute_monthly_averages(scene_images):
 # MAIN: To'liq oylik hisoblash
 # ==============================================================
 
-def compute_all_monthly(scene_images, roi, year, month):
+def compute_all_monthly(scene_images, roi, year, month, utc_offset=0):
     """
     Barcha oylik analitikalarni hisoblash.
 
@@ -513,11 +511,13 @@ def compute_all_monthly(scene_images, roi, year, month):
       IRRIGATION_CLASS
     """
     print(f"    [{year}-{month:02d}] ET komponentlar (interpolyatsiya)...")
+    from . import daily_et
+    n_in_month, max_gap = daily_et.month_scene_qc(scene_images, year, month)   # QC
     et_components = compute_monthly_et_components(
-        scene_images, roi, year, month)
+        scene_images, roi, year, month, utc_offset=utc_offset)
 
     print(f"    [{year}-{month:02d}] Biomassa (interpolyatsiya)...")
-    biomass = compute_monthly_biomass(scene_images, roi, year, month)
+    biomass = compute_monthly_biomass(scene_images, roi, year, month, utc_offset=utc_offset)
 
     print(f"    [{year}-{month:02d}] O'rtacha bandlar...")
     averages = compute_monthly_averages(scene_images)
@@ -533,6 +533,7 @@ def compute_all_monthly(scene_images, roi, year, month):
                .set('year', year)
                .set('month', month)
                .set('days_in_month', days)
-               .set('n_scenes', len(scene_images)))
+               .set('n_scenes', n_in_month)            # SHU oydagi sahnalar
+               .set('max_gap_days', max_gap))
 
     return monthly
