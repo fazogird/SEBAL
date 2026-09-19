@@ -13,18 +13,26 @@ hisobga oladi:
     Kunlik balans: De,i = De,i-1 − (P_i − RO_i) + E_i,  E_i = Ke·ETr  (5.5)
                    0 ≤ De,i ≤ TEW
 
-Ma'lumot manbalari (foydalanuvchi tanlovi):
+Ma'lumot manbalari (foydalanuvchi tanlovi) — HAMMASI anchor tanlagan AYNAN o'sha
+hot pikselda (koordinatasi anchor'dan keladi):
   - Yog'in P: CHIRPS DAILY (UCSB-CHG/CHIRPS/DAILY, mm/kun)
-  - Tuproq θ_FC, θ_WP, REW: OpenLandMap USDA tekstura klassi → Table 5.1
-  - Ze = 0.10 m, RO = 0
+  - θ_FC (33 kPa): OpenLandMap SOL_WATERCONTENT-33KPA (0 va 10 sm qatlam o'rtachasi)
+  - θ_WP (1500 kPa): HiHydroSoil v2.0 WCpF4.2 (0–5 va 5–15 sm qatlam o'rtachasi)
+  - REW: OpenLandMap USDA tekstura klassi → FAO-56 Table 19 (_SOIL)
+  - Ze, ETrF_max, oynalar — config.HOT_WB; RO = 0
+Tuproq qiymati topilmasa — XATO (default tuproq ishlatilmaydi).
 
-Chiqish: ETrF_hot (client skalyar) — energy_balance.compute_all uni λET_hp ga
-o'giradi (λET_hp = ETrF_hot·ETr_inst·λ/3600).
+Boshlang'ich holat: balans ikki marta — De₀ = 0 (nam) va De₀ = TEW (quruq) —
+yuritiladi; overpass kuniga natijalar farqi ≤ tol bo'lmasa oyna uzaytiriladi
+(config.HOT_WB['windows'], masalan 14 → 30 → 60 kun).
+
+Chiqish: dict (etrf_hot, De, Kr, TEW, REW, FC, WP, P_sum, window, converged, …) —
+energy_balance.compute_all ETrF_hot ni λET_hp ga o'giradi, qolganini sahna QC ga yozadi.
 """
 
 import ee
-import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from . import config as cfg
 from . import ref_et
 
 CHIRPS = 'UCSB-CHG/CHIRPS/DAILY'
@@ -52,132 +60,160 @@ _SOIL = {
 _SOIL_DEFAULT = (0.25, 0.12, 9.0)   # Loam — tekstura topilmasa
 
 
-def _saxton_fc_wp(sand_pct, clay_pct, om_pct=2.0):
+def _soil_stack():
     """
-    θ_FC (33 kPa) va θ_WP (1500 kPa) — Saxton & Rawls (2006) pedotransfer.
-
-    Kirish: sand/clay OG'IRLIK % (OpenLandMap b0), om — organik modda % (default 2).
-    Chiqish: (FC, WP) hajmiy nam [m³/m³].
-
-    NEGA: tekstura-klass (12 diskret) o'rniga HAQIQIY sand/clay tarkibidan
-    UZLUKSIZ, har-piksel θ. Global (AQSh + O'zbekiston). HWSD2 da θFC/θWP alohida
-    YO'Q (faqat AWC+tekstura) → bu usul tanlandi. REW esa tekstura-klassdan (Table 19).
+    Tuproq xaritalari (xom, masshtablanmagan): 'fc' — OpenLandMap 33 kPa (qatlamlar
+    o'rtachasi), 'wp' — HiHydroSoil v2 WCpF4.2 (qatlamlar o'rtachasi), 'tex' —
+    OpenLandMap USDA tekstura. _soil_at_point VA soil_valid_mask AYNI shu manbadan.
     """
-    S = sand_pct / 100.0
-    C = clay_pct / 100.0
-    OM = om_pct
-    t15 = (-0.024 * S + 0.487 * C + 0.006 * OM + 0.005 * (S * OM)
-           - 0.013 * (C * OM) + 0.068 * (S * C) + 0.031)
-    WP = t15 + (0.14 * t15 - 0.02)
-    t33 = (-0.251 * S + 0.195 * C + 0.011 * OM + 0.006 * (S * OM)
-           - 0.027 * (C * OM) + 0.452 * (S * C) + 0.299)
-    FC = t33 + (1.283 * t33 ** 2 - 0.374 * t33 - 0.015)
-    # fizik chegara (nofizik pedotransfer chiqishidan himoya)
-    FC = min(max(FC, 0.10), 0.50)
-    WP = min(max(WP, 0.02), 0.35)
-    if WP >= FC:                    # WP < FC kafolati
-        WP = FC - 0.03
-    return FC, WP
+    hw = cfg.HOT_WB
+    fc_img = ee.Image(hw['fc_asset']).select(list(hw['fc_bands'])).reduce(ee.Reducer.mean())
+    wp_col = ee.ImageCollection(hw['wp_collection'])
+    wp_img = (ee.ImageCollection([
+        ee.Image(wp_col.filter(ee.Filter.stringContains('system:index', lay)).first())
+        for lay in hw['wp_layers']]).mean())
+    return (fc_img.rename('fc').addBands(wp_img.select([0]).rename('wp'))
+            .addBands(ee.Image(TEXTURE).select('b0').rename('tex')))
 
 
-def hot_pixel_etrf(image, roi, hot_mask, window_days=14, ze=0.10,
-                   etrf_max=1.05, verbose=True):
+def soil_valid_mask():
     """
-    Hot piksel uchun ETrF_hot ni (Kr·ETrF_max) FAO-56 kunlik suv balansidan
-    hisoblaydi. Client skalyar qaytaradi.
-
-    MUHIM: suv balansi BITTA NUQTA uchun — metod (cimec/plan/…) topgan hot
-    kandidatlar (hot_mask) ICHIDAN eng issig'i (= eng quruq, point_anchor
-    mantig'i). Yog'in LOKAL: o'sha nuqtaning CHIRPS tarixidan (butun ROI
-    o'rtachasi EMAS — yomg'ir fazoviy o'zgaruvchan).
-
-    image — overpass sahnasi (system:time_start, LST, DEM bandlari bilan).
-    hot_mask — metod topgan hot kandidat piksellar (anchors['hot_mask']).
+    1 — θ_FC, θ_WP va tekstura (FAO-56 Table 19 dagi klass) BOR piksel, aks holda 0.
+    SEBAL_ID oilasida hot anchor NOMZODLARI shu bilan cheklanadi: hot piksel tuproq
+    bo'lishi kerak (shahar/suv — tuproq xaritalarida ma'lumot yo'q; 2023-03-21 CIMEC
+    hot pikseli 53% qurilgan 250 m katakda edi → θ_WP yo'q → run to'xtardi).
     """
+    st = _soil_stack()
+    classes = sorted(_SOIL)
+    tex_ok = st.select('tex').remap(classes, [1] * len(classes), 0)
+    return (st.mask().reduce(ee.Reducer.allNonZero()).And(tex_ok)
+            .unmask(0).rename('SOIL_OK'))
+
+
+def _soil_at_point(pt, proj, scale):
+    """
+    Hot piksel nuqtasida tuproq: θ_FC (33 kPa), θ_WP (1500 kPa), REW.
+    Qatlamlar Ze ≈ 0.10 m ga mos (0–10 sm). Biror qiymat yo'q → RuntimeError.
+    Namuna ANCHOR gridida (proj, scale) — AYNAN anchor pikseli; nomzodlar maskasi
+    (soil_valid_mask) ham shu gridda baholangan → mos. (Oldin 250 m OpenLandMap
+    gridida olinardi: WP/tekstura o'sha katak MARKAZIDAN — boshqa katak bo'lishi mumkin.)
+    """
+    hw = cfg.HOT_WB
+    s = (_soil_stack()
+         .reduceRegion(ee.Reducer.first(), pt, crs=proj, scale=scale)).getInfo()
+    fc, wp, tex = s.get('fc'), s.get('wp'), s.get('tex')
+    missing = [n for n, v in (('θ_FC (OpenLandMap 33 kPa)', fc), ('θ_WP (HiHydroSoil pF4.2)', wp),
+                              ('tekstura (REW uchun)', tex)) if v is None]
+    tex_class = int(round(tex)) if tex is not None else None
+    if not missing and tex_class not in _SOIL:
+        missing.append(f'tekstura klassi {tex_class} (Table 19 da yo\'q)')
+    if missing:
+        raise RuntimeError(
+            f"Hot piksel tuprog'i topilmadi: {', '.join(missing)} — default tuproq ishlatilmaydi.")
+    FC = fc * hw['fc_scale']
+    WP = wp * hw['wp_scale']
+    REW = _SOIL[tex_class][2]
+    return FC, WP, REW, tex_class
+
+
+def hot_pixel_etrf(image, roi, hot_lonlat, grid, verbose=True):
+    """
+    Hot piksel ETrF_hot = Kr·ETrF_max — FAO-56 kunlik suv balansidan (Tasumi 2003
+    Eq. 5.1-5.5), anchor tanlagan AYNAN o'sha hot pikselda.
+
+    hot_lonlat — [lon, lat] (energy_balance anchor'idagi 'hot_point', client).
+    grid — (proj, scale): anchor tanlangan grid (tuproq AYNAN o'sha pikseldan).
+    Qaytaradi: dict — etrf_hot, De, Kr, TEW, REW, FC, WP, P_sum, window,
+    converged, etrf_wet_start, etrf_dry_start, lon, lat.
+    """
+    hw = cfg.HOT_WB
+    ze, etrf_max, tol = hw['ze'], hw['etrf_max'], hw['conv_tol']
+    lon, lat = float(hot_lonlat[0]), float(hot_lonlat[1])
+    hot_pt = ee.Geometry.Point([lon, lat])
     date = ee.Date(image.get('system:time_start'))
-    day0 = ee.Date(date.format('YYYY-MM-dd'))      # overpass kuni 00:00 UTC
-    start = day0.advance(-window_days, 'day')
+    day0_str = date.format('YYYY-MM-dd').getInfo()
+    day0 = ee.Date(day0_str)                       # overpass kuni 00:00 UTC
+    day0_py = datetime.strptime(day0_str, '%Y-%m-%d')
     dem = image.select('DEM')
 
-    # --- 1. Hot piksel BITTA NUQTASI: kandidatlar (hot_mask) ichidan eng
-    #        issig'i (max LST) + uning KOORDINATASI (max(3): LST, lon, lat). ---
-    ll = ee.Image.pixelLonLat()
-    loc = (image.select('LST').updateMask(hot_mask).addBands(ll)
-           .reduceRegion(ee.Reducer.max(3), roi, 100, maxPixels=1e9,
-                         bestEffort=True, tileScale=4)).getInfo()
-    lon = loc.get('max1'); lat = loc.get('max2')   # max=LST, max1=lon, max2=lat
-    if lon is None or lat is None:
-        if verbose:
-            print("    💧 Hot suv balansi: hot piksel topilmadi → ETrF_hot=0")
-        return 0.0
-    hot_pt = ee.Geometry.Point([lon, lat])
+    # --- 1. Tuproq — AYNAN shu nuqtada (OpenLandMap 33 kPa, HiHydroSoil pF4.2) ---
+    FC, WP, REW, tex_class = _soil_at_point(hot_pt, *grid)
+    TEW = 1000.0 * (FC - 0.5 * WP) * ze
+    tew_note = ''
+    if TEW <= REW:                                      # Kr formulasi TEW > REW talab qiladi
+        tew_note = f' (TEW {TEW:.1f} ≤ REW {REW:.1f} → TEW = REW + 1)'
+        print(f"    ⚠️ Hot suv balansi: TEW {TEW:.1f} ≤ REW {REW:.1f} — TEW = REW + 1 olindi")
+        TEW = REW + 1.0
 
-    # --- 2. Tuproq SHU NUQTADA: sand/clay → Saxton-Rawls θFC/θWP (uzluksiz);
-    #        REW tekstura-klassdan (FAO-56 Table 19). Bitta reduceRegion. ---
-    soil_img = (ee.Image(SAND).select('b0').rename('sand')
-                .addBands(ee.Image(CLAY).select('b0').rename('clay'))
-                .addBands(ee.Image(TEXTURE).select('b0').rename('tex')))
-    s = soil_img.reduceRegion(ee.Reducer.first(), hot_pt, 250,
-                              maxPixels=1e9).getInfo()
-    sand = s.get('sand'); clay = s.get('clay'); tex = s.get('tex')
-    tex_class = int(round(tex)) if (tex is not None and tex >= 1) else -1
-    _, _, REW = _SOIL.get(tex_class, _SOIL_DEFAULT)       # REW — tekstura (Table 19)
-    if sand is not None and clay is not None:
-        FC, WP = _saxton_fc_wp(sand, clay)               # uzluksiz pedotransfer
-        soil_src = f"Saxton(S{sand:.0f}/C{clay:.0f})"
-    else:                                                 # fallback: tekstura Table 5.1
-        FC, WP, REW = _SOIL.get(tex_class, _SOIL_DEFAULT)
-        soil_src = f"tex#{tex_class}"
-    TEW = max(1000.0 * (FC - 0.5 * WP) * ze, REW + 1.0)   # TEW>REW kafolati
+    # --- 2. Kunlik P (CHIRPS) va ETr (alfalfa FAO-56 PM) — shu nuqtada, oyna bo'lib ---
+    p_by_day, etr_by_day = {}, {}
 
-    # --- 3. Kunlik P (CHIRPS) SHU NUQTADA — bitta getRegion (vaqt qatori) ---
-    p_rows = (ee.ImageCollection(CHIRPS).filterDate(start, day0)
-              .select('precipitation').getRegion(hot_pt, 5000)).getInfo()
-    p_by_day = {}
-    for r in p_rows[1:]:
-        d_str = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
-        p_by_day[d_str] = r[4] if r[4] is not None else 0.0
-
-    # --- 4. Kunlik ETr (alfalfa FAO-56 PM) SHU NUQTADA ---
-    #   DIQQAT: butun oynani BITTA getRegion bilan olish katta tile'da GEE
-    #   "User memory limit exceeded" beradi — har kun 24 soatlik ERA5 .map
-    #   (shamol/ea) chuqur graf, kunlar soni × stacklanadi (goh o'tadi, goh
-    #   limit). Shu sabab getRegion'ni KICHIK BO'LAKLARGA (chunk) bo'lib
-    #   chaqiramiz: fizika/qiymatlar AYNAN bir xil, faqat har so'rov yengil.
-    def _etr_img(d):
-        day = start.advance(ee.Number(d), 'day')
+    def _etr_img(day):
         met = ref_et.get_daily_era5_aggregate(day, roi)
         etr = (ref_et.RefETCalculator(ref_type='alfalfa')
                .calculate(met, dem, mode='daily').select('ETr'))
         return etr.set('system:time_start', day.millis())
 
-    etr_by_day = {}
-    CHUNK = 5
-    for c0 in range(0, window_days, CHUNK):
-        seq = ee.List.sequence(c0, min(c0 + CHUNK, window_days) - 1)
-        rows = (ee.ImageCollection(seq.map(_etr_img))
-                .getRegion(hot_pt, 100)).getInfo()
+    def _fetch(n_from, n_to):
+        """[day0 − n_from, day0 − n_to) kunlari (n_from > n_to ≥ 0)."""
+        start, end = day0.advance(-n_from, 'day'), day0.advance(-n_to, 'day')
+        rows = (ee.ImageCollection(hw['precip_collection']).filterDate(start, end)
+                .select(hw['precip_band']).getRegion(hot_pt, 5000)).getInfo()
         for r in rows[1:]:
-            d_str = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
-            etr_by_day[d_str] = r[4] if r[4] is not None else 0.0
+            d = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
+            if r[4] is None:
+                raise RuntimeError(f"Hot piksel yog'ini ({hw['precip_collection']}) {d} kuni yo'q.")
+            p_by_day[d] = r[4]
+        # ETr — "User memory limit" bo'lmasligi uchun 5 kunlik bo'laklar
+        CHUNK = 5
+        for c0 in range(n_to, n_from, CHUNK):
+            c1 = min(c0 + CHUNK, n_from)
+            days = ee.List.sequence(c0 + 1, c1).map(
+                lambda k: day0.advance(ee.Number(k).multiply(-1), 'day'))
+            rws = (ee.ImageCollection(days.map(lambda d: _etr_img(ee.Date(d))))
+                   .getRegion(hot_pt, 100)).getInfo()
+            for r in rws[1:]:
+                d = datetime.fromtimestamp(r[3] / 1000, tz=timezone.utc).strftime('%Y-%m-%d')
+                if r[4] is None:
+                    raise RuntimeError(f"Hot piksel ETr (ERA5 FAO-56) {d} kuni yo'q.")
+                etr_by_day[d] = r[4]
 
-    # --- 5. FAO-56 kunlik balans (Python skalyar), oyna kunlari tartibida ---
-    De = TEW      # boshlang'ich: quruq (oyna ichida yomg'ir bo'lsa tushadi)
-    for d_str in sorted(set(p_by_day) | set(etr_by_day)):
-        p = p_by_day.get(d_str, 0.0)
-        etr = etr_by_day.get(d_str, 0.0)
+    def _run(days, de0):
+        De = de0
+        for d in days:
+            Kr = 1.0 if De <= REW else max(0.0, min(1.0, (TEW - De) / (TEW - REW)))
+            E = Kr * etrf_max * etr_by_day[d]          # E_i = Ke·ETr
+            De = max(0.0, min(TEW, De - p_by_day[d] + E))   # RO = 0
         Kr = 1.0 if De <= REW else max(0.0, min(1.0, (TEW - De) / (TEW - REW)))
-        E = Kr * etrf_max * etr            # E_i = Ke·ETr
-        De = De - (p - 0.0) + E            # RO = 0
-        De = max(0.0, min(TEW, De))
+        return De, Kr, Kr * etrf_max
 
-    # --- Overpass kuni ETrF_hot (kirish De = oyna oxiridagi depletion) ---
-    Kr = 1.0 if De <= REW else max(0.0, min(1.0, (TEW - De) / (TEW - REW)))
-    etrf_hot = Kr * etrf_max
+    # --- 3. Boshlang'ich holatdan yaqinlashish: De₀=0 va De₀=TEW; oyna uzayadi ---
+    fetched = 0
+    for w in hw['windows']:
+        _fetch(w, fetched)
+        fetched = w
+        w_start = (day0_py - timedelta(days=w)).strftime('%Y-%m-%d')
+        days = sorted(d for d in p_by_day if d >= w_start)
+        missing = [d for d in days if d not in etr_by_day]
+        if missing or len(days) != w:
+            raise RuntimeError(f"Hot suv balansi: {w} kunlik oynada kunlar to'liq emas "
+                               f"(P {len(days)}/{w}, ETr yo'q: {missing[:3]}).")
+        De_w, Kr_w, e_wet = _run(days, 0.0)
+        De_d, Kr_d, e_dry = _run(days, TEW)
+        converged = abs(e_wet - e_dry) <= tol
+        if converged:
+            break
+    if not converged:
+        print(f"    ⚠️ Hot suv balansi {w} kunda ham yaqinlashmadi: De₀=0 → {e_wet:.3f}, "
+              f"De₀=TEW → {e_dry:.3f} (quruq boshlanish natijasi olindi)")
 
+    res = {'etrf_hot': e_dry, 'De': De_d, 'Kr': Kr_d, 'TEW': TEW, 'REW': REW,
+           'FC': FC, 'WP': WP, 'tex': tex_class, 'P_sum': sum(p_by_day[d] for d in days),
+           'window': w, 'converged': converged, 'etrf_wet_start': e_wet,
+           'etrf_dry_start': e_dry, 'lon': lon, 'lat': lat}
     if verbose:
-        print(f"    💧 Hot suv balansi @({lat:.3f},{lon:.3f}): {soil_src} "
-              f"FC={FC:.2f} WP={WP:.2f} TEW={TEW:.1f} REW={REW:.1f} | De={De:.1f} "
-              f"Kr={Kr:.3f} → ETrF_hot={etrf_hot:.3f}")
-
-    return etrf_hot
+        print(f"    💧 Hot suv balansi @({lat:.4f},{lon:.4f}): FC={FC:.3f} WP={WP:.3f} "
+              f"TEW={TEW:.1f}{tew_note} REW={REW:.1f} | oyna {w} kun, P={res['P_sum']:.1f} mm | "
+              f"De={De_d:.1f} Kr={Kr_d:.3f} → ETrF_hot={e_dry:.3f} "
+              f"({'yaqinlashdi' if converged else 'YAQINLASHMADI'}: nam-start {e_wet:.3f})")
+    return res

@@ -103,7 +103,7 @@ def get_hls_tile_geometry(mgrs_tile, date_start='2024-01-01',
 # ==============================================================
 
 def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
-                 tile_label='', anchor_method='default',
+                 tile_label='', anchor_method='cimec',
                  anchor_mode='median_anchor',
                  cloud_roi=None, cloud_use_cropland=True,
                  ref_type='alfalfa', utc_offset=None, etr24_source='era5',
@@ -212,11 +212,19 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
     scene_images = []
     scene_dates = []   # FAQAT saqlangan sahnalar sanasi (scene_images bilan indeksma-indeks)
+    qc_rows = []       # sahna sifat hisoboti (OK / OGOHLANTIRISH / RAD ETILDI + sabab)
+
+    def _reject(date, why, qc_, extra=None):
+        qc_.update(extra or {})
+        qc_.update({'status': 'RAD ETILDI', 'sabab': why})
+        print(f"{prefix} ❌ Sahna {date}: {why} — O'TKAZIB YUBORILADI")
 
     for i in range(n):
         print(f"{prefix} Sahna {i + 1}/{n}...")
 
         img = ee.Image(image_list.get(i))
+        qc = {'sana': info['dates'][i]}
+        qc_rows.append(qc)
 
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
         # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
@@ -234,18 +242,28 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         anchors = energy_balance.select_anchor_pixels(
             img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
             method=anchor_method, anchor_mode=anchor_mode,
-            need_rn=not ldown_empirical)
+            need_rn=not ldown_empirical,
+            hot_soil=cfg.is_id_mode(mode))   # SEBAL_ID oilasi: hot — faqat tuproq piksel
 
-        probe = {'valid': anchors['valid']}
+        # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
+        # keyingi barcha bosqichlar AYNI qiymat va AYNI pikselni ishlatadi.
+        extra = {}
         if ldown_empirical:
-            probe['tref'] = energy_balance.cold_anchor_surface_temp(
+            extra['tref'] = energy_balance.cold_anchor_surface_temp(
                 img, img_anchor, anchors, roi, anchor_mode)
-            probe['cold_lst_1'] = anchors['cold_lst']
-        chk = ee.Dictionary(probe).getInfo()
+        anchors, chk = energy_balance.materialize_anchors(anchors, extra)
+        chk['cold_lst_1'] = chk.get('cold_lst')
+        c_, h_ = chk.get('cold_lst'), chk.get('hot_lst')
+        if c_ is not None and h_ is not None and c_ > 200 and h_ > 200:
+            qc.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
 
         if not chk['valid']:
-            print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor topilmadi — "
-                  f"O'TKAZIB YUBORILADI")
+            if 'dT_LST' in qc:
+                why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
+                       f"(cold {c_:.1f} K, hot {h_:.1f} K)")
+            else:
+                why = "anchor: cold/hot nomzod topilmadi"
+            _reject(info['dates'][i], why, qc)
             continue   # bu sahna scene_images ga QO'SHILMAYDI
 
         def _pur(v):
@@ -266,19 +284,22 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             img_anchor = _anchor_view(img)
             anchors = energy_balance.finalize_anchor_values(
                 img_anchor, roi, anchors, anchor_mode)
-            chk2 = ee.Dictionary({'valid': anchors['valid'],
-                                  'cold_lst': anchors['cold_lst']}).getInfo()
+            anchors, chk2 = energy_balance.materialize_anchors(anchors)
             if not chk2['valid']:
-                print(f"{prefix} ❌ Sahna {i + 1}/{n}: anchor Rn−G₀ topilmadi — "
-                      f"O'TKAZIB YUBORILADI")
+                _reject(info['dates'][i], "anchor Rn−G₀ topilmadi (yakuniy bosqich)", qc)
                 continue
             if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
                 print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
                       f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
 
-        img = energy_balance.compute_all(
-            img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
-            mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws)
+        try:
+            img = energy_balance.compute_all(
+                img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
+                mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=qc)
+        except energy_balance.SceneQCError as e:
+            _reject(info['dates'][i], str(e), qc)
+            continue
+        _grid_tpw_qc(img, roi, mode, qc, prefix)   # qiymatlarga TEGMAYDI
         img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
                                         utc_offset=utc_offset,
                                         etr24_source=etr24_source,
@@ -302,6 +323,23 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
         scene_images.append(img)
         scene_dates.append(info['dates'][i])
+        qc['status'] = 'OGOHLANTIRISH' if qc.get('warnings') else 'OK'
+        qc['sabab'] = '; '.join(qc.get('warnings', []))
+
+    # ---- SAHNA SIFAT HISOBOTI — eksportdan OLDIN ----
+    _scene_qc_report(qc_rows, prefix, tile_label, mode, date_start, date_end)
+
+    # Biror oyda BIRONTA yaroqli sahna qolmasa — eksportdan OLDIN TO'XTAYDI
+    # (o'sha oy qo'shni oylardan yolg'on to'ldirilmasin).
+    months_all = sorted({d[:7] for d in info['dates']})
+    months_ok = {d[:7] for d in scene_dates}
+    empty = [m for m in months_all if m not in months_ok]
+    if empty:
+        lines = [f"   {r['sana']}: {r['sabab']}" for r in qc_rows
+                 if r.get('status') == 'RAD ETILDI' and r['sana'][:7] in empty]
+        raise RuntimeError(
+            f"{prefix} Yaroqli sahna qolmagan oy(lar): {', '.join(empty)} — "
+            f"eksport boshlanmadi. Rad etilgan sahnalar:\n" + "\n".join(lines))
 
     # info['dates']       — kolleksiyadagi BARCHA sanalar (oylar ro'yxati uchun)
     # info['scene_dates'] — faqat saqlangan sahnalar; scenes[i] ↔ scene_dates[i].
@@ -310,6 +348,85 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     info['utc_offset'] = utc_offset   # oylik hisob shu offsetni ishlatishi uchun
     info['sloping_terrain'] = sloping_terrain
     return scene_images, info
+
+
+_GRID_QC_BANDS = ('LST', 'LAI', 'EMISSIVITY', 'L_UP', 'DTA', 'RN')
+
+
+def _grid_tpw_qc(img, roi, mode, qc, prefix):
+    """
+    Sahna QC (qiymatlarga TEGMAYDI), BITTA getInfo:
+      1) Grid — LST, LAI, EMISSIVITY, L_UP, DTA, RN proyeksiyasi Landsat tahlil
+         gridiga (NDVI) teng bo'lishi shart; farq → OGOHLANTIRISH.
+      2) SEBAL_Milliy (SMW LST): ROI ichidagi ERA5 TCWV min/max va TPW klass
+         (0.6 sm) oralig'i; >1 klass → OGOHLANTIRISH (ERA5 katak chegarasida
+         ~1.4 K LST pog'onasi). Algoritm o'zgarmaydi.
+    """
+    bands = list(_GRID_QC_BANDS)            # compute_all'dan keyin doim mavjud
+    req = {b: img.select(b).projection() for b in ('NDVI',) + _GRID_QC_BANDS}
+    if mode == 'SEBAL_Milliy':
+        tpw = radiation._era5_tcwv_cm(img).rename('TPW')
+        req['tpw'] = tpw.reduceRegion(ee.Reducer.minMax(), roi, 1000, maxPixels=1e9,
+                                      bestEffort=True, tileScale=4)
+    d = ee.Dictionary(req).getInfo()
+    ref = d['NDVI']
+    ref_scale = abs(ref['transform'][0]) if ref.get('transform') else None
+    qc['grid'] = f"{ref.get('crs')} {ref_scale:g}m" if ref_scale else ref.get('crs')
+    bad = []
+    for b in bands:
+        p = d.get(b)
+        if p is not None and (p.get('crs') != ref.get('crs')
+                              or p.get('transform') != ref.get('transform')):
+            sc = abs(p['transform'][0]) if p.get('transform') else '?'
+            bad.append(f"{b} ({p.get('crs')}, {sc})")
+    qc['grid_ok'] = not bad
+    if bad:
+        msg = f"proyeksiya Landsat gridi ({qc['grid']}) dan farq qiladi: {', '.join(bad)}"
+        print(f"{prefix}   ⚠️ OGOHLANTIRISH: {msg}")
+        qc.setdefault('warnings', []).append(msg)
+    t = d.get('tpw') or {}
+    if t.get('TPW_min') is not None:
+        step, nb = radiation.SMW_TPW_STEP, radiation.SMW_TPW_NBIN
+        b0 = min(max(int(t['TPW_min'] // step), 0), nb - 1)
+        b1 = min(max(int(t['TPW_max'] // step), 0), nb - 1)
+        qc.update({'TPW_min': t['TPW_min'], 'TPW_max': t['TPW_max'],
+                   'TPW_bin_min': b0, 'TPW_bin_max': b1, 'n_TPW_bins': b1 - b0 + 1})
+        if b1 > b0:
+            msg = (f"SMW: ROI ichida {b1 - b0 + 1} ta TPW klassi ({b0}–{b1}; TCWV "
+                   f"{t['TPW_min']:.2f}–{t['TPW_max']:.2f} sm) — ERA5 katak chegarasida "
+                   f"~1.4 K LST pog'onasi bo'lishi mumkin")
+            print(f"{prefix}   ⚠️ OGOHLANTIRISH: {msg}")
+            qc.setdefault('warnings', []).append(msg)
+
+
+def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
+    """Sahna sifat jadvali (print) + CSV (joriy papkada) — eksportdan OLDIN."""
+    import csv
+    cols = ['sana', 'status', 'sabab', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
+            'P_sum', 'window', 'converged', 'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
+            'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
+            'Ta_hot', 'Ta_era5_hot', 'Ta_cold', 'Ta_era5_cold', 'pct_Ta_out15',
+            'grid', 'grid_ok', 'TPW_min', 'TPW_max', 'TPW_bin_min', 'TPW_bin_max', 'n_TPW_bins',
+            'lon', 'lat']
+    n_bad = sum(1 for r in rows if r.get('status') == 'RAD ETILDI')
+    n_warn = sum(1 for r in rows if r.get('status') == 'OGOHLANTIRISH')
+    print(f"\n{prefix} ===== SAHNA SIFAT HISOBOTI: {len(rows)} sahna | "
+          f"rad etildi {n_bad} | ogohlantirish {n_warn} =====")
+
+    def _f(v, n=2):
+        return '' if v is None else (f'{v:.{n}f}' if isinstance(v, float) else str(v))
+    for r in rows:
+        if r.get('status') != 'OK':
+            print(f"{prefix}   {r['sana']} | {r.get('status')} | {r.get('sabab')}")
+    label = tile_label or 'ROI'
+    fname = f"scene_qc_{mode}_{label}_{date_start}_{date_end}.csv"
+    with open(fname, 'w', newline='', encoding='utf-8') as fh:
+        w = csv.DictWriter(fh, fieldnames=cols, extrasaction='ignore')
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: _f(r.get(k), 4) if isinstance(r.get(k), float) else r.get(k)
+                        for k in cols})
+    print(f"{prefix}   💾 {fname}")
 
 
 # ==============================================================
@@ -713,12 +830,15 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     reducer = ee.Reducer.mean().combine(ee.Reducer.median(), sharedInputs=True)
     prefix = f'_{tile_label}' if tile_label else ''
     tasks = []
+    # Tahlil gridi (Landsat UTM) — crs ANIQ: aks holda birinchi tanlangan bandning
+    # default proyeksiyasi olinadi (oylik kompozit / LST / LAI — WGS84 grid).
+    grid = energy_balance.analysis_proj(ee.Image(scenes[0]))
 
     def _reduce(img, band_list, tags):
         # faqat MAVJUD bandlarni tanlaymiz (yo'q band select'ni buzmasin)
         sel = img.bandNames().filter(ee.Filter.inList('item', ee.List(band_list)))
         red = img.select(sel).reduceRegions(
-            collection=region_fc, reducer=reducer, scale=scale)
+            collection=region_fc, reducer=reducer, scale=scale, crs=grid)
         for k, v in tags.items():
             red = red.map(lambda f, kk=k, vv=v: f.set(kk, vv))
         return red
@@ -841,8 +961,11 @@ def _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale=30):
         date = ee.Date(img.get('system:time_start')).format('YYYY-MM-dd')
         sel = img.bandNames().filter(
             ee.Filter.inList('item', ee.List(CSV_LSTDIAG_BANDS)))
+        # crs ANIQ (Landsat grid): 3×3/5×5/PSF yadrolari so'rov gridida ishlaydi →
+        # 90×90 / 150×150 m (oldin LST birinchi band bo'lsa 4326@30 m: 90×69 m).
         red = img.select(sel).reduceRegions(
-            collection=pts, reducer=ee.Reducer.first(), scale=scale)
+            collection=pts, reducer=ee.Reducer.first(), scale=scale,
+            crs=energy_balance.analysis_proj(ee.Image(s)))
         red = red.map(lambda f, dd=date: f.set('date', dd))
         fcs.append(red)
 
@@ -906,11 +1029,12 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         process_by_tile=False, # True=har tile alohida
 
         # Anchor tanlash strategiyasi (beton kaskad):
-        #   'default' (hozirgi) | 'cimec' | 'plan_a' | 'plan_b' | 'pysebal'
-        #   | 'cascade'. Nomlangan metod birinchi sinaladi, keyin qolganlari,
-        #   avval ekin zonasida, so'ng ROI'da; hech biri chiqmasa 'default'
-        #   fallback. Har qadam log'da chiqadi.
-        anchor_method='default',
+        #   'cimec' (DEFAULT) | 'plan_a' | 'plan_b' | 'pysebal' | 'cascade'
+        #   | 'default'. Nomlangan metod birinchi sinaladi, keyin qolganlari
+        #   (cimec → plan_a → plan_b → pysebal), avval ekin zonasida, so'ng
+        #   ROI'da; hech biri chiqmasa 'default' persentil fallback.
+        #   'cascade' = 'cimec' bilan bir xil tartib. Har qadam log'da chiqadi.
+        anchor_method='cimec',
         # anchor_mode: kandidatlardan qiymat olish qadami (anchor_method'dan
         #   ALOHIDA emas — o'sha metod topgan kandidatlar ustida ishlaydi):
         #   'median_anchor' (default) = kandidatlar medianasi (hozirgi holat);
@@ -1334,7 +1458,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 # zonal extraktsiya esa polygon(lar) bo'yicha.
 
 
-def _zonal_add(fc_in, image, prop_name, scale=30, reducer=None):
+def _zonal_add(fc_in, image, prop_name, scale=30, reducer=None, crs=None):
     """
     `image` (BITTA band) ni `fc_in` polygonlari bo'yicha reduce qilib (default
     mean), natijani to'g'ridan-to'g'ri `prop_name` atributi sifatida qo'shadi
@@ -1343,7 +1467,7 @@ def _zonal_add(fc_in, image, prop_name, scale=30, reducer=None):
     """
     reducer = (reducer or ee.Reducer.mean()).setOutputs([prop_name])
     return image.reduceRegions(
-        collection=fc_in, reducer=reducer, scale=scale, tileScale=4)
+        collection=fc_in, reducer=reducer, scale=scale, crs=crs, tileScale=4)
 
 
 def run_polygons(polygon_asset,
@@ -1424,6 +1548,7 @@ def run_polygons(polygon_asset,
     if not scenes:
         print("  ❌ Sahna yo'q — to'xtatildi.")
         return {'tasks': []}
+    grid = energy_balance.analysis_proj(ee.Image(scenes[0]))   # zonal — Landsat tahlil gridi
 
     # sahna sanalari (bitta getInfo)
     scene_dates = ee.List(
@@ -1447,16 +1572,16 @@ def run_polygons(polygon_asset,
         et = monthly.select('ET_MONTHLY')
         if first_et is None:
             first_et = et
-        work = _zonal_add(work, et, f'ET_{year}_{m:02d}')
+        work = _zonal_add(work, et, f'ET_{year}_{m:02d}', crs=grid)
         print(f"  ↪ oylik zonal: ET_{year}_{m:02d}")
 
     # 7. Per-sahna zonal (ET_{YYYYMMDD} — instant ET_24)
     for s, d in zip(scenes, scene_dates):
-        work = _zonal_add(work, ee.Image(s).select('ET_24'), f'ET_{d}')
+        work = _zonal_add(work, ee.Image(s).select('ET_24'), f'ET_{d}', crs=grid)
     print(f"  ↪ {len(scenes)} sahna zonal qo'shildi")
 
     # 8. QC — valid piksel soni (first oy ET_MONTHLY count) + sahna soni
-    work = _zonal_add(work, first_et, 'n_pixels', reducer=ee.Reducer.count())
+    work = _zonal_add(work, first_et, 'n_pixels', reducer=ee.Reducer.count(), crs=grid)
     work = work.map(lambda f: f.set('n_scenes', len(scenes)))
 
     # 9. Export — asset + CSV

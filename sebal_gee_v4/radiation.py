@@ -7,7 +7,7 @@ M3 — Net Radiation Q* (Bastiaanssen F.5):
   Q* = (1 - α)×K↓ + L↓ - L↑ - (1 - ε₀)×L↓
 
 M4 — Soil Heat Flux G₀ (Simplified Bastiaanssen 2000):
-  G₀ = Q* × (T₀-273.15)/α × (0.0038α + 0.0074α²) × (1 - 0.978×NDVI⁴)
+  G₀ = Q* × (T₀-273.15)/α × (0.0038α + 0.0074α²) × (1 - 0.98×NDVI⁴)  [config.SOIL_HEAT_FLUX]
 
 Input:  Image with surface properties + ERA5
 Output: Image with Rn, G0 bands added
@@ -301,12 +301,17 @@ def compute_soil_heat_flux(image):
     should be checked against actual measurements on the ground."
 
     MAXSUS HOLATLAR (manual bo'yicha, midday qiymatlar):
-      - NDVI < 0                    → suv          → G/Rn = 0.5
-      - Ts < 4°C  VA  α > 0.45      → qor           → G/Rn = 0.5
+      - SUV → G/Rn = 0.5. Suv manbasi (ustuvorlik bilan):
+          1) sun'iy yo'ldosh QA suv biti — 'WATER_MASK' (Landsat QA_PIXEL bit 7 /
+             HLS Fmask bit 5). Loyqa/sayoz/qirg'oq suvini ham topadi, shahar
+             tomlarini (NDVI<0) suv demaydi.
+          2) 'WATER_MASK' bandi yo'q bo'lsa yoki pikselda qiymati yo'q bo'lsa —
+             NDVI < 0 (manual qoidasi).
+      - Qor maskasi ishlatilmaydi (pastda).
 
-    Diqqat: bu qoidalar QA_PIXEL WATER_MASK bandiga BOG'LIQ EMAS — manual
-    faqat spektral/termal xususiyatlar (NDVI, Ts, albedo) orqali
-    aniqlashni belgilaydi. Chuqur/tiniq suv havzalari uchun G/Rn murakkab
+    Koeffitsientlar — config.SOIL_HEAT_FLUX (c1, c2, ndvi_extinction,
+    ndvi_power, water_fraction, ratio_min, ratio_max).
+    Chuqur/tiniq suv havzalari uchun G/Rn murakkab
     (0.5 dan farqli bo'lishi mumkin — erta yozda sovuqroq ko'l, kuzda
     issiqroq ko'l); loyqa/sayoz suv uchun 0.5 dan kichikroq bo'ladi
     (qisqa to'lqin radiatsiyasi sirt yaqinida ko'proq yutiladi). Bu
@@ -330,25 +335,31 @@ def compute_soil_heat_flux(image):
     # Ts — Celsius (formula shuni talab qiladi)
     t_celsius = lst.subtract(273.15)
 
-    # G/Rn = (Ts/α) × (0.0038α + 0.0074α²)
-    #      = Ts × (0.0038 + 0.0074α)   [algebraik soddalashtirish, α bekor bo'ladi]
-    g_ratio = t_celsius.multiply(albedo.multiply(0.0074).add(0.0038))
+    gcfg = cfg.SOIL_HEAT_FLUX
 
-    # × (1 - 0.98×NDVI⁴)   — manual konstantasi 0.98 (0.978 EMAS)
-    veg_extinction = ee.Image(1.0).subtract(ndvi.pow(4).multiply(0.98))
+    # G/Rn = (Ts/α) × (c1·α + c2·α²)
+    #      = Ts × (c1 + c2·α)   [algebraik soddalashtirish, α bekor bo'ladi]
+    g_ratio = t_celsius.multiply(albedo.multiply(gcfg['c2']).add(gcfg['c1']))
+
+    # × (1 - k×NDVI^n)   — manual: k = 0.98, n = 4
+    veg_extinction = ee.Image(1.0).subtract(
+        ndvi.pow(gcfg['ndvi_power']).multiply(gcfg['ndvi_extinction']))
     g_ratio = g_ratio.multiply(veg_extinction)
 
-    # ---- Maxsus holat: SUV (NDVI<0) → G/Rn ≈ 0.5 ----
-    # QOR maskasi OLIB TASHLANDI: u albedo>0.45 VA LST<4°C ga tayanardi, lekin
-    # albedo ham, LST ham piksel darajasida noaniq (shubhali) → ishonchsiz
-    # detektsiya, xato 0.5 quyish xavfi. Suv (NDVI<0) esa ishonchli belgi.
-    is_water = ndvi.lt(0)
+    # ---- Maxsus holat: SUV → G/Rn = water_fraction ----
+    # Suv: avval QA suv biti (WATER_MASK); band yoki piksel qiymati yo'q bo'lsa
+    # NDVI < 0 (manual). QOR maskasi OLIB TASHLANDI: u albedo>0.45 VA LST<4°C
+    # ga tayanardi — piksel darajasida ishonchsiz detektsiya.
+    ndvi_water = ndvi.lt(0)
+    is_water = ee.Image(ee.Algorithms.If(
+        image.bandNames().contains('WATER_MASK'),
+        image.select('WATER_MASK').eq(1).unmask(ndvi_water),
+        ndvi_water))
 
-    g_ratio = g_ratio.where(is_water, 0.5)
+    g_ratio = g_ratio.where(is_water, gcfg['water_fraction'])
 
-    # G/Rn fizik jihatdan mantiqiy oraliqqa cheklash
-    # (manual Table 2: 0.04 dan 0.6 gacha kuzatilgan qiymatlar)
-    g_ratio = g_ratio.clamp(0.0, 0.6).rename('G_RATIO')
+    # G/Rn fizik jihatdan mantiqiy oraliqqa cheklash (manual Table 2: 0.04 … 0.6)
+    g_ratio = g_ratio.clamp(gcfg['ratio_min'], gcfg['ratio_max']).rename('G_RATIO')
 
     # G = Rn × (G/Rn)
     g0 = rn.multiply(g_ratio).rename('G0')
@@ -430,6 +441,11 @@ def _tirs10_planck(image):
     return ee.Number(kk.get(0)), ee.Number(kk.get(1))
 
 
+# SMW TPW klasslari (Ermida 2020): kenglik 0.6 sm, 10 klass (0…9) — algoritm O'ZGARMAYDI.
+SMW_TPW_STEP = 0.6
+SMW_TPW_NBIN = 10
+
+
 def compute_lst_smw(image):
     """Ermida (2020) SMW LST — SEBAL_Milliy uchun 'LST' bandini qayta yozadi.
 
@@ -448,7 +464,7 @@ def compute_lst_smw(image):
 
     # 2) TPW (cm) — to'liq ERA5 hourly TCWV (ERA5-Land'da YO'Q), overpass vaqtiga interpolyatsiya
     tpw_cm = _era5_tcwv_cm(image)
-    pos = tpw_cm.divide(0.6).floor().min(9).max(0).toInt()
+    pos = tpw_cm.divide(SMW_TPW_STEP).floor().min(SMW_TPW_NBIN - 1).max(0).toInt()
 
     # 3) TPW bin → A,B,C (remap)
     idx = list(range(10))
@@ -457,7 +473,11 @@ def compute_lst_smw(image):
     c = pos.remap(idx, _SMW_L8['C'])
 
     # 4) LST = A·Tb/ε + B/ε + C
-    lst = (a.multiply(tb).divide(eps)
+    #    Tb (Landsat UTM 30 m) BIRINCHI operand — natija Landsat gridini meros oladi.
+    #    (Oldin a·Tb: 'a' ERA5 TCWV (0.25°) dan → LST, L_UP, DTA, G_RATIO default
+    #    proyeksiyasi EPSG:4326 0.25° edi; anchor gridi 4326@30 m (30×23 m piksel,
+    #    Landsat piksellarining ~30 % i ikki marta). Qiymat o'zgarmaydi: a·Tb = Tb·a.)
+    lst = (tb.multiply(a).divide(eps)
            .add(b.divide(eps))
            .add(c)
            .rename('LST'))

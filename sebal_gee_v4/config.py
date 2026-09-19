@@ -234,16 +234,20 @@ EMISSIVITY_ID = {
 # ==============================================================
 # 5. SOIL HEAT FLUX — Simplified Bastiaanssen (2000)
 # ==============================================================
-# G₀ = Q* × (T₀ - 273.15) / α × (0.0038α + 0.0074α²) × (1 - 0.978 × NDVI⁴)
+# G₀ = Q* × (T₀ - 273.15) / α × (c1·α + c2·α²) × (1 - 0.98 × NDVI⁴)   [SEBAL manual Eq. 24]
 # Suv uchun: G₀ = 0.5 × Q*
 
 SOIL_HEAT_FLUX = {
     'c1': 0.0038,
     'c2': 0.0074,
-    'ndvi_extinction': 0.978,
+    'ndvi_extinction': 0.98,  # SEBAL manual Eq. 24 (kodda shu ishlatilgan; eski config 0.978 edi — o'qilmagan)
     'ndvi_power': 4,
     'water_fraction': 0.5,   # suv piksellar uchun G₀/Q* nisbati
+    'ratio_min': 0.0,        # G/Rn pastki chegarasi (Ts<0 °C da formula manfiy beradi)
+    'ratio_max': 0.6,        # G/Rn yuqori chegarasi (manual Table 2: 0.04 … 0.6)
 }
+# Suv: NDVI < 0 (manual qoidasi) YOKI sun'iy yo'ldosh QA suv biti
+# (Landsat QA_PIXEL bit 7 / HLS Fmask bit 5 → preprocessing 'WATER_MASK' bandi).
 
 # ==============================================================
 # 6. ROUGHNESS LENGTH z₀m — SAVI-based (Gediz)
@@ -357,7 +361,11 @@ ANCHOR = {
 
     # Umumiy filtrlar
     'slope_max':            5.0,    # gradient < 5° (tekis yer)
-    'min_candidates':       20,     # minimum piksel soni
+    'min_candidates':       20,     # anchor zonasi "yetarli": valid zona piksellari soni ≥ shu (100 m da sanaladi)
+    # Anchor qabul qilinishi uchun minimal (hot_LST − cold_LST), K — BARCHA metodlarda
+    # (default va kaskad). ~3 × LST noaniqligi (C2 ST / SMW ≈ 1.5 K). Samarqand 2023
+    # (24 sahna): ΔT 8.7…27.6 K — bu chegara bironta sahnani tushirmaydi.
+    'min_dt':               5.0,
 
     # Selection method
     'method': 'median',             # 'median' yoki 'mean' — outlier himoyasi
@@ -373,9 +381,28 @@ ANCHOR = {
 #   'cascade' → cimec'dan boshlab to'liq zanjir.
 ANCHOR_METHODS = ('default', 'cimec', 'plan_a', 'plan_b', 'pysebal', 'cascade')
 
+# ── HOT PIKSEL SUV BALANSI (SEBAL_ID oilasi) — water_balance.hot_pixel_etrf ──
+# Tasumi (2003) Eq. 5.1-5.5 / FAO-56. Anchor tanlagan AYNAN o'sha hot pikselda.
+HOT_WB = {
+    'ze': 0.10,                 # bug'lanish qatlami (m) — FAO-56 0.10–0.15
+    'etrf_max': 1.05,           # Ke max (alfalfa ETr ga nisbatan)
+    'windows': (14, 30, 60),    # oyna (kun): De₀=0 va De₀=TEW natijasi yaqinlashguncha uzayadi
+    'conv_tol': 0.02,           # |ETrF(nam-start) − ETrF(quruq-start)| ≤ shu → yaqinlashdi
+    'etrf_warn': 0.35,          # ETrF_hot bundan katta → OGOHLANTIRISH (rad etish emas)
+    # Tuproq — nuqtadagi xarita qiymatlari (Saxton EMAS):
+    'fc_asset': 'OpenLandMap/SOL/SOL_WATERCONTENT-33KPA_USDA-4B1C_M/v01',   # θ_FC 33 kPa, %
+    'fc_bands': ('b0', 'b10'),  # 0 va 10 sm (Ze=0.10 m)
+    'fc_scale': 0.01,           # % → m³/m³
+    'wp_collection': 'projects/sat-io/open-datasets/HiHydroSoilv2_0/wcpf4-2',  # θ_WP pF4.2 (1500 kPa)
+    'wp_layers': ('0-5cm', '5-15cm'),
+    'wp_scale': 0.0001,         # ×10⁴ → m³/m³
+    'precip_collection': 'UCSB-CHG/CHIRPS/DAILY',
+    'precip_band': 'precipitation',
+}
+
 ANCHOR_CASCADE = {
     'ts_gap_min': 3.0,   # plan_b: issiq-sovuq LST farqi (K) yetarli deb hisoblash chegarasi
-    'min_dt':     1.0,   # anchorni qabul qilish uchun minimal (hot_LST - cold_LST), K
+    # min ΔT — cfg.ANCHOR['min_dt'] (barcha metodlar uchun yagona)
 }
 
 # ── ANCHOR REJIMI — kandidatlardan QIYMAT olish qadami ──────────
@@ -406,7 +433,7 @@ ANCHOR_LANDCOVER = {
     # (10 m WorldCover → reduceResolution mean), eng yaqin piksel EMAS.
     # Sahnada zona nomzodi yetmasa ketma-ket yumshatiladi: 0.80 → 0.70 → 0.60 → ROI.
     'purity_steps': (0.80, 0.70, 0.60),
-    'min_pixels': 20,     # zona "yetarli": valid piksel soni > shu (100 m da sanaladi)
+    # "Yetarli" chegarasi — cfg.ANCHOR['min_candidates'] (≥, 100 m da sanaladi)
 }
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration

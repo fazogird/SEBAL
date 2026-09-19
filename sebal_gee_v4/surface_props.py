@@ -101,7 +101,10 @@ def compute_lai(image):
                    .log().multiply(-1.0)
                    .divide(0.91))
 
-    lai = (ee.Image(0.0)
+    # Asos — SAVI (Landsat UTM 30 m), ee.Image(0.0) EMAS: ee.Image(konstanta).where(…)
+    # natijasi konstantaning proyeksiyasini (WGS84 1°) oladi → LAI, Z0M, Z0H 1° edi.
+    # SAVI yo'q piksel — LAI ham yo'q (oldin soxta 0).
+    lai = (savi.multiply(0)
            .where(savi.gte(0.1).And(savi.lt(0.687)), lai_formula)
            .where(savi.gte(0.687), 6.0)
            .clamp(0.0, 6.0)
@@ -229,8 +232,9 @@ def compute_emissivity(image, mode='SEBAL_B'):
     if cfg.is_id_mode(mode):
         eid = cfg.EMISSIVITY_ID
         lai = image.select('LAI')
+        # Asos — NDVI (Landsat UTM 30 m), ee.Image(konstanta) EMAS (u WGS84 1° beradi).
         emissivity = (
-            ee.Image(eid['water_snow'])      # default: suv/qor (0.985); NDVI<0 shu yerda
+            ndvi.multiply(0).add(eid['water_snow'])   # default: suv/qor (0.985); NDVI<0 shu yerda
             .where(ndvi.gt(0).And(lai.lt(eid['lai_max'])),
                    lai.multiply(eid['b']).add(eid['a']))   # 0.95 + 0.01·LAI (LAI<3)
             .where(lai.gte(eid['lai_max']),
@@ -249,7 +253,7 @@ def compute_emissivity(image, mode='SEBAL_B'):
 
     # Edge cases — conditional
     emissivity = (
-        ee.Image(ecfg['water'])         # default: suv (0.985)
+        ndvi.multiply(0).add(ecfg['water'])   # default: suv (0.985); asos NDVI — Landsat grid
         .where(ndvi.gte(0).And(ndvi.lt(ecfg['ndvi_min'])),
                ecfg['bare_soil'])       # tuproq (0.960)
         .where(ndvi.gte(ecfg['ndvi_min']).And(ndvi.lte(ecfg['ndvi_max'])),

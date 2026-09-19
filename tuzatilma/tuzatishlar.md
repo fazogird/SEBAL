@@ -16,11 +16,30 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 11 | 2026-09-17 | SR_B1 scale → preprocessing (Landsat + HLS) | ✅ commit 22d96df | config.py, preprocessing.py, surface_props.py |
 | 12 | 2026-09-17 | HLS cloud precheck `contains()` | ✅ commit 22d96df | preprocessing.py |
 | 13 | 2026-09-17 | Z0M_WIND NDVI chegaralari: skalyar → sahna p20/p80 | ✅ commit 22d96df | config.py, surface_props.py, main.py |
-| 14 | 2026-09-17 | Anchor zonalari: eng yaqin piksel → sinf ULUSHI (0.80 → 0.70 → 0.60 → ROI) | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
-| 15 | 2026-09-17 | SMW LST: ERA5 TCWV vaqtga interpolyatsiya + TIRS10 K1/K2 sensor bo'yicha (L8 ≠ L9) | ✅ commit qilinmagan | config.py, radiation.py |
-| 16 | 2026-09-17 | Empirik L↓ Tref = cold anchor LST (p10 va 293 K olib tashlandi); L↓ konstantalari mode bo'yicha | ✅ commit qilinmagan | config.py, radiation.py, energy_balance.py, main.py |
-| 17 | 2026-09-18 | SEBAL_ID oilasi: anchor ETr topilmasa 0 emas — xato bilan to'xtaydi | ✅ commit qilinmagan | energy_balance.py |
-| 18 | 2026-09-18 | pysebal anchor metodi: soxta default qiymatlar olib tashlandi; `_pn` 0 ni null deb olmaydi | ✅ commit qilinmagan | energy_balance.py |
+| 14 | 2026-09-17 | Anchor zonalari: eng yaqin piksel → sinf ULUSHI (0.80 → 0.70 → 0.60 → ROI) | ✅ commit cd8d764 | config.py, energy_balance.py, main.py |
+| 15 | 2026-09-17 | SMW LST: ERA5 TCWV vaqtga interpolyatsiya + TIRS10 K1/K2 sensor bo'yicha (L8 ≠ L9) | ✅ commit cd8d764 | config.py, radiation.py |
+| 16 | 2026-09-17 | Empirik L↓ Tref = cold anchor LST (p10 va 293 K olib tashlandi); L↓ konstantalari mode bo'yicha | ✅ commit cd8d764 | config.py, radiation.py, energy_balance.py, main.py |
+| 17 | 2026-09-18 | SEBAL_ID oilasi: anchor ETr topilmasa 0 emas — xato bilan to'xtaydi | ✅ commit cd8d764 | energy_balance.py |
+| 18 | 2026-09-18 | pysebal anchor metodi: soxta default qiymatlar olib tashlandi; `_pn` 0 ni null deb olmaydi | ✅ commit cd8d764 | energy_balance.py |
+| 19 | 2026-09-18 | G₀ suv: NDVI<0 YOKI QA suv biti (WATER_MASK) | ↪ #22 bilan almashtirildi | radiation.py, config.py |
+| 20 | 2026-09-18 | G₀ koeffitsientlari config.SOIL_HEAT_FLUX dan | ✅ commit qilinmagan | radiation.py, config.py |
+| 21 | 2026-09-18 | Anchor zona chegarasi: yagona cfg.ANCHOR['min_candidates'], ikkala joyda ≥ | ✅ commit qilinmagan | energy_balance.py, config.py |
+| 22 | 2026-09-18 | G₀ suv: avval QA suv (WATER_MASK), bo'lmasa NDVI<0 | ✅ commit qilinmagan | radiation.py |
+| 23 | 2026-09-18 | Anchor ΔT = hot−cold ≥ 5 K — barcha metodlarda (default ham), sababli xabar | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
+| 24 | 2026-09-18 | Hot suv balansi: AYNAN anchor hot pikselida; tuproq xaritadan (OpenLandMap 33 kPa, HiHydroSoil pF4.2); boshlang'ich holatdan yaqinlashish (14→30→60 kun) | ✅ commit qilinmagan | water_balance.py, energy_balance.py, config.py |
+| 25 | 2026-09-18 | Sahna fizik QC (H_hot > 0, dT_hot > dT_cold) → rad etish; ETrF_hot > 0.35 → ogohlantirish; sahna hisoboti + CSV; oyda yaroqli sahna qolmasa to'xtash | ✅ commit qilinmagan | energy_balance.py, main.py, config.py |
+| 26 | 2026-09-18 | Anchor metodi DEFAULT = 'cimec' (cimec → plan_a → plan_b → pysebal → 'default' fallback) | ✅ commit qilinmagan | main.py, energy_balance.py |
+| 27 | 2026-09-18 | Anchor skalyarlari BITTA rejimda (point → aynan anchor pikseli, median → nomzodlar mediani): u200/z0m/ρ, instant ETr, yakuniy tashxis, ANCHOR_*; anchor gridida | ✅ commit qilinmagan | energy_balance.py |
+| 28 | 2026-09-18 | Point anchor DETERMINISTIK (teng LST'li piksellar) + anchor qiymatlari bir marta hisoblanadi (bitta sahnada bitta piksel) | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 29 | 2026-09-18 | SEBAL_ID oilasi: skalyar iteratsiya hot VA cold yaqinlashganda to'xtaydi | ✅ commit qilinmagan | energy_balance.py |
+| 30 | 2026-09-18 | compute_sensible_heat_flux ichida ΔT himoyasi (T_hot − T_cold ≥ cfg.ANCHOR['min_dt']) | ✅ commit qilinmagan | energy_balance.py |
+| 31 | 2026-09-19 | SEBAL_ID oilasi: hot nomzodlar FAQAT tuproq ma'lumoti (θ_FC, θ_WP, tekstura) bor piksellar; tuproq anchor gridida olinadi | ✅ commit qilinmagan | water_balance.py, energy_balance.py, main.py |
+| 32 | 2026-09-19 | Ta = LST − dT ni ERA5 ± 15 K ga cheklash hisobdan olib tashlandi → faqat Ta QC diagnostikasi (CSV) | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 33 | 2026-09-19 | H ≥ −100 pastki chegarasi olib tashlandi (H ≤ Rn−G₀ qoladi) | ✅ commit qilinmagan | energy_balance.py |
+| 34 | 2026-09-19 | SMW LST Landsat Tb gridida (LST, L_UP, DTA, G_RATIO — ERA5 0.25° emas, Landsat UTM 30 m) | ✅ commit qilinmagan | radiation.py |
+| 35 | 2026-09-19 | LAI va EMISSIVITY (→ Z0M, Z0H) Landsat gridida (ee.Image(konstanta).where o'rniga Landsat band asos) | ✅ commit qilinmagan | surface_props.py |
+| 36 | 2026-09-19 | Yagona tahlil gridi analysis_proj (Landsat NDVI) — barcha anchor va CSV reduksiyalarida crs aniq | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 37 | 2026-09-19 | Sahna QC: grid (6 band proyeksiyasi = Landsat gridi) + SMW TPW (min/max, klasslar soni) | ✅ commit qilinmagan | main.py, radiation.py |
 
 ---
 
@@ -942,3 +961,514 @@ GEE sinovi:
 | pysebal, bo'sh base | 0 / 0 | 0 / 0 |
 
 Oldin cold nomzodlar bo'sh chiqishining sababi: NDVI eng yuqori guruhida bitta piksel qolgan, uning LST_stdDev = 0; `If(0, 0, 2.0)` bu 0 ni "yo'q" deb olib **2.0 K** qo'ygan → `LST ≤ mean − 2.0` → bo'sh maska. Ya'ni soxta default haqiqiy sahnada pysebal metodini ishdan chiqarib qo'ygan.
+
+---
+
+## #19 — G₀ suv: NDVI < 0 YOKI QA suv biti (WATER_MASK)
+
+User qarori: "C variant — NDVI<0 YOKI QA suv; QA ishlasin".
+
+**Muammo (oldin):** `is_water = ndvi.lt(0)`. Preprocessing'da Landsat QA_PIXEL bit 7 / HLS Fmask bit 5 dan `WATER_MASK` bandi yasalardi, lekin hech qayerda ishlatilmasdi. GEE (2023-07-11): NDVI<0 piksellarning 98.8 % i QA suv bilan mos, lekin QA suv bo'lib NDVI ≥ 0 bo'lgan piksellar (loyqa/sayoz/qirg'oq; Kattaqo'rg'on 2 598 px, 97 % i JRC tarixida suv) G/Rn ≈ 0.14 olardi.
+
+**Oldin** (`radiation.compute_soil_heat_flux`):
+```python
+    is_water = ndvi.lt(0)
+    g_ratio = g_ratio.where(is_water, 0.5)
+```
+**Keyin:**
+```python
+    is_water = ndvi.lt(0).Or(image.select('WATER_MASK').eq(1))    # WATER_MASK yo'q → GEE xato
+    g_ratio = g_ratio.where(is_water, gcfg['water_fraction'])
+```
+
+GEE sinovi (2023-07, OLDIN = HEAD cd8d764):
+
+| Hudud | Suv piksellari oldin → keyin | Quruqlikda max \|ΔG\| | Qo'shilgan suvda G/Rn | Qo'shilgan suvda G (W/m²) | ROI o'rtacha G |
+|---|---|---|---|---|---|
+| Kattaqo'rg'on 15 km | 39 074 → 41 672 (+2 598) | 0 | 0.142 → 0.500 | 104 → 369 | 129.7 → 130.6 |
+| Samarqand 20 km | 6 188 → 6 678 (+490) | 0 | 0.155 → 0.500 | 109 → 355 | 118.4 → 118.5 |
+| `WATER_MASK` bandi yo'q rasm | — | — | — | — | **to'xtadi** ✅ |
+
+Shahar tomlari (NDVI<0, JRC bo'yicha hech qachon suv bo'lmagan; Samarqand 1 504 px) — oldingidek suv qoidasida qoladi (user qarori: ekin ET siga tegishli emas).
+
+---
+
+## #20 — G₀ koeffitsientlari config.SOIL_HEAT_FLUX dan
+
+**Muammo (oldin):** `config.SOIL_HEAT_FLUX` (c1 0.0038, c2 0.0074, ndvi_extinction **0.978**, ndvi_power 4, water_fraction 0.5) hech qayerda o'qilmasdi; `radiation.py` 0.0038 / 0.0074 / **0.98** / 4 / 0.5 va clamp 0.0 / 0.6 ni qattiq yozgan edi.
+
+| Parametr | config (oldin) | kod (oldin) | endi (config, kod shu yerdan o'qiydi) |
+|---|---|---|---|
+| c1 | 0.0038 | 0.0038 | 0.0038 |
+| c2 | 0.0074 | 0.0074 | 0.0074 |
+| ndvi_extinction | **0.978** | **0.98** | **0.98** (SEBAL manual Eq. 24; ishlab turgan qiymat saqlandi) |
+| ndvi_power | 4 | 4 | 4 |
+| water_fraction | 0.5 | 0.5 | 0.5 |
+| ratio_min / ratio_max | — | 0.0 / 0.6 (qattiq) | 0.0 / 0.6 (config'ga qo'shildi) |
+
+**Keyin** (`radiation.compute_soil_heat_flux`):
+```python
+    gcfg = cfg.SOIL_HEAT_FLUX
+    g_ratio = t_celsius.multiply(albedo.multiply(gcfg['c2']).add(gcfg['c1']))
+    veg_extinction = ee.Image(1.0).subtract(ndvi.pow(gcfg['ndvi_power']).multiply(gcfg['ndvi_extinction']))
+    ...
+    g_ratio = g_ratio.clamp(gcfg['ratio_min'], gcfg['ratio_max']).rename('G_RATIO')
+```
+Izohlardagi 0.978 ham 0.98 ga to'g'rilandi (config.py, radiation.py modul izohi). Sinov: quruqlik piksellarida G oldingi bilan **aynan bir xil** (max |ΔG| = 0, #19 jadvali).
+
+---
+
+## #21 — Anchor zona chegarasi: yagona `cfg.ANCHOR['min_candidates']`, ikkala joyda ≥
+
+**Muammo (oldin):** zona "yetarli" chegarasi `cfg.ANCHOR_LANDCOVER['min_pixels']` (20) dan olinardi; `cfg.ANCHOR['min_candidates']` (20, user sozlagan) hech qayerda ishlatilmasdi. Tile darajasida `>=`, sahna darajasida `>`.
+
+**Oldin:**
+```python
+# compute_tile_anchor_zones
+        min_pixel_count = lc['min_pixels']
+    cold_zone = cold_f if (counts.get(...) or 0) >= min_pixel_count else None
+# _purity_zones
+            if (counts.get(f'{tag}{k}') or 0) > lc['min_pixels']:
+```
+**Keyin:**
+```python
+# compute_tile_anchor_zones
+        min_pixel_count = cfg.ANCHOR['min_candidates']
+    cold_zone = cold_f if (counts.get(...) or 0) >= min_pixel_count else None
+# _purity_zones
+            if (counts.get(f'{tag}{k}') or 0) >= cfg.ANCHOR['min_candidates']:
+```
+`ANCHOR_LANDCOVER['min_pixels']` o'chirildi; `ANCHOR['min_candidates']` izohi: "valid zona piksellari soni ≥ shu (100 m da sanaladi)". Natija faqat zona pikseli aynan 20 ta bo'lganda o'zgaradi.
+
+---
+
+## #22 — G₀ suv: avval QA suv (WATER_MASK), bo'lmasa NDVI < 0
+
+User qarori: "ikkalasi ham ishlashi kerak emas — avval water_mask dan qilsin, agar u bo'lmasa NDVI dan". #19 dagi "NDVI<0 YOKI QA" birlashmasi shu bilan almashtirildi.
+
+**Oldin (#19):**
+```python
+    is_water = ndvi.lt(0).Or(image.select('WATER_MASK').eq(1))    # WATER_MASK yo'q → xato
+```
+**Keyin:**
+```python
+    ndvi_water = ndvi.lt(0)
+    is_water = ee.Image(ee.Algorithms.If(
+        image.bandNames().contains('WATER_MASK'),
+        image.select('WATER_MASK').eq(1).unmask(ndvi_water),   # QA; pikselda qiymat yo'q → NDVI
+        ndvi_water))                                           # band yo'q → NDVI < 0
+```
+- Landsat: QA_PIXEL bit 7; HLS: Fmask bit 5 (ikkalasi ham preprocessing'da `WATER_MASK`).
+- NDVI<0 bo'lgan, lekin QA suv demagan piksellar (asosan shahar tomlari) endi suv emas.
+
+GEE sinovi (2023-07, G₀ valid piksellarda; OLDIN = HEAD cd8d764, faqat NDVI<0):
+
+| Hudud | Suv (G/Rn = 0.5) oldin → keyin | Qo'shildi (QA suv, NDVI ≥ 0) | Chiqdi (NDVI < 0, QA suv emas) | ROI o'rtacha G |
+|---|---|---|---|---|
+| Kattaqo'rg'on 15 km | 50 911 → 53 700 | +3 408 (G 104 → 369 W/m²) | −619 (G 319 → 108) | 129.7 → 130.5 |
+| Samarqand 20 km | 8 064 → 4 608 | +638 (G 109 → 355) | −4 094 (G 291 → 112) | 118.4 → 118.1 |
+| `WATER_MASK` bandi yo'q rasm | NDVI<0 ishlatildi | — | — | HEAD bilan max \|ΔG\| = **0** ✅ |
+
+---
+
+## #23 — Anchor ΔT = hot_LST − cold_LST ≥ 5 K — barcha metodlarda
+
+User qarori: "ΔT tekshiruvi barcha metodlarda, 5 K".
+
+**Oldin:** faqat kaskad metodlarda (`_finalize_anchor`) `(h − c) >= cfg.ANCHOR_CASCADE['min_dt']` (1.0 K). Production `default` metodida va `finalize_anchor_values` da ΔT tekshiruvi **yo'q** edi (faqat LST > 200 K). Rad etilganda xabar: "anchor topilmadi" (sababsiz).
+
+**Keyin:**
+```python
+# config.py
+ANCHOR = {..., 'min_dt': 5.0, ...}            # ANCHOR_CASCADE['min_dt'] olib tashlandi (yagona manba)
+
+# energy_balance._select_anchor_default va finalize_anchor_values
+    ok = (cold_lst.gt(200).And(hot_lst.gt(200))
+          .And(hot_lst.subtract(cold_lst).gte(cfg.ANCHOR['min_dt'])))
+# energy_balance._finalize_anchor (kaskad)
+    min_dt = cfg.ANCHOR['min_dt']
+
+# main.py — rad etish sababi bilan:
+#   ❌ Sahna 1/1: anchor yaroqsiz — ΔT = 25.9 K < 50.0 K (cold 305.7 K, hot 331.5 K) — O'TKAZIB YUBORILADI
+#   ❌ Sahna 1/1: anchor yaroqsiz — cold/hot nomzod topilmadi — O'TKAZIB YUBORILADI
+```
+5 K asosi: ~3 × LST noaniqligi (C2 ST / SMW ≈ 1.5 K).
+
+GEE sinovi:
+
+| Holat | Natija |
+|---|---|
+| Samarqand 2023 (24 sahna), ΔT | 8.7 … 27.6 K — 5 K chegarasi bironta sahnani tushirmaydi |
+| `min_dt = 50` (sun'iy), 2023-07-11 | ❌ `ΔT = 25.9 K < 50.0 K (cold 305.7 K, hot 331.5 K)` — sahna o'tkazildi ✅ |
+| `min_dt = 5`, SEBAL_ID cimec, 2023-07-11 | ✅ anchor topildi, ΔT = 19.5 K |
+
+---
+
+## #24 — Hot suv balansi: aynan anchor hot pikselida, tuproq xaritadan, yaqinlashish tekshiruvi
+
+User qarori: "aynan o'sha piksel qil"; "Saxton emas, aynan o'sha pikselning tuproq ma'lumotlarini kiritish kerak"; "bos" (boshlang'ich holatdan yaqinlashish).
+
+**Muammo (oldin):**
+1. `hot_pixel_etrf` hot nuqtani o'zi QAYTA tanlardi (hot_mask ichida max LST, 100 m, Rn−G₀ cheklovisiz). ROI rejimida (ANCHOR_SCALE 30 m) anchor pikselidan 46–74 m narida (2023-03-13: LST 303.07 vs 300.30 K).
+2. θ_FC/θ_WP — Saxton-Rawls pedotransferi (sand/clay dan); tekstura topilmasa `_SOIL_DEFAULT`.
+3. Oyna 14 kun, De₀ = TEW (quruq) — oldingi yomg'ir hisobga olinmasligi mumkin.
+4. Yog'in/ETr kuni bo'lmasa jimgina 0.0.
+
+**Keyin:**
+```python
+# energy_balance._reduce_anchor_values (point_anchor): LST, Rn−G₀ + lon/lat AYNI pikseldan
+    hot_stats = (image.select(['LST', 'RN_G0']).addBands(ee.Image.pixelLonLat())
+                 .updateMask(hot_mask).updateMask(rn_g0.mask())
+                 .reduceRegion(ee.Reducer.max(4), geom, ANCHOR_SCALE, ...))
+    hot_pt = ee.List([hot_stats.get('max2'), hot_stats.get('max3')])     # anchors['hot_point']
+# energy_balance.compute_all (SEBAL_ID oilasi):
+    hot_lonlat = ee.List(anchors['hot_point']).getInfo()
+    wbr = water_balance.hot_pixel_etrf(image, roi, hot_lonlat)          # dict
+
+# water_balance._soil_at_point — nuqtadagi xarita qiymatlari (Saxton EMAS):
+#   θ_FC  = OpenLandMap SOL_WATERCONTENT-33KPA (b0, b10 o'rtachasi) × 0.01
+#   θ_WP  = HiHydroSoil v2.0 WCpF4.2 (0–5, 5–15 sm o'rtachasi) × 0.0001
+#   REW   = OpenLandMap tekstura → FAO-56 Table 19
+#   biror qiymat yo'q → RuntimeError (default tuproq YO'Q)
+# water_balance.hot_pixel_etrf — yaqinlashish:
+    for w in cfg.HOT_WB['windows']:            # (14, 30, 60)
+        _fetch(w, fetched)                     # faqat yangi kunlar olinadi
+        e_wet = _run(days, De0=0)[2];  e_dry = _run(days, De0=TEW)[2]
+        if abs(e_wet - e_dry) <= cfg.HOT_WB['conv_tol']:  break   # 0.02
+#   yog'in / ETr kuni yo'q → RuntimeError (oldin jimgina 0)
+```
+Yangi config: `HOT_WB` (ze, etrf_max, windows, conv_tol, etrf_warn, fc_asset/bands/scale, wp_collection/layers/scale, precip_collection/band). `_saxton_fc_wp` water_balance'dan olib tashlandi (consumptive_use / ndvi_kc / root_zone_water o'z raster versiyasini ishlatadi — o'zgarmagan).
+
+Nuqtadagi tuproq (GEE, 250 m): FC (33 kPa) 0.225–0.270, WP (1500 kPa) 0.127–0.144; oldingi Saxton FC 0.28 / WP 0.14. HiHydroSoil'ning o'z FC si (pF2 = 10 kPa) 0.40 — FAO-56 33 kPa ta'rifiga mos emas, shuning uchun FC OpenLandMap'dan.
+
+---
+
+## #25 — Sahna fizik QC, ogohlantirish, hisobot va oy bo'yicha to'xtash
+
+User qarori: "bos"; "oyda yaroqli sahna qolmasa to'xtash — ha, faqat tashlab ketilgani sababi bilan yozilsin".
+
+**Keyin:**
+```python
+# energy_balance.compute_sensible_heat_flux — skalyar iteratsiyadan keyin:
+    if not H_hot > 0:        fails.append(f"H_hot = {H_hot:.1f} W/m² ≤ 0")
+    if not dT_hot > dT_cold: fails.append(f"dT_hot = {dT_h:.2f} K ≤ dT_cold = {dT_c:.2f} K")
+    if fails: raise SceneQCError("fizik kalibratsiya buzilgan: " + "; ".join(fails))
+# energy_balance.compute_all — ETrF_hot > cfg.HOT_WB['etrf_warn'] (0.35) → OGOHLANTIRISH (rad etish emas)
+# main.process_tile:
+#   - har sahna uchun qc dict (sana, status, sabab, cold/hot LST, ΔT, ETrF_hot, P, oyna, De, Kr,
+#     TEW, REW, FC, WP, dT_hot, dT_cold, H_hot, H_cold, lon, lat)
+#   - anchor ΔT, anchor Rn−G₀, SceneQCError → "RAD ETILDI" + sabab, sahna o'tkaziladi
+#   - sahnalar tugagach, eksportdan OLDIN: jadval (print) + scene_qc_{mode}_{ROI|tile}_{sana1}_{sana2}.csv
+#   - biror oyda yaroqli sahna qolmasa → RuntimeError (eksport boshlanmaydi), rad etilganlar sababi bilan
+```
+
+GEE sinovi (Samarqand 20 km, ROI rejimi, `process_tile`):
+
+| Sinov | Natija |
+|---|---|
+| 2023-03-13, SEBAL_Milliy | ETrF_hot 1.050 (P 17.2 mm / 14 kun, De 7.0 < REW 9) → ⚠️ ogohlantirish; **RAD ETILDI**: `H_hot = −17.6 W/m² ≤ 0; dT_hot = −5.10 K ≤ dT_cold = 2.40 K`; mart bo'sh → **to'xtadi** ("Yaroqli sahna qolmagan oy(lar): 2023-03 — eksport boshlanmadi") ✅ |
+| 2023-03-13 + 03-21 | 03-21: oyna 14 → **30 kun** (yaqinlashish uchun), ETrF_hot 0.060; **RAD ETILDI**: `dT_hot = 2.44 K ≤ dT_cold = 2.68 K`; mart bo'sh → to'xtadi |
+| 2023-10-15 | ETrF_hot 0.257 (P 5.2 mm, 14 kun), dT_hot 3.56 > dT_cold 1.60 → **OK** |
+| 2023-12-10 | oyna **30 kun**, ETrF_hot 0.337; **RAD ETILDI**: `dT_hot = 2.86 K ≤ dT_cold = 3.14 K`; dekabr bo'sh → to'xtadi |
+| 2023-07-11, SEBAL_ID (empirik L↓) | Tref = 305.55 K; ETrF_hot 0.000 (P 0 mm); dT_hot 4.39 > dT_cold 0.54 → **OK** |
+
+CSV namunasi (`scene_qc_SEBAL_Milliy_ROI_2023-03-13_2023-03-14.csv`):
+```
+sana,status,sabab,cold_LST,hot_LST,dT_LST,etrf_hot,P_sum,window,converged,De,Kr,TEW,REW,FC,WP,dT_hot,dT_cold,H_hot,H_cold,lon,lat
+2023-03-13,RAD ETILDI,fizik kalibratsiya buzilgan: H_hot = -17.6 W/m² ≤ 0; dT_hot = -5.10 K ≤ dT_cold = 2.40 K,287.3851,303.0744,15.6894,1.0500,17.1851,14,True,6.9895,1.0000,19.8125,9.0000,0.2700,0.1438,-5.0991,2.4044,-17.5895,133.9203,67.0488,39.6784
+```
+
+To'liq yil sinovi (Samarqand 20 km, SEBAL_Milliy, 2023-01-01 → 2024-01-01, bulut ≤ 70): kolleksiyada 24 sahna (yanvar, fevral, aprel — sahna yo'q), **20 OK, 4 RAD ETILDI**, → **to'xtadi**: "Yaroqli sahna qolmagan oy(lar): 2023-03, 2023-12 — eksport boshlanmadi".
+
+| Sana | ETrF_hot | dT_hot / dT_cold (K) | H_hot / H_cold (W/m²) | Sabab |
+|---|---|---|---|---|
+| 2023-03-13 | 1.050 | −5.10 / 2.40 | −17.6 / 133.9 | H_hot ≤ 0; dT_hot ≤ dT_cold (nam tasvir) |
+| 2023-03-21 | 0.060 | 2.44 / 2.68 | 286.4 / 134.2 | dT_hot ≤ dT_cold |
+| 2023-10-07 | 0.000 | 4.28 / 4.59 | 259.7 / 301.3 | dT_hot ≤ dT_cold |
+| 2023-12-10 | 0.337 | 2.86 / 3.14 | 170.3 / 136.4 | dT_hot ≤ dT_cold |
+
+OK sahnalarda H_cold −235 … +113 W/m²; rad etilganlarda 134 … 301 W/m². Oktyabr 10-15 hisobiga saqlandi (ETrF_hot 0.257).
+
+---
+
+## #26 — Anchor metodi: DEFAULT 'cimec'
+
+User qarori: "cimec qil va birinchi cimec ishlasin, bu bo'lmasa birma-bir qolgan metodlar orqali topilsin".
+
+**Oldin:** `main.run(anchor_method='default')`, `process_tile(anchor_method='default')`, `select_anchor_pixels(method='default')`, `compute_all(anchor_method='default')` — klassik persentil (`_select_anchor_default`), CIMEC umuman sinalmasdi. (`run_sebal.py` o'zi `anchor_method='cascade'` beradi — u yerda CIMEC allaqachon birinchi edi.)
+
+**Keyin:** to'rttala joyda default `'cimec'`. Tartib (`_cascade_order`): cimec → plan_a → plan_b → pysebal, avval land-cover zonada (`lc`), keyin ROI'da; hech biri chiqmasa `'default'` persentil fallback. `'cascade'` bilan aynan bir xil tartib. Mexanizm o'zgarmagan — faqat default qiymat.
+
+GEE sinovi (Samarqand 20 km, `point_anchor`, rad etilgan sahnalar; `default` natijalari — yillik run'dan):
+
+| Sahna | SEBAL_Milliy default | SEBAL_Milliy cimec | SEBAL_ID default | SEBAL_ID cimec |
+|---|---|---|---|---|
+| 03-13 | RAD (nam) | RAD (nam): dT_hot 0.16 ≤ 2.71 | RAD (nam) | ❌ to'xtadi: pysebal cold ETr topilmadi |
+| 03-21 | RAD 2.44 ≤ 2.68 | ❌ to'xtadi: hot pikselda θ_WP (HiHydroSoil) yo'q | RAD 2.37 ≤ 3.02 | RAD 2.84 ≤ 2.99 |
+| 10-07 | RAD 4.28 ≤ 4.59 | **OK 4.41 > 3.93** | RAD 3.93 ≤ 4.40 | RAD 4.27 ≤ 4.29 |
+| 12-10 | RAD 2.86 ≤ 3.14 | ❌ to'xtadi: cimec ΔT 4.2 K → … → pysebal cold ETr topilmadi | RAD 2.68 ≤ 3.19 | ❌ to'xtadi: pysebal cold ETr topilmadi |
+
+Kaskadda topilgan ikki to'xtash (tuzatilmagan, ochiq): (1) `anchor_etr_inst` cold ETr'ni maska medianasi sifatida 100 m da oladi — pysebal cold maskasi kichik → 100 m da bo'sh → RuntimeError, butun run to'xtaydi; (2) CIMEC hot pikselida HiHydroSoil θ_WP yo'q → RuntimeError (#24 qoidasi), butun run to'xtaydi.
+
+---
+
+## #27 — Anchor skalyarlari bitta rejimda: point → aynan anchor pikseli, median → nomzodlar mediani
+
+User qarori: "ETr'ni anchor nuqtasidan oladigan qil"; "agar point bo'lsa pipeline'dagi bari point bo'lsin, median bo'lsa bari median — buni fix qil".
+
+**Muammo (oldin):** `point_anchor` rejimida LST va Rn−G₀ aynan anchor pikselidan, lekin qolganlari nomzod MASKASI bo'yicha:
+
+| Qiymat | Oldin | Joyi |
+|---|---|---|
+| u200, z0m, ρ (hot, SEBAL_ID'da cold ham) | maska MEDIANI, har band ALOHIDA reduce (o'z default gridida) | `compute_sensible_heat_flux` |
+| instant ETr (cold, hot) | maska MEDIANI, **100 m** | `anchor_etr_inst` |
+| yakuniy tashxis dT/rah/H (`fin`) | hot maska MEDIANI, 100 m | `compute_sensible_heat_flux` oxiri |
+| `ANCHOR_*` albedo/NDVI/shamol | maska MEAN | xuddi shu |
+
+Oqibat: (1) kichik maska (pysebal cold) 100 m da bo'sh → `ETR_INST` null → RuntimeError → **butun run to'xtardi** (Milliy/ID 12-10, ID 03-13); (2) anchor pikselida raster H maqsaddan farq qilardi (11-16 hot 160.0 vs 174.6; 10-15 cold 66.8 vs 76.1).
+
+**Keyin:** yagona yordamchi `_anchor_sample(image, anchors, roi, bands, sides)` — `anchors['anchor_mode']` ga QAT'IY mos:
+```python
+img = image.select(['LST'] + bands)
+proj = image.select('LST').projection()          # anchor tanlangan AYNI grid
+if mode == 'point_anchor':                       # AYNAN anchor pikseli
+    img.reduceRegion(ee.Reducer.first(), ee.Geometry.Point(anchors['cold_point'/'hot_point']),
+                     crs=proj, scale=ANCHOR_SCALE)
+elif mode == 'median_anchor':                    # nomzodlar mediani, AYNI grid
+    img.updateMask(anchors['cold_mask'/'hot_mask']).reduceRegion(ee.Reducer.median(), roi,
+                     crs=proj, scale=ANCHOR_SCALE, ...)
+else: raise ValueError                            # rejim noma'lum — aralash yo'q
+```
+- anchors dict'ga `'anchor_mode'` qo'shildi (`_select_anchor_default`, `_finalize_anchor`, `finalize_anchor_values`).
+- `compute_sensible_heat_flux`: u200/z0m/ρ → `_anchor_sample(['U_200','Z0M','RHO_AIR'])`; `-999` default olib tashlandi — topilmasa RuntimeError. Point rejimda grid tekshiruvi: namunadagi LST ≠ anchor LST → OGOHLANTIRISH (QC CSV'ga).
+- `anchor_etr_inst(image, roi, anchors)` → `_anchor_sample(['ETR_INST'])` (100 m mask mediani o'rniga).
+- `fin` va `ANCHOR_COLD/HOT_ALBEDO/NDVI/WIND` → `_anchor_sample` (klient qiymat). (B) qatorida endi hot va cold: raster qiymati va MAQSAD.
+
+GEE sinovi (Samarqand 20 km, CIMEC kaskad):
+
+| Sinov | Oldin | Keyin |
+|---|---|---|
+| SEBAL_Milliy 12-10 (pysebal) | "cold anchor nomzodlarida ETR_INST topilmadi" → run to'xtadi | fizik QC gacha yetdi → RAD `dT_hot 2.41 ≤ dT_cold 3.10` |
+| SEBAL_ID 12-10 / 03-13 (pysebal) | run to'xtadi | RAD `2.56 ≤ 3.07` / nam tasvir RAD `1.09 ≤ 4.38` |
+| Anchor pikselida raster H / maqsad (W/m²) | 11-16 hot 160.0/174.6; 10-15 cold 66.8/76.1 | Milliy 07-11: hot 270.03/270.0, cold −46.65/−46.6; Milliy 10-07: 264.62/264.6, 158.67/158.7; ID 07-11: 342.80/342.8, −16.14/−16.1; SEBAL_B 07-11 (point): 343.76/343.8 |
+| SEBAL_B `median_anchor` 07-11 | — | ishlaydi (median rejimda maqsad bitta piksel emas — tenglik kutilmaydi) |
+| Grid tekshiruvi (point) | — | barcha sinovda namuna LST = anchor LST (ogohlantirish yo'q) |
+
+Qolgan farq (bu tuzatishga TEGISHLI EMAS, ochiq, simulyatsiya bilan tasdiqlangan): 11-16 hot 153.7/171.5 — Ta ±15 K cheklovi 1-iteratsiyada (neytral dT_hot 47.3 K → Ta 252 K < 279 K) raster yo'lini buradi; 08-20 cold −100/−242.4 — H ≥ −100 cheklovi.
+
+---
+
+## #28 — Point anchor deterministik + anchor qiymatlari bir marta hisoblanadi
+
+**Muammo (oldin):** 2023-08-20 da hot nomzodlar ichida LST = 323.2867 K bo'lgan **2 ta piksel** (14 km oraliq; termal DN kvantlangan, yalang'och tuproq emissivligi bir xil, TCWV bitta ERA5 katagidan): A (66.9259, 39.7208) Rn−G₀ 309.93; B (66.7857, 39.5956) Rn−G₀ 250.22. `Reducer.max(4)` tenglikda ixtiyoriy pikselni qaytaradi, anchor qiymatlari esa **lazy** ifoda — har getInfo'da qayta hisoblanadi. Natija: bitta sahnaning o'zida suv balansi B pikselida, energiya balansi A da (H_hot maqsad 309.9, raster 250.2); boshqa run'da H_hot 250.2 (run-to-run farq).
+
+**Keyin:**
+```python
+def _extreme_pixel(image, mask, geom, which, carry=()):
+    kw = dict(crs=lst.projection(), scale=ANCHOR_SCALE, ...)      # ikkala bosqich AYNI grid
+    ext = lst.updateMask(mask).reduceRegion(max|min, geom, **kw).get('LST')   # 1) qiymat
+    tie = mask.And(lst.eq(ext))                                    # 2) shu qiymatli piksellar
+    key = (lat + 90)·1e6 + (lon + 180)/1e3                         #    geometrik kalit (yagona)
+    key.addBands(lonlat).addBands(LST).addBands(carry).updateMask(tie).reduceRegion(max(n))
+# _reduce_anchor_values (point): cold = _extreme_pixel(..., 'min', carry=('RN_G0',)),
+#                                 hot  = _extreme_pixel(..., 'max', carry=('RN_G0',))
+
+def materialize_anchors(anchors, extra=None):   # BITTA getInfo → klient konstantalari
+    # valid, cold/hot_lst, cold/hot_rn_g0 → ee.Number(qiymat); cold/hot_point → [lon, lat]
+# main.process_tile: tanlashdan keyin va finalize_anchor_values'dan keyin chaqiriladi
+# (Tref ham shu getInfo'da); compute_all(anchors=None) ham chaqiradi.
+# cold_anchor_surface_temp (point): Tref = AYNAN anchors['cold_point'] pikselidagi asl LST.
+```
+Tenglikni hal qilish faqat geometrik (fizikaga tegmaydi); tenglik bo'lmasa natija oldingi bilan aynan bir xil (07-11, 11-16, 12-10 — o'zgarmadi).
+
+GEE sinovi:
+
+| Sinov | Natija |
+|---|---|
+| 08-20, ikki alohida run | ikkalasida hot = A (39.7208, 66.9259): suv balansi va energiya balansi AYNI pikselda; H_hot 309.93, raster 309.929 = maqsad ✅ |
+| SEBAL_ID 07-11 (empirik L↓, 2 bosqich) | Tref 308.94 K; cold raster −16.14 / maqsad −16.1 ✅ (oldin tenglikda boshqa piksel: −12.07 / −13.8) |
+
+---
+
+## #29 — SEBAL_ID oilasi: iteratsiya hot VA cold yaqinlashganda to'xtaydi
+
+**Oldin:** sikl faqat hot (dT_hot, rah_hot) stabillashishini tekshirardi; cold (δTa_cold ≠ 0) yaqinlashmagan qiymat bilan qolardi.
+
+**Keyin:**
+```python
+hot_ok  = |ΔdT_hot| < tol·|dT_hot|  and  |Δrah_hot| < tol·rah_hot
+cold_ok = (not is_id) or |Δrah_cold| < tol·rah_cold    # H_cold, ρ_c o'zgarmas → dT_cold ∝ rah_cold
+if hot_ok and cold_ok: break
+# max_iter da yaqinlashmasa — qaysi uch (hot/cold) ekani OGOHLANTIRISH va QC CSV'ga yoziladi
+```
+Dalil (offline, kod sikli nusxasi, median kirishlar): 12-10 — cold 3.46, 3.14, 2.53, 2.51, 2.74 … ≈2.71; eski sikl 5-iteratsiyada **3.14** bilan to'xtardi. 07-11: 1.36 → 1.18.
+GEE: iteratsiya soni endi cold'ni ham hisobga oladi (10-07: 10, ID 07-11: 7, 12-10: 7); (B) raster qadamlari soni shunga teng (max 15).
+
+---
+
+## #30 — compute_sensible_heat_flux ichida ΔT himoyasi
+
+**Oldin:** `c4 = (dT_hot − dT_cold)/(T_hot − T_cold)` — tekshiruvsiz (T_hot = T_cold → nolga bo'lish, T_hot < T_cold → c4 ishorasi teskari). Himoya faqat yuqorida (anchor tanlash) edi; `compute_all(anchors=None)` yo'li `valid` ni tekshirmasdi.
+
+**Keyin:** skalyarlar olingandan so'ng: anchor LST yo'q/<200 K yoki `T_hot − T_cold < cfg.ANCHOR['min_dt']` (5 K, anchor tanlashdagi bilan BITTA chegara) → `SceneQCError` (sahna sababi bilan rad etiladi).
+
+GEE sinovi (07-11, sun'iy T_hot = T_cold): `❌ anchor ΔT = T_hot − T_cold = 0.00 K < 5.0 K (cold 308.31 K, hot 308.31 K)` — nolga bo'lish xatosi yo'q, sahna QC hisobotida ✅
+
+---
+
+## #31 — SEBAL_ID oilasi: hot nomzodlar faqat tuproq ma'lumoti bor piksellar
+
+User qarori: "ha shunday qilamiz" (hot piksel shahardagi bo'sh yer emas, tuproq bo'lishi kerak; soxta qiymat yo'q).
+
+**Muammo (oldin):** 2023-03-21, SEBAL_Milliy + CIMEC: hot piksel (67.0143, 39.6943) — 30 m da bo'sh yer (WorldCover 60), lekin 250 m katakning **53 %** i qurilgan (Samarqand shahri) → HiHydroSoil θ_WP yo'q → `RuntimeError: Hot piksel tuprog'i topilmadi` → butun run to'xtardi.
+
+Tekshiruv (GEE): muammo HiHydroSoil nuqsoni EMAS — tuproq bazalari shahar katagida ma'lumot bermaydi:
+
+| Manba | O'sha nuqtada |
+|---|---|
+| HiHydroSoil v2 WCpF4.2 / WCpF2 | yo'q |
+| SoilGrids (ISRIC) qum/gil | yo'q |
+| HWSD v2 (sat-io) | shahar birligi (HWSD2_ID 7001): AWC yo'q, BULK −9; umuman θ_WP bermaydi (faqat AWC, ~1 km) |
+| OpenLandMap 33 kPa | bor (0.26) — lekin GEE'da 1500 kPa (WP) qatlami yo'q |
+
+ROI (20 km): 250 m kataklardan qurilgan qismi > 50 % — **61 %** ida WP yo'q; < 10 % — atigi **1.2 %** ida.
+
+**Keyin:**
+```python
+# water_balance.py — BITTA manba, ikki foydalanish
+def _soil_stack():            # fc (OLM 33 kPa), wp (HiHydroSoil pF4.2), tex (OLM tekstura) — xom
+def soil_valid_mask():        # 1 — fc, wp, tex bor VA tekstura FAO-56 Table 19 da; aks holda 0
+def _soil_at_point(pt, proj, scale):   # namuna ANCHOR gridida — aynan anchor pikseli
+    _soil_stack().reduceRegion(ee.Reducer.first(), pt, crs=proj, scale=scale)
+    # (oldin 250 m OpenLandMap gridida: WP/tekstura o'sha katak MARKAZIDAN — boshqa katak bo'lishi mumkin edi)
+def hot_pixel_etrf(image, roi, hot_lonlat, grid, ...)   # grid = (LST proyeksiyasi, ANCHOR_SCALE)
+
+# energy_balance.select_anchor_pixels(..., hot_soil=False)
+#   hot_soil=True → hot_base ∧ soil_valid_mask  (lc zona), hot_flat = base_flat ∧ soil (ROI bosqichi),
+#                   'default' fallback ham (_select_anchor_default(..., hot_soil_mask))
+# main.process_tile va compute_all: hot_soil = cfg.is_id_mode(mode)   (SEBAL_B/pysebal — o'zgarmaydi)
+```
+
+GEE sinovi (Samarqand 20 km, point_anchor, CIMEC kaskad):
+
+| Sahna | Oldin | Keyin |
+|---|---|---|
+| Milliy 03-21 | run to'xtadi (θ_WP yo'q) | hot (67.0383, 39.7517): FC 0.305, WP 0.143, oyna 30 kun, P 24.2 mm, ETrF_hot 0.117 → **OK** (dT_hot 3.33 > dT_cold 2.63) — mart qutqarildi |
+| Milliy 07-11 | hot 327.9 K | hot 330.9 K (tuproq piksel), OK |
+| Milliy 12-10 (pysebal) | RAD | hot tuproq pikselda, oyna 60 kun, P 46.7 mm, ETrF_hot 0.496 (nam) → RAD `2.20 ≤ 3.10` |
+| Milliy 10-07 | OK | OK |
+
+---
+
+## #32 — Ta = LST − dT ni ERA5 ± 15 K ga cheklash olib tashlandi; faqat QC diagnostika
+
+User qarori: "ha, faqat ±15 ni ol, lekin Ta ni qanday tekshiramiz — ishonch hosil qilish kerak".
+
+**Oldin** (`compute_sensible_heat_flux` (B) raster sikli):
+```python
+ta_img = lst.subtract(dta)
+ta_img = ta_img.where(ta_img.lt(air_temp_era5.subtract(15)), air_temp_era5.subtract(15))
+ta_img = ta_img.where(ta_img.gt(air_temp_era5.add(15)), air_temp_era5.add(15))
+dta = lst.subtract(ta_img).rename('DTA')
+```
+Dalil (GEE + offline simulyatsiya, GEE natijasini aniq takrorlaydi): 2023-11-16 — 1-iteratsiyada neytral dT_hot 47.3 K → Ta 252 K < 279 K → cheklov raster yo'lini skalyardan ajratdi → hot H 153.7 vs maqsad 171.5 (−10 %); cheklovsiz simulyatsiya 171.51. Yozda oxirgi qadamda ROI piksellarining 16–20 % ida (ekin 8–12 %) dT majburan oshirilgan (ET_inst −0.04…−0.10 mm/soat).
+
+**Keyin:** cheklov olib tashlandi (dT ±20 % va H ≤ Rn−G₀ himoyalari qoladi). Ta faqat QC (qiymatlarga TEGMAYDI), `fin` bilan BITTA getInfo:
+```python
+ta_out = (lst − DTA − AIR_TEMP).abs().gt(15)             # sahna: |Ta − Ta_ERA5| > 15 K
+qc: Ta_hot, Ta_era5_hot, Ta_cold, Ta_era5_cold (anchor rejimida), pct_Ta_out15 (90 m, ROI)
+# sahna QC CSV'ga ustunlar qo'shildi; log: "🌡️ Ta QC (qiymatga tegmaydi): …"
+```
+
+Anchor pikselida raster H / maqsad (W/m²) — endi hamma sinovda aniq:
+
+| Sahna | Hot | Cold |
+|---|---|---|
+| Milliy 11-16 | 173.89 / 173.9 (oldin 153.7 / 171.5) | 78.35 / 78.3 (oldin 73.8 / 78.3) |
+| Milliy 03-21 | 339.77 / 339.8 | 156.75 / 156.7 |
+| Milliy 07-11 | 279.40 / 279.4 | −46.65 / −46.6 |
+| Milliy 10-07 | 254.49 / 254.5 | 158.67 / 158.7 |
+| ID 07-11 / 10-07 | 299.60 / 299.6; 255.84 / 255.8 | −16.14 / −16.1; 130.97 / 131.0 |
+| SEBAL_B 07-11 | 343.76 / 343.8 | — |
+
+Ta QC (qiymatlarga tegmaydi):
+
+| Sahna | hot Ta / ERA5 (K) | cold Ta / ERA5 (K) | \|Ta−Ta_ERA5\| > 15 K |
+|---|---|---|---|
+| Milliy 03-21 | 300.06 / 289.41 | 289.65 / 289.18 | 0.05 % |
+| Milliy 07-11 | 326.53 / 308.57 | **318.49 / 308.32** | 29.47 % |
+| Milliy 08-20 | 319.01 / 306.33 | 309.70 / 306.66 | 5.20 % |
+| Milliy 10-07 | 302.81 / 290.09 | 289.93 / 290.81 | 0.09 % |
+| Milliy 11-16 | 297.56 / 294.10 | 289.63 / 291.62 | 0.00 % |
+| ID 07-11 | 326.86 / 308.57 | 310.27 / 308.32 | 15.79 % |
+| ID 10-07 | 304.67 / 290.09 | 291.10 / 290.47 | 0.38 % |
+| SEBAL_B 07-11 | 323.09 / 309.12 | 308.94 / 308.32 | 11.41 % |
+
+---
+
+## #33 — H ≥ −100 pastki chegarasi olib tashlandi
+
+User qarori: "H ≥ −100 ni ham ol — men o'zim qo'yganman".
+
+**Oldin:** `h = h_raw.min(rn_g0).max(-100).rename('H')` — 2023-08-20 cold anchor maqsad H −242.4, raster −100.0 (cold λET 142 W/m² kam).
+
+**Keyin:** `h = h_raw.min(rn_g0).rename('H')` (λE ≥ 0 kafolati qoladi). Pastdan chegaralovchi qolgan himoya: dT ∈ [dT_cold, dT_hot] ± 20 % (cold'dan sovuqroq piksellarda ekstrapolyatsiya 20 % bilan cheklanadi). Keyingi bosqichlar: SEBAL_ID ETRF_INST clamp [0, 1.05]; SEBAL_B EF clamp [0, 1]; SEBAL_Milliy ET_24 = ET_inst·eff.soat — ETrF cheklovi yo'q (faqat dT margin).
+
+GEE sinovi: Milliy 08-20 cold raster **−242.44 / maqsad −242.4** ✅ (oldin −100.0).
+
+---
+
+## #34–#37 — Proyeksiya: butun hisob zanjiri Landsat UTM 30 m gridida
+
+User qarori: "bos, hammasini qil" (GPT taklifi bilan birga ko'rib chiqilgan reja: 1–4; RN qayta tartiblash va TPW algoritmi — qilinmaydi).
+
+**Muammo (GEE bilan o'lchangan, 2023-07-11, barcha bandlar):**
+
+| Band | SEBAL_Milliy (oldin) | SEBAL_ID (oldin) |
+|---|---|---|
+| LST, L_UP, DTA, G_RATIO | **EPSG:4326 0.25°** (ERA5 TCWV'dan) | UTM 30 m |
+| LAI, EMISSIVITY, Z0M, Z0H | **EPSG:4326 1°** | **EPSG:4326 1°** |
+| qolganlari (RN, G0, H, ET_24, ERA5 meteo …) | UTM 30 m | UTM 30 m |
+
+Qoida (GEE sinovi): `ee.Image(1).subtract(NDVI)` → UTM (binar amalda konstanta proyeksiyani buzmaydi), `ee.Image(0).where(NDVI>0.3, 1)` → WGS84 1° (where konstanta proyeksiyasini oladi). Shuning uchun RN (konstanta bilan boshlansa ham) UTM edi — qayta tartiblash kerak emas.
+
+Oqibat: `reduceRegion`'da crs berilmasa birinchi bandning default proyeksiyasi olinadi → SEBAL_Milliy anchor gridi 4326@30 m (piksel 30×23 m): ROI'da **1 795 766** piksel vs Landsat **1 380 904** (1.30×), noyob LST qiymatlari soni bir xil (1 205 079 vs 1 204 789) → Landsat piksellarining ~30 % i ikki marta (median og'irligi, nomzodlar soni buzilgan, sun'iy tengliklar). Yadro sinovi: 3×3 yadro SO'ROV gridida ishlaydi (0.25° proyeksiyali tasvir UTM'da so'ralsa 3×3 o'rtachasi UTM bilan AYNAN teng — 0.27273; crs'siz — 0.27934) → CSV/LST-diag crs'siz bo'lsa 90×69 m footprint.
+
+**#34 — SMW LST** (`radiation.compute_lst_smw`):
+```python
+# Oldin:  lst = a.multiply(tb).divide(eps).add(b.divide(eps)).add(c)      # 'a' — ERA5 0.25°
+# Keyin:  lst = tb.multiply(a).divide(eps).add(b.divide(eps)).add(c)      # Tb — Landsat UTM 30 m
+SMW_TPW_STEP = 0.6; SMW_TPW_NBIN = 10     # Ermida klasslari — konstanta sifatida (algoritm o'zgarmagan)
+```
+Qiymat o'zgarmaydi (a·Tb = Tb·a).
+
+**#35 — LAI va EMISSIVITY** (`surface_props`):
+```python
+# Oldin:  lai = ee.Image(0.0).where(...)                 → WGS84 1°
+# Keyin:  lai = savi.multiply(0).where(...)               → Landsat UTM (Z0M, Z0H ham)
+# Oldin:  emissivity = ee.Image(0.985).where(...)         (SEBAL_ID/Milliy va SEBAL_B shoxlari)
+# Keyin:  emissivity = ndvi.multiply(0).add(0.985).where(...)
+```
+Valid piksellarda qiymat o'zgarmaydi; SAVI/NDVI yo'q piksellarda endi LAI/EMISSIVITY ham yo'q (oldin soxta 0 / 0.985) — ET qamrovi o'zgarmaydi (ET SR bandlarini talab qiladi).
+
+**#36 — Yagona tahlil gridi** `energy_balance.analysis_proj(image) = image.select('NDVI').projection()`:
+- barcha anchor reduksiyalari `crs=analysis_proj(image)`: persentillar (`_select_anchor_default`, `_anchor_cimec`, `_anchor_plan_b`, `_anchor_pysebal` — 18 ta), `_ensure_nonempty`, `_purity_zones` (100 m sanash), median `_reduce_anchor_values`, `_extreme_pixel`, `_anchor_sample`, Tref (`cold_anchor_surface_temp`), tuproq namunasi (hot_pixel_etrf grid), Ta QC ulushi;
+- CSV: `_export_zonal_csv` (`reduceRegions(..., crs=grid)`, grid = birinchi sahna Landsat gridi), `_export_lst_diag_csv` (har sahna o'z gridi — 3×3/5×5/PSF = 90×90/150×150 m), `run_polygons` `_zonal_add(..., crs=grid)`.
+- Tile darajasidagi zonalar (`compute_tile_anchor_zones`, `_utm_projection`) — o'zgarmagan (sahnadan oldin quriladi).
+
+**#37 — Sahna QC** (`main._grid_tpw_qc`, BITTA getInfo, qiymatlarga tegmaydi):
+- LST, LAI, EMISSIVITY, L_UP, DTA, RN proyeksiyasi = NDVI (crs + transform); farq → OGOHLANTIRISH; CSV: `grid`, `grid_ok`.
+- SEBAL_Milliy: ROI'da ERA5 TCWV min/max → TPW klasslari; > 1 klass → OGOHLANTIRISH ("~1.4 K LST pog'onasi"); CSV: `TPW_min`, `TPW_max`, `TPW_bin_min`, `TPW_bin_max`, `n_TPW_bins`.
+
+GEE sinovi:
+
+| Sinov | Natija |
+|---|---|
+| SEBAL_Milliy 07-11, barcha 71 band proyeksiyasi | hammasi EPSG:32642 30 m (LST, L_UP, DTA, G_RATIO, LAI, EMISSIVITY, Z0M, Z0H ham); 1° da faqat kunlik ERA5 referenslari RS24, ETR24, ETREF_24 qoldi |
+| SEBAL_ID 07-11 (regressiya) | oldingi bilan AYNAN: dT_hot 4.5885, dT_cold −1.3291, H 299.5983 / −16.1363, Ta QC 15.79 % |
+| SEBAL_B 07-11 (regressiya) | AYNAN: dT_hot 5.3370, H_hot 343.7553, Ta QC 11.41 % |
+| CSV zonal (`reduceRegions`, 150 m parcel, 0.25° default proyeksiyali tasvir) | crs'siz: **48 piksel**, o'rtacha 0.0902 (dublikatlar); `crs=Landsat`: **30 piksel**, 0.0869 = asl Landsat bilan AYNAN (farq ~4 %) |
+| Grid QC | barcha qabul qilingan sahnalarda `EPSG:32642 30m ok=True` |
+| TPW QC | 07-11: 0.846–1.049 sm, 1 klass; 08-20: 1.260–1.388 sm, 1 klass; **11-16: 0.599–0.796 sm → 2 klass (0–1) → OGOHLANTIRISH** |
+| SEBAL_Milliy anchorlari (grid o'zgardi) | 07-11 OK (hot 331.1 K, cold H −44.5, raster = maqsad); 08-20 OK (cold H −256.5 = maqsad); 11-16 OK; **03-21 RAD** (`dT_hot 2.01 ≤ dT_cold 2.63`; yangi hot piksel rah_hot 6.7 s/m) — 4326 gridida (#31 sinovi) OK chiqqan edi |
+
