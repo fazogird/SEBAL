@@ -24,11 +24,13 @@ class SceneQCError(Exception):
     main.process_tile uni sababi bilan rad etadi va hisobotga yozadi."""
 
 
-# Anchor tanlash reduceRegion masshtabi (m). Default 30. Katta ROI (butun tile)
-# uchun main.run(export_csv=True) buni 100 ga qo'yadi — Landsat TERMAL native res
-# aynan 100m (30m — resample), shuning uchun anchor sifati YO'QOLMAYDI, lekin
-# reduceRegion ~10× tez (piksel soni 11× kam). ET esa lizimetr'da 30m qoladi.
-ANCHOR_SCALE = 30
+# Anchor tanlash masshtabi (m) — BARCHA rejimlarda 100 m (user qarori 2026-09-19).
+# Landsat TIRS termal native 100 m; 30 m LST — interpolyatsiya (30 m dagi "eng
+# sovuq/issiq" piksel ko'pincha interpolyatsiya/chekka artefakti). Sinov (Samarqand,
+# SEBAL_Milliy): 07-11 da 30 m cold anchor Ta-anomaliya pikseli edi (dT_cold −9.4 K,
+# rah 220 s/m), 100 m da normal (−1.4 K); ekinzor ET farqi −0.6…−3.9 % (07-11: −13 %);
+# 25–40 % tez. ET rasteri 30 m da qoladi — 100 m faqat anchor tanlash va namunasi.
+ANCHOR_SCALE = 100
 
 # Cold (ho'l) anchor referens-ET fraksiyasi: λET_cold = COLD_ETRF · ETr_inst.
 # Tasumi/SEBAL_ID default 1.05 (sug'oriladigan to'liq-qoplama ekin advektsiyada
@@ -300,6 +302,10 @@ def _select_anchor_default(image, roi, cold_zone=None, hot_zone=None,
     hot_fallback = hot_base.And(lst.gte(lst_p_hot))
     hot_mask = _ensure_nonempty(hot_mask, hot_fallback)
 
+    # point_anchor: chegarasiz dumlar — eng chetdagi point_trim_pct % tashlanadi
+    if anchor_mode == 'point_anchor':
+        cold_mask, hot_mask = _trim_tails(image, search_geom, cold_mask, hot_mask)
+
     # cold/hot skalyar — median (default) yoki bitta ekstremal piksel
     cold_lst, cold_rn_g0, hot_lst, hot_rn_g0, cold_pt, hot_pt = _reduce_anchor_values(
         image, search_geom, cold_mask, hot_mask, anchor_mode, need_rn)
@@ -312,8 +318,8 @@ def _select_anchor_default(image, roi, cold_zone=None, hot_zone=None,
     # ΔT = hot_LST − cold_LST ≥ cfg.ANCHOR['min_dt'] (barcha metodlarda bir xil)
     ok = (cold_lst.gt(200).And(hot_lst.gt(200))
           .And(hot_lst.subtract(cold_lst).gte(cfg.ANCHOR['min_dt'])))
-    if need_rn:
-        ok = ok.And(hot_rn_g0.gt(-900))
+    if need_rn:                       # cold va hot Rn−G₀ — IKKALASI ham (simmetrik)
+        ok = ok.And(hot_rn_g0.gt(-900)).And(cold_rn_g0.gt(-900))
     anchors_valid = ee.Number(ee.Algorithms.If(ok, 1, 0))
 
     return {
@@ -498,6 +504,10 @@ def _anchor_pysebal(image, geom, base):
     return cold_mask, hot_mask
 
 
+# LST oralig'i bir tomondan CHEGARASIZ metodlar (point_anchor da _trim_tails).
+# 'default' — _select_anchor_default ichida alohida qo'llanadi.
+_UNBOUNDED_METHODS = ('pysebal',)
+
 _ANCHOR_METHODS = {
     'cimec': _anchor_cimec,
     'plan_a': _anchor_plan_a,
@@ -549,6 +559,28 @@ def _extreme_pixel(image, mask, geom, which, carry=()):
     vals = [ee.Number(d.get(f'max{4 + i}', -999)) for i in range(len(carry))]
     return (ee.Number(d.get('max3', -999)), vals,
             ee.List([d.get('max1'), d.get('max2')]))
+
+
+def _trim_tails(image, geom, cold_mask, hot_mask):
+    """
+    point_anchor uchun: LST oralig'i CHEGARASIZ nomzodlar (default: cold ≤ p20 /
+    hot ≥ p95; pysebal: cold ≤ o'rt−std / hot ≥ o'rt+std) ichidan eng chetdagi
+    cfg.ANCHOR['point_trim_pct'] % tashlanadi: cold LST ≥ p{q}, hot LST ≤ p{100−q}
+    (NOMZODLAR ichidagi persentil). Aks holda point = absolyut eng sovuq/issiq —
+    default'ning o'z izohi ("p5 juda xavfli — soya") ga zid chetdagi piksel
+    (2023-10-07 default: cold albedo 0.11, Rn−G₀ 522 vs nomzodlar 434 W/m²).
+    Nomzodlar ta'rifi o'zgarmaydi. cimec/plan_a/plan_b oralig'i ikki tomondan
+    chegaralangan — ularga qo'llanmaydi.
+    """
+    q = cfg.ANCHOR['point_trim_pct']
+    lst = image.select('LST')
+    kw = dict(crs=analysis_proj(image), scale=ANCHOR_SCALE, maxPixels=1e9,
+              bestEffort=True, tileScale=4)
+    pc = _pn(lst.updateMask(cold_mask).reduceRegion(
+        ee.Reducer.percentile([q]), geom, **kw), 'LST', _HI)            # yo'q → bo'sh
+    ph = _pn(lst.updateMask(hot_mask).reduceRegion(
+        ee.Reducer.percentile([100 - q]), geom, **kw), 'LST', _LO)      # yo'q → bo'sh
+    return cold_mask.And(lst.gte(pc)), hot_mask.And(lst.lte(ph))
 
 
 def _reduce_anchor_values(image, geom, cold_mask, hot_mask,
@@ -656,16 +688,18 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
     cold_lst, cold_rn_g0, hot_lst, hot_rn_g0, cold_pt, hot_pt = _reduce_anchor_values(
         image, geom, cold_mask, hot_mask, anchor_mode, need_rn)
 
+    def _nz(v):                       # null → -999 (IsEqual: 0 qiymat "yo'q" emas)
+        return ee.Algorithms.If(ee.Algorithms.IsEqual(v, None), -999, v)
     probe = ee.List([
-        ee.Algorithms.If(cold_lst, cold_lst, -999),
-        ee.Algorithms.If(hot_lst, hot_lst, -999),
-        ee.Algorithms.If(hot_rn_g0, hot_rn_g0, -999) if need_rn else 0,
+        _nz(cold_lst), _nz(hot_lst),
+        _nz(hot_rn_g0) if need_rn else 0,
+        _nz(cold_rn_g0) if need_rn else 0,     # cold Rn−G₀ ham (hot bilan simmetrik)
     ]).getInfo()
-    c, h, hr = probe[0], probe[1], probe[2]
+    c, h, hr, cr = probe[0], probe[1], probe[2], probe[3]
 
     min_dt = cfg.ANCHOR['min_dt']
-    ok = (c is not None and h is not None and hr is not None
-          and c > -900 and h > -900 and hr > -900 and (h - c) >= min_dt)
+    ok = (None not in (c, h, hr, cr)
+          and c > -900 and h > -900 and hr > -900 and cr > -900 and (h - c) >= min_dt)
 
     if ok:
         if verbose:
@@ -683,8 +717,9 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
         }
 
     if verbose:
-        reason = ('cold/hot bo\'sh' if (c <= -900 or h <= -900)
-                  else f'ΔT={h - c:.1f}K < {min_dt}K')
+        reason = ('cold/hot bo\'sh' if (c is None or h is None or c <= -900 or h <= -900)
+                  else f'ΔT={h - c:.1f}K < {min_dt}K' if (h - c) < min_dt
+                  else 'anchor Rn−G₀ yo\'q')
         print(f"    ↪ metod={method} ({zone}) → topilmadi ({reason}), keyingisi…")
     return None
 
@@ -740,6 +775,8 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
     for m in order:
         cm, _ = _ANCHOR_METHODS[m](image, roi, cold_base)
         _, hm = _ANCHOR_METHODS[m](image, roi, hot_base)
+        if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
+            cm, hm = _trim_tails(image, roi, cm, hm)
         res = _finalize_anchor(image, roi, cm, hm, m, 'lc', verbose, anchor_mode,
                                need_rn, cold_purity, hot_purity)
         if res is not None:
@@ -749,6 +786,8 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
     for m in order:
         cm, _ = _ANCHOR_METHODS[m](image, roi, base_flat)
         _, hm = _ANCHOR_METHODS[m](image, roi, hot_flat)
+        if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
+            cm, hm = _trim_tails(image, roi, cm, hm)
         res = _finalize_anchor(image, roi, cm, hm, m, 'ROI', verbose, anchor_mode,
                                need_rn)
         if res is not None:
@@ -793,7 +832,8 @@ def finalize_anchor_values(image, roi, anchors, anchor_mode='median_anchor'):
     cold_lst, cold_rn_g0, hot_lst, hot_rn_g0, cold_pt, hot_pt = _reduce_anchor_values(
         image, roi, anchors['cold_mask'], anchors['hot_mask'], anchor_mode, True)
     valid = ee.Number(ee.Algorithms.If(
-        cold_lst.gt(200).And(hot_lst.gt(200)).And(hot_rn_g0.gt(-900))
+        cold_lst.gt(200).And(hot_lst.gt(200))
+        .And(hot_rn_g0.gt(-900)).And(cold_rn_g0.gt(-900))
         .And(hot_lst.subtract(cold_lst).gte(cfg.ANCHOR['min_dt'])), 1, 0))
     out = dict(anchors)
     out.update({'cold_lst': cold_lst, 'hot_lst': hot_lst,
@@ -991,7 +1031,7 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     cold_lst = anchors['cold_lst']
     hot_lst = anchors['hot_lst']
     hot_rn_g0 = anchors['hot_rn_g0']
-    cold_rn_g0 = anchors.get('cold_rn_g0', hot_rn_g0)   # SEBAL_ID: cold H_cp uchun
+    cold_rn_g0 = anchors.get('cold_rn_g0')   # SEBAL_ID: cold H_cp uchun (hot'dan zaxira YO'Q)
     is_id = cfg.is_id_mode(mode)
 
     lst = image.select('LST')
@@ -1040,6 +1080,12 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     if not (hlst - clst) >= min_dt:
         raise SceneQCError(f"anchor ΔT = T_hot − T_cold = {hlst - clst:.2f} K < {min_dt} K "
                            f"(cold {clst:.2f} K, hot {hlst:.2f} K)")
+
+    # Anchor Rn−G₀ — hot (har doim), cold (SEBAL_ID oilasi) BO'LISHI SHART
+    for side in sides:
+        v = stats.get(f'{side}_rn_g0')
+        if v is None or v <= -900:
+            raise SceneQCError(f"{side} anchor Rn−G₀ topilmadi")
 
     smp = stats['s']
     for side in sides:
@@ -1304,6 +1350,16 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
         ta_qc['pct_Ta_out15'] = 100.0 * req['out15']
     if qc is not None:
         qc.update(ta_qc)
+    # Cold anchor Ta ↔ ERA5 — farq katta bo'lsa OGOHLANTIRISH (rad etish EMAS)
+    if ta_qc.get('Ta_cold') is not None and ta_qc.get('Ta_era5_cold') is not None:
+        d_ta = ta_qc['Ta_cold'] - ta_qc['Ta_era5_cold']
+        thr = cfg.ANCHOR['cold_ta_warn']
+        if abs(d_ta) > thr:
+            msg = (f"cold anchor Ta {ta_qc['Ta_cold']:.1f} K − ERA5 {ta_qc['Ta_era5_cold']:.1f} K "
+                   f"= {d_ta:+.1f} K (|farq| > {thr} K) — cold kalibratsiya shubhali")
+            print(f"    ⚠️ OGOHLANTIRISH: {msg}")
+            if qc is not None:
+                qc.setdefault('warnings', []).append(msg)
 
     def _fmt(x):
         return f"{x:.3f}" if isinstance(x, (int, float)) else str(x)

@@ -258,9 +258,14 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             qc.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
 
         if not chk['valid']:
-            if 'dT_LST' in qc:
+            rn_bad = [sd for sd in ('cold', 'hot')
+                      if f'{sd}_rn_g0' in chk and (chk[f'{sd}_rn_g0'] is None
+                                                   or chk[f'{sd}_rn_g0'] <= -900)]
+            if 'dT_LST' in qc and qc['dT_LST'] < cfg.ANCHOR['min_dt']:
                 why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
                        f"(cold {c_:.1f} K, hot {h_:.1f} K)")
+            elif 'dT_LST' in qc and rn_bad:
+                why = f"anchor Rn−G₀ topilmadi ({'/'.join(rn_bad)})"
             else:
                 why = "anchor: cold/hot nomzod topilmadi"
             _reject(info['dates'][i], why, qc)
@@ -1122,12 +1127,9 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         _cloud_use_cropland = False
         print("  ☁️  export_csv → bulut precheck LOKAL (csv_region parcellari; tez)")
 
-    # ANCHOR masshtabi: CSV/lizimetr YOKI tile-asosli (katta 185km tile) rejimda 100m —
-    # butun tile ~10× tez + interaktiv "User memory limit" xavfi kamayadi. Landsat
-    # termal native 100m → anchor sifati yo'qolmaydi. Kichik ROI (rectangle) → 30m.
-    energy_balance.ANCHOR_SCALE = 100 if (_csv_mode or process_by_tile) else 30
-    if energy_balance.ANCHOR_SCALE == 100:
-        print("  ⚡ anchor 100m da (katta tile — tez + xotira yengil; termal native res)")
+    # ANCHOR masshtabi — energy_balance.ANCHOR_SCALE (100 m, BARCHA rejimlarda bir xil;
+    # oldin ROI 30 m / CSV-tile 100 m edi → bir xil sahna rejimga qarab turli anchor).
+    print(f"  ⚡ anchor {energy_balance.ANCHOR_SCALE} m da (Landsat termal native; ET 30 m)")
 
     # Cold anchor ETrF (λET_cold = cold_etrf·ETr) — SEBAL_ID default 1.05
     energy_balance.COLD_ETRF = cold_etrf

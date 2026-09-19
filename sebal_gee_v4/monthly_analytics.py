@@ -206,8 +206,8 @@ def compute_monthly_et(scene_images, roi, year, month):
                 .subtract(ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
                 .max(0))
 
-        # λ haroratga bog'liq (Tasumi 3.48): (2.501-0.00236·(Ts-273))·10⁶
-        lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+        # λ haroratga bog'liq (Tasumi 3.48): (2.501-0.00236·(Ts-273.15))·10⁶
+        lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                .add(2.501).multiply(1e6))
         et_day = evap_frac.multiply(rn24).multiply(spd).divide(lam).max(0)
         return et_day
@@ -320,7 +320,7 @@ def compute_monthly_et_components(scene_images, roi, year, month):
         rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
 
         # ET (haqiqiy) — λ haroratga bog'liq (Tasumi 3.48)
-        lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+        lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                .add(2.501).multiply(1e6))
         et_day = (interp.select('EVAP_FRAC')
                   .multiply(rn24_actual).multiply(spd).divide(lam).max(0))

@@ -86,8 +86,11 @@ def get_daily_solar_radiation(date, roi, utc_offset=0):
     -------
     ee.Image : Rs24 (W/m²)
     """
-    # Mahalliy standart kalendar kun (App.5-A) — utc_offset=0 → eski UTC kun
-    day_start = ee.Date(date).advance(-utc_offset, 'hour')
+    # Mahalliy standart kalendar kun (App.5-A) — utc_offset=0 → eski UTC kun.
+    # Avval YARIM TUNGA qirqiladi (get_daily_etr24 bilan bir xil): sahna uchun date =
+    # overpass vaqti (masalan 17:20 UTC) — qirqilmasa 24 soatlik oyna overpassdan
+    # boshlanardi (Bushland UTC−6: sahna Rs24 −10…+10 %; Samarqand ~0 %).
+    day_start = ee.Date(ee.Date(date).format('YYYY-MM-dd')).advance(-utc_offset, 'hour')
     day_end = day_start.advance(1, 'day')
 
     ssrd_band = cfg.ERA5['bands']['ssrd']
@@ -169,8 +172,8 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
 
     image = image.addBands(rn24)
 
-    # λ HAROTARGA BOG'LIQ (Tasumi Eq. 3.48): (2.501 − 0.00236·(Ts−273))·10⁶ J/kg
-    lam = (image.select('LST').subtract(273.0).multiply(-0.00236)
+    # λ HAROTARGA BOG'LIQ (Tasumi Eq. 3.48): (2.501 − 0.00236·(Ts−273.15))·10⁶ J/kg
+    lam = (image.select('LST').subtract(273.15).multiply(-0.00236)
            .add(2.501).multiply(1e6).rename('LAMBDA_HV'))
     spd = cfg.DAILY_ET['seconds_per_day']
 
@@ -288,7 +291,7 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
             rn24 = ((ee.Image(1.0).subtract(interp.select('ALBEDO'))).multiply(rs24)
                     .subtract(ee.Image(cfg.DAILY_ET['rn24_constant'])
                               .multiply(interp.select('TAU_SW'))).max(0))
-            lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+            lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                    .add(2.501).multiply(1e6))
             return (interp.select('EVAP_FRAC').multiply(rn24)
                     .multiply(cfg.DAILY_ET['seconds_per_day']).divide(lam)
@@ -415,7 +418,7 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
                         ee.Image(cfg.DAILY_ET['rn24_constant']).multiply(tau_sw))
                     .max(0))
             evap_frac = interp.select('EVAP_FRAC')
-            lam = (interp.select('LST').subtract(273.0).multiply(-0.00236)
+            lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
                    .add(2.501).multiply(1e6))
             spd = cfg.DAILY_ET['seconds_per_day']
             et_day = (evap_frac.multiply(rn24).multiply(spd).divide(lam).max(0))

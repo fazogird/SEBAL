@@ -366,6 +366,16 @@ ANCHOR = {
     # (default va kaskad). ~3 × LST noaniqligi (C2 ST / SMW ≈ 1.5 K). Samarqand 2023
     # (24 sahna): ΔT 8.7…27.6 K — bu chegara bironta sahnani tushirmaydi.
     'min_dt':               5.0,
+    # Cold anchor Ta QC (qiymatga TEGMAYDI, faqat OGOHLANTIRISH): cold piksel — yaxshi
+    # sug'orilgan ekin; undagi havo harorati Ta = LST − dT 2 m ERA5 havo haroratiga yaqin
+    # bo'lishi kerak. |Ta_cold − Ta_ERA5| > shu (K) → cold kalibratsiya shubhali (masalan
+    # juda barqaror qatlam, rah_cold katta). 5 K: 8 sinov sahnasida farq −2.0…+1.9 K,
+    # ERA5 T2m xatosi ~1–2 K + LST ~1.5 K; anomaliya (2023-07-11 Milliy) +9.4 K.
+    'cold_ta_warn':         5.0,
+    # point_anchor: LST oralig'i chegarasiz metodlarda (default, pysebal) nomzodlar
+    # ichidan eng chetdagi shu % tashlanadi (cold ≥ p5, hot ≤ p95) — absolyut
+    # chetdagi (soya/artefakt) piksel anchor bo'lmasin. cimec/plan_a/plan_b — tegilmaydi.
+    'point_trim_pct':       5,
 
     # Selection method
     'method': 'median',             # 'median' yoki 'mean' — outlier himoyasi

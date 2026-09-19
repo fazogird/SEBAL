@@ -64,6 +64,7 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
         crop_assets = getattr(cfg, 'CROP_ASSETS', None)
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
+    wb.check_chirps_month(year, month)          # yog'in yo'q kun → xato (soxta 0 emas)
     ndvi_coll = ee.ImageCollection(image_list).select('NDVI')
     dem = ee.Image(image_list[0]).select('DEM')
 
@@ -167,12 +168,15 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
         p_img = (ee.ImageCollection(wb.CHIRPS)
                  .filterDate(d, d.advance(1, 'day'))
                  .select('precipitation').first())
-        P = ee.Image(ee.Algorithms.If(p_img, p_img, ee.Image(0.0))).unmask(0.0)
+        # Yog'in — CHIRPS kunlik rasmi (oy boshida check_chirps_month bilan HAR kun
+        # borligi tekshirilgan; soxta 0 va unmask(0) YO'Q).
+        P = ee.Image(p_img)
 
         # topsoil ho'llash (infiltratsiya) → depletion kamayadi
         De2 = De.subtract(P).max(0.0)
         # Kr: De2≤REW → 1;  aks holda (TEW−De2)/(TEW−REW)   [TEW/REW per-piksel]
-        Kr = (ee.Image(1.0).where(De2.gt(REW),
+        # Asos — De2 (Landsat grid/mask), ee.Image(1.0) EMAS (u WGS84 1° va maskasiz)
+        Kr = (De2.multiply(0).add(1.0).where(De2.gt(REW),
               TEW.subtract(De2).divide(TEW.subtract(REW))).clamp(0.0, 1.0))
         ke = (Kr.multiply(ee.Image(KCMAX).subtract(kcb))
               .min(few.multiply(KCMAX)).max(0.0).multiply(KE_SCALE))

@@ -67,8 +67,10 @@ def classify_irrigation(image):
     ndvi = image.select('NDVI')
 
     # Asosiy klassifikatsiya — moisture stress bo'yicha
+    # Asos — MOISTURE_STRESS (Landsat grid/mask), ee.Image(3) EMAS: u butun dunyoni
+    # qoplaydi (MOISTURE_STRESS yo'q pikselda soxta "3 — darhol") va WGS84 1°.
     irr_class = (
-        ee.Image(3)                                          # default: darhol
+        ms.multiply(0).add(3)                                # default: darhol
         .where(ms.gte(th['stress_moderate']), 2)             # o'rtacha
         .where(ms.gte(th['stress_mild']), 1)                 # engil
         .where(ms.gte(th['stress_none']), 0)                 # kerak emas
@@ -90,7 +92,7 @@ def classify_irrigation(image):
     # Yalang'och tuproq / suv → 0 (sug'orish ahamiyatsiz)
     irr_class = irr_class.where(ndvi.lt(th['ndvi_bare']), 0)
 
-    irr_class = irr_class.rename('IRRIGATION_CLASS')
+    irr_class = irr_class.toInt().rename('IRRIGATION_CLASS')
 
     return image.addBands(irr_class)
 

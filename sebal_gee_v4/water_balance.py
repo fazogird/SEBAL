@@ -60,6 +60,28 @@ _SOIL = {
 _SOIL_DEFAULT = (0.25, 0.12, 9.0)   # Loam — tekstura topilmasa
 
 
+def check_chirps_month(year, month):
+    """
+    CHIRPS DAILY — oyning HAR kuni rasmi borligini tekshiradi (klient, BITTA getInfo).
+    Kun yo'q → RuntimeError (sanalari bilan). Kunlik suv balanslari (consumptive_use,
+    ndvi_kc, root_zone_water) bu tekshiruvdan keyin yog'inni to'g'ridan-to'g'ri oladi
+    (oldin yo'q kun jimgina P = 0 edi).
+    """
+    import calendar
+    days = calendar.monthrange(year, month)[1]
+    start = ee.Date.fromYMD(year, month, 1)
+    got = set(ee.ImageCollection(CHIRPS).filterDate(start, start.advance(days, 'day'))
+              .aggregate_array('system:time_start')
+              .map(lambda t: ee.Date(t).format('YYYY-MM-dd')).getInfo())
+    missing = [f'{year}-{month:02d}-{d:02d}' for d in range(1, days + 1)
+               if f'{year}-{month:02d}-{d:02d}' not in got]
+    if missing:
+        raise RuntimeError(
+            f"CHIRPS DAILY yog'ini {year}-{month:02d} da {len(missing)} kun yo'q "
+            f"({', '.join(missing[:5])}{' …' if len(missing) > 5 else ''}) — "
+            f"default 0 ishlatilmaydi.")
+
+
 def _soil_stack():
     """
     Tuproq xaritalari (xom, masshtablanmagan): 'fc' — OpenLandMap 33 kPa (qatlamlar

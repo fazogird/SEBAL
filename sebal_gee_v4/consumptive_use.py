@@ -116,6 +116,7 @@ def effective_precip_monthly(image_list, roi, year, month, mode='SEBAL_Milliy',
         image_list, roi, year, month, mode=mode, ref_type=ref_type,
         utc_offset=utc_offset, etr24_source=etr24_source,
         sloping_terrain=sloping_terrain)
+    wb.check_chirps_month(year, month)          # yog'in yo'q kun → xato (soxta 0 emas)
     taw, cn = soil_water_params(roi)
     S = ee.Image(25400.0).divide(cn).subtract(254.0).max(1.0)   # potensial retention (mm)
     Ia = S.multiply(0.2)                                          # boshlang'ich yo'qotish
@@ -136,7 +137,9 @@ def effective_precip_monthly(image_list, roi, year, month, mode='SEBAL_Milliy',
                  .filterDate(d, d.advance(1, 'day'))
                  .select('precipitation').first())
         # clip YO'Q (CHIRPS global) — extent updateMask(ET) bilan ET'ga tenglashadi
-        P = ee.Image(ee.Algorithms.If(p_img, p_img, ee.Image(0.0))).unmask(0.0)
+        # Yog'in — CHIRPS kunlik rasmi (oy boshida check_chirps_month bilan HAR kun
+        # borligi tekshirilgan; soxta 0 va unmask(0) YO'Q).
+        P = ee.Image(p_img)
 
         eta = ee.Image(et_list.get(off))
 
