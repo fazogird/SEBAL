@@ -492,13 +492,14 @@ def downscale_target_to_30m(coarse_target, weight, viirs_projection,
 # 12. Daily ET — Lambda mode
 # ==============================================================
 
-def daily_rn24(date, roi, albedo):
+def daily_rn24(date, roi, albedo, utc_offset=0):
     """
     Daily RN24 — daily_et.daily_rn24 bilan AYNI formula:
     Rn24 = (1-α)·Rs24 - 110·τ24, τ24 = Rs24/Ra24 (o'sha kun). albedo anchorlardan.
-    (Rs24 — bu modulning o'z kun konvensiyasi: ma._get_daily_rs24, UTC kun.)
+    Rs24 — MAHALLIY kalendar kun (daily_et.get_daily_solar_radiation, utc_offset);
+    oldin ma._get_daily_rs24 (UTC kun) edi — quvurning qolgan qismiga mos emas.
     """
-    rs24 = ma._get_daily_rs24(date, roi)
+    rs24 = daily_et.get_daily_solar_radiation(date, roi, utc_offset=utc_offset)
     rn24, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(date))
     return rn24
 
@@ -754,7 +755,7 @@ def _weight_provider(anchors, viirs_projection, target_mode):
 
 def build_daily_viirs_downscaled_collection(
         start, end, roi, anchors, regression_model, model_name, target_mode,
-        viirs_projection, qa_mode='lenient', temporal_fill='linear'):
+        viirs_projection, qa_mode='lenient', temporal_fill='linear', utc_offset=0):
     """
     Oy ichidagi HAR KUN uchun 30 m target → daily ET.
 
@@ -783,10 +784,10 @@ def build_daily_viirs_downscaled_collection(
 
         if target_mode == 'lambda':
             albedo = interp_radiation_bands(anchors, d)
-            rn24 = daily_rn24(d, roi, albedo)
+            rn24 = daily_rn24(d, roi, albedo, utc_offset=utc_offset)
             et = compute_daily_et_lambda_mode(t30, rn24)
         else:  # kc
-            etref = _daily_etref(anchors, d, roi)
+            etref = _daily_etref(anchors, d, roi, utc_offset=utc_offset)
             et = compute_daily_et_kc_mode(t30, etref)
 
         daily_et_imgs.append(et.set('system:time_start', ee.Date(d).millis())
@@ -805,7 +806,7 @@ def build_daily_viirs_downscaled_collection(
 #     rad_ratio = rs24.divide(rn_scene).clamp(0, 1.5)
 #     return etref_scene.multiply(rad_ratio).rename('ETREF_24')
 
-def _daily_etref(anchors, date, roi):
+def _daily_etref(anchors, date, roi, utc_offset=0):
     """
     KC mode uchun kunlik ETREF_24 — anchorlardan interpolyatsiya +
     ERA5 radiatsiya nisbati.
@@ -824,7 +825,7 @@ def _daily_etref(anchors, date, roi):
     rn_scene = interp.select('RN24').max(1)
     albedo = interp.select('ALBEDO')
 
-    rs24 = ma._get_daily_rs24(date, roi)
+    rs24 = daily_et.get_daily_solar_radiation(date, roi, utc_offset=utc_offset)  # mahalliy kun
 
     # Bugungi Rn24 — daily_et.daily_rn24 bilan bir xil formula (τ24 = Rs24/Ra24)
     rn24_actual, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(date))
@@ -905,10 +906,10 @@ def build_tile_monthly_et_viirs(scene_images, info, tile_roi, start, end,
         lam = fill_temporal_gaps(source_col, d, temporal_fill)
         if target_mode == 'lambda':
             albedo = interp_radiation_bands(anchors, d)
-            rn24 = daily_rn24(d, tile_roi, albedo)
+            rn24 = daily_rn24(d, tile_roi, albedo, utc_offset=info.get('utc_offset', 0))
             et = compute_daily_et_lambda_mode(lam, rn24)
         else:
-            etref = _daily_etref(anchors, d, tile_roi)
+            etref = _daily_etref(anchors, d, tile_roi, utc_offset=info.get('utc_offset', 0))
             et = compute_daily_et_kc_mode(lam, etref)
         daily_et_imgs.append(et.set('system:time_start', ee.Date(d).millis()))
 

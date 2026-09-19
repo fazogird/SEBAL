@@ -52,7 +52,7 @@ def run_combo(gname, g, year, mode):
         mode=mode, satellite='BOTH', cloud_max=70,
         utc_offset=g['utc'], process_by_tile=True, tiles=None,
         export_daily=False, export_monthly=False, export_csv=True,
-        csv_region=fc,
+        csv_region=fc, csv_monthly=True,     # MONTHLY_ET CSV — flux_compare_full o'qiydi
         save_et=True, save_biomass=False, save_etref=False,
         save_tact=False, save_eact=False, save_cuirr=False, validate=False,
         folder=f'FLUXVAL_{gname}_{year}_{mode}',
@@ -71,17 +71,28 @@ def main_run():
     t0 = time.time()
     print(f"  Guruhlar: {GROUPS_TO_RUN}")
     print(f"  Jami run: {len(combos)}  |  boshlandi: {datetime.now():%Y-%m-%d %H:%M}")
-    ok, fail = 0, 0
+    ok, partial, fail = 0, [], []
     for i, (gname, g, year, mode) in enumerate(combos, 1):
         el = (time.time() - t0) / 60
         print(f"\n  ▶ [{i}/{len(combos)}]  {datetime.now():%H:%M}  (+{el:.0f} daq)")
         try:
-            run_combo(gname, g, year, mode); ok += 1
+            res = run_combo(gname, g, year, mode) or {}
         except Exception as e:
-            fail += 1; print(f"  ⚠️ {gname} {year} {mode} XATO: {e}")
+            fail.append(f"{gname} {year} {mode}: {type(e).__name__}: {e}")
+            print(f"  ❌ {gname} {year} {mode} XATO: {e}")
+            continue
+        if res.get('failed_tiles'):     # run tugadi, lekin ba'zi taylar natijasiz
+            partial.append(f"{gname} {year} {mode}: " + "; ".join(
+                f"{ft['tile']} ({ft['error']})" for ft in res['failed_tiles']))
+        else:
+            ok += 1
     dt = (time.time() - t0) / 60
-    print(f"\n  ✅ {ok} muvaffaqiyatli, {fail} xato  |  jami {dt:.0f} daqiqa  "
-          f"|  tugadi: {datetime.now():%H:%M}")
+    print(f"\n  ✅ {ok} to'liq | ⚠️ {len(partial)} qisman (tayl xatosi) | ❌ {len(fail)} xato"
+          f"  |  jami {dt:.0f} daqiqa  |  tugadi: {datetime.now():%H:%M}")
+    for p in partial:
+        print(f"    ⚠️ QISMAN — {p}")
+    for f_ in fail:
+        print(f"    ❌ XATO — {f_}")
     print(f"  GEE Tasks → tugagach Drive'dan FLUXVAL_* → flux_compare.py")
 
 

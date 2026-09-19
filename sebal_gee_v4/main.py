@@ -573,7 +573,8 @@ def _viirs_export_month(scenes, info, tile_roi, year, month, month_key,
     # Shu oydagi anchor sahnalar (scene_dates — scenes bilan indeksma-indeks)
     idx = [i for i, d in enumerate(info['scene_dates']) if d[:7] == month_key]
     m_scenes = [scenes[i] for i in idx]
-    m_info = {'dates': [info['scene_dates'][i] for i in idx]}
+    m_info = {'dates': [info['scene_dates'][i] for i in idx],
+              'utc_offset': info.get('utc_offset', 0)}   # Rs24 — mahalliy kun
     if not m_scenes:
         print(f"  ⚠️ VIIRS {month_key}: anchor yo'q")
         return
@@ -614,7 +615,8 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
 
     idx = [i for i, d in enumerate(info['scene_dates']) if d[:7] == month_key]
     m_scenes = [scenes[i] for i in idx]
-    m_info = {'dates': [info['scene_dates'][i] for i in idx]}
+    m_info = {'dates': [info['scene_dates'][i] for i in idx],
+              'utc_offset': info.get('utc_offset', 0)}   # Rs24 — mahalliy kun
     if not m_scenes:
         print(f"  ⚠️ S30 {month_key}: anchor yo'q")
         return
@@ -825,8 +827,8 @@ CSV_LYS_BANDS = [
     'DTA', 'RAH', 'USTAR', 'U_200', 'L_MO', 'Z0M', 'Z0M_WIND', 'RHO_AIR', 'SLOPE',
     # --- meteo (ERA5) — mustaqil tekshirish (#7) ---
     'WIND_SPEED_10M', 'AIR_TEMP',
-    # --- kunlik / referens (mavjud bo'lsa; _reduce yo'qini o'tkazib yuboradi) ---
-    'RN24', 'SOLAR_FRAC', 'ETR_INST', 'ETR24',
+    # --- kunlik / referens (Rn24 = (1−α)Rs24 − 110·τ24, τ24 = Rs24/Ra24) ---
+    'RN24', 'RS24', 'TAU24', 'SOLAR_FRAC', 'ETR_INST', 'ETR24',
 ]
 
 # Anchor tashxis (sahna PROPERTY'lari — energy_balance yozib qo'ygan). Per-piksel
@@ -855,11 +857,15 @@ def parcels_from_points(points, size_m=210, inner_buffer_m=-30):
 
 def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
                       tile_label, mode, utc_offset, scale=30, save_cuirr=False,
-                      save_aw=False):
+                      save_aw=False, csv_monthly=True):
     """
     region_fc (parcel) ustida MEAN+MEDIAN zonal-stat → BATCH table CSV.
       • per-scene CSV: har sahna, instant+daily bandlar (date bilan)
-      • per-month CSV: har oy, ET_MONTHLY (+ save_cuirr → Peffec/CUirr/NIWR)
+      • per-month CSV: har oy, ET_MONTHLY (+ save_cuirr → Peffec/CUirr/NIWR) —
+        faqat csv_monthly=True (run(csv_monthly=…)); export_monthly — RASTER uchun.
+    bands — eksport qilinadigan sahna bandlari (run(csv_bands=…) yoki CSV_LYS_BANDS);
+      fayllarga turkumlanadi: INST (lahzalik ET/fraksiyalar), DAILY_ET (ET_24),
+      INST_KOMPONENT (qolgan barcha so'ralgan bandlar + anchor QC props).
     Raster export EMAS — faqat qiymatlar (kichik CSV → Drive).
     """
     reducer = ee.Reducer.mean().combine(ee.Reducer.median(), sharedInputs=True)
@@ -869,11 +875,19 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     # default proyeksiyasi olinadi (oylik kompozit / LST / LAI — WGS84 grid).
     grid = energy_balance.analysis_proj(ee.Image(scenes[0]))
 
-    def _reduce(img, band_list, tags):
+    def _reduce(img, band_list, tags, plain_single=False):
         # faqat MAVJUD bandlarni tanlaymiz (yo'q band select'ni buzmasin)
         sel = img.bandNames().filter(ee.Filter.inList('item', ee.List(band_list)))
+        # GEE: BIR bandli tanlovda ustunlar band nomisiz 'mean'/'median' chiqadi
+        # (ko'p bandlida '<band>_mean'). csv_bands erkin bo'lgani uchun bitta bandli
+        # INST/INST_KOMPONENT'da band nomi yo'qolmasin → '<band>_mean/_median'.
+        # plain_single=True — DAILY_ET/MONTHLY_ET eski formati ('mean'/'median';
+        # flux_compare shunday o'qiydi).
+        red_r = reducer
+        if len(band_list) == 1 and not plain_single:
+            red_r = reducer.setOutputs([f'{band_list[0]}_mean', f'{band_list[0]}_median'])
         red = img.select(sel).reduceRegions(
-            collection=region_fc, reducer=reducer, scale=scale, crs=grid)
+            collection=region_fc, reducer=red_r, scale=scale, crs=grid)
         for k, v in tags.items():
             red = red.map(lambda f, kk=k, vv=v: f.set(kk, vv))
         return red
@@ -883,13 +897,26 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     # piksel xususiyatlari — anchor tanlashni QC + fizik oyna sozlash uchun).
     # ALOHIDA fayllar (aniq nomlar): INST (ET-lahzalik) | DAILY_ET | INST_KOMPONENT.
     # Fayl nomiga PAPKA (model+hudud+yil) + tur + tayl → GEE Tasks/Drive'da UNIKAL.
+    # Fayl TURKUMLARI (nomlari o'zgarmaydi — flux_compare shu nomlarni o'qiydi);
+    # BANDLAR esa `bands` dan (oldin qattiq yozilgan 20 band — `bands` e'tiborsiz edi,
+    # CSV_LYS_BANDS'ning 21 bandi hech qachon chiqmasdi).
+    INST_SET = ('ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC', 'SOLAR_FRAC',
+                'ETR_INST')
+    DAILY_SET = ('ET_24',)
+    req = list(dict.fromkeys(bands))                     # tartib saqlanadi, takror yo'q
+    avail = set(ee.Image(scenes[0]).bandNames().getInfo())
+    missing = [b for b in req if b not in avail]
+    if missing:
+        print(f"  ⚠️ CSV: so'ralgan bandlar sahnada yo'q — chiqmaydi: {missing}")
+    use = [b for b in req if b in avail]
     SCENE_GROUPS = {
-        'INST':           ['ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC',
-                           'SOLAR_FRAC', 'ETR_INST'],
-        'DAILY_ET':       ['ET_24'],
-        'INST_KOMPONENT': ['RN', 'G0', 'H', 'ALBEDO', 'LST', 'NDVI', 'AIR_TEMP',
-                           'USTAR', 'RAH', 'DTA', 'LAI', 'TAU_SW', 'EMISSIVITY'],
+        'INST':           [b for b in use if b in INST_SET],
+        'DAILY_ET':       [b for b in use if b in DAILY_SET],
+        'INST_KOMPONENT': [b for b in use if b not in INST_SET and b not in DAILY_SET],
     }
+    SCENE_GROUPS = {k: v for k, v in SCENE_GROUPS.items() if v}
+    print(f"  📄 CSV sahna bandlari: {len(use)} ta — "
+          + "; ".join(f"{k} {len(v)}" for k, v in SCENE_GROUPS.items()))
     # SEBAL_Milliy_Kc: sahna bandlari SEBAL_Milliy bilan AYNAN bir xil (nusxa) →
     # scene/lstdiag fayllarni CHIQARMAYMIZ; Kc'dan faqat MONTHLY_ET noyob.
     if cfg.is_kc_mode(mode):
@@ -903,7 +930,7 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
             if gname == 'INST_KOMPONENT':          # anchor QC props faqat komponent CSV'ga
                 for p in CSV_ANCHOR_PROPS:
                     tags[p] = img.get(p)
-            sfcs.append(_reduce(img, gbands, tags))
+            sfcs.append(_reduce(img, gbands, tags, plain_single=(gname == 'DAILY_ET')))
         gfc = ee.FeatureCollection(sfcs).flatten()
         tg = ee.batch.Export.table.toDrive(
             collection=gfc, description=f'{folder}_{gname}{prefix}',
@@ -919,6 +946,9 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
         _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale)
 
     # --- PER-MONTH (ET_MONTHLY + save_cuirr → Peffec/CUirr; save_aw → water-balans AW) ---
+    if not csv_monthly:
+        print("  ⏭️  CSV MONTHLY o'tkazildi (csv_monthly=False)")
+        return tasks
     mon_bands = ['ET_MONTHLY']
     if save_cuirr:
         mon_bands += ['PRZ', 'CUIRR', 'NIWR', 'AW_CU', 'ETPOT_MONTHLY',
@@ -955,7 +985,8 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
         month_fcs.append(_reduce(monthly, mon_bands, {
             'year': yr, 'month': mo,
             'n_landsat_scenes': monthly.get('n_landsat_scenes'),   # shu oydagi sahnalar
-            'max_gap_days': monthly.get('max_gap_days')}))          # QC
+            'max_gap_days': monthly.get('max_gap_days')},           # QC
+            plain_single=True))
     if month_fcs:
         month_fc = ee.FeatureCollection(month_fcs).flatten()
         t2 = ee.batch.Export.table.toDrive(
@@ -1036,8 +1067,11 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         export_csv=False,     # True → csv_region ustida qiymatlarni CSV qiladi (batch)
         csv_region=None,      # ee.FeatureCollection ('name' xususiyatli parcellar).
         #                       main.parcels_from_points({'NE':[lon,lat],...}) yordamchisi bor.
-        csv_bands=None,       # None → CSV_LYS_BANDS (lizimetr bilan solishtiriladiganlar)
+        csv_bands=None,       # None → CSV_LYS_BANDS (lizimetr bilan solishtiriladiganlar);
+        #                       ro'yxat berilsa AYNAN shu bandlar chiqadi (yo'qlari logda)
         csv_scale=30,
+        csv_monthly=True,     # CSV oylik (MONTHLY_ET) hisob+eksport. export_monthly — faqat
+        #                       RASTER oylik; CSV oylik shu flag bilan boshqariladi.
         cloud_roi=None,       # bulut precheck hududi. None + export_csv → avtomatik
         #   csv_region (parcel) ustida (TEZ, faqat lizimetr uchun). Oddiy raster
         #   rejimda None qoladi → butun ROI (butun tile kerak). Qo'lda ham berish mumkin.
@@ -1198,6 +1232,9 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     print(f"{'='*60}")
 
     all_tasks = []
+    failed_tiles = []     # [{'tile', 'error'}] — xato bilan TASHLAB KETILGAN taylar
+    empty_tiles = []      # yaroqli sahnasi bo'lmagan taylar (xato emas)
+    tile_warnings = []    # masalan tayl geometriyasi topilmadi → ROI
 
     # ---- TILE-BASED PROCESSING ----
     if process_by_tile:
@@ -1240,10 +1277,14 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 tile_roi = roi.intersection(tile_geom, ee.ErrorMargin(30))
             except Exception as e:
                 print(f"  ⚠️ Tile geometriya topilmadi ({e}) → ROI ishlatiladi")
+                tile_warnings.append({'tile': tile_label,
+                                      'warning': f"tayl geometriyasi topilmadi → ROI ({e})"})
                 tile_roi = roi
 
-            # Chekka/bo'sh tayl (nuqtasiz yoki anchor topilmagan) BUTUN runни
-            # buzmasin — o'sha taylni o'tkazib, keyingisiga o'tamiz.
+            # Chekka/bo'sh tayl BUTUN run'ni buzmasin — o'tkaziladi, LEKIN xato
+            # yutilmaydi: turi va sababi qayd etiladi, run oxirida ro'yxat chiqadi va
+            # natija lug'atida qaytariladi (run_flux_validation uni "qisman" sanaydi).
+            # Kutilmagan xato turlari (RuntimeError emas) — to'liq traceback bilan.
             try:
                 scenes, info = process_tile(
                     tile_roi, date_start, date_end, mode,
@@ -1252,10 +1293,17 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                     utc_offset=utc_offset,
                     cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
             except Exception as e:
-                print(f"  ⚠️ {tile_label} qayta ishlashda xato ({e}) → tayl o'tkazib yuborildi")
+                import traceback
+                err = f"{type(e).__name__}: {e}"
+                failed_tiles.append({'tile': tile_label, 'error': err})
+                print(f"  ❌ TAYL {tile_label} O'TKAZIB YUBORILDI — {err}")
+                if not isinstance(e, RuntimeError):      # kutilmagan xato — kod/GEE
+                    print(traceback.format_exc())
                 continue
 
             if not scenes:
+                empty_tiles.append(tile_label)
+                print(f"  ⏭️  {tile_label}: yaroqli sahna yo'q")
                 continue
 
             # CSV zonal-stat (parcel/lizimetr ustida mean+median → batch CSV)
@@ -1264,7 +1312,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                     scenes, info, tile_roi, csv_region,
                     csv_bands or CSV_LYS_BANDS, folder, tile_label, mode,
                     info.get('utc_offset', 0), csv_scale, save_cuirr=save_cuirr,
-                    save_aw=save_aw)
+                    save_aw=save_aw, csv_monthly=csv_monthly)
                 all_tasks.extend(ctasks)
 
             if export_daily:
@@ -1479,11 +1527,22 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 
     # ---- XULOSA ----
     print(f"\n{'='*60}")
-    print(f"  ✅ Tayyor! {len(all_tasks)} ta export task")
+    if failed_tiles:
+        print(f"  ❌ {len(failed_tiles)} ta tayl XATO bilan tashlab ketildi (natija YO'Q):")
+        for ft in failed_tiles:
+            print(f"     • {ft['tile']}: {ft['error']}")
+    if empty_tiles:
+        print(f"  ⏭️  Yaroqli sahnasiz taylar: {empty_tiles}")
+    for tw in tile_warnings:
+        print(f"  ⚠️ {tw['tile']}: {tw['warning']}")
+    status = 'QISMAN' if failed_tiles else 'OK'
+    print(f"  {'✅' if status == 'OK' else '⚠️'} {'Tayyor' if status == 'OK' else 'QISMAN tayyor'}! "
+          f"{len(all_tasks)} ta export task")
     print(f"  📁 Drive → {folder}/")
     print("  🔗 https://code.earthengine.google.com/tasks")
     print(f"{'='*60}")
-    return {'tasks': all_tasks}
+    return {'tasks': all_tasks, 'status': status, 'failed_tiles': failed_tiles,
+            'empty_tiles': empty_tiles, 'tile_warnings': tile_warnings}
 
 
 # ==============================================================

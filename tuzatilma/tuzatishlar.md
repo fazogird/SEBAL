@@ -49,11 +49,15 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 44 | 2026-09-19 | point_anchor: default va pysebal (chegarasiz LST dumlari) — nomzodlarning eng chetdagi 5 % i tashlanadi | ✅ commit 3667e04 | energy_balance.py, config.py |
 | 45 | 2026-09-19 | Anchor kaskadi: cimec → plan_a → plan_b → default → pysebal (default kaskad ichida); default zaxirasi LOGLANADI (QC); hech biri topmasa — sahna sababi bilan rad | ✅ commit 7efafb2 | energy_balance.py, main.py |
 | 46 | 2026-09-19 | Anchor fizik QC'dan o'tmasa — kaskad KEYINGI metoddan davom etadi (metod/zona chetlanadi); urinishlar QC'ga yoziladi | ✅ commit 7efafb2 | main.py, energy_balance.py |
-| 47 | 2026-09-19 | Kunlik Rn24: τ24 = Rs24/Ra24 (o'sha kun) — ochiq osmon TAU_SW o'rniga (SEBAL_B, pysebal, VIIRS); TAU_SW interpolyatsiyadan chiqarildi | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py, viirs_downscaling.py, config.py |
-| 48 | 2026-09-19 | Oylik: sahnaning vakillik davri — har piksel uchun vaqt bo'yicha eng yaqin YAROQLI sahna (SEBAL_B midpoint va mavsum o'rtachasi bilan to'ldirish olib tashlandi) | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py |
-| 49 | 2026-09-19 | Oylik QC: max_gap_days (> 8 kun ogohlantirish); n_landsat_scenes — shu oydagi sahnalar; pysebal Rs24 mahalliy kun; CSV oylik qatorlariga QC | ✅ commit qilinmagan | daily_et.py, monthly_analytics.py, main.py, config.py |
-| 50 | 2026-09-19 | validate: har rejim o'z oylik usulida (oldin barcha rejimlar pysebal uslubida) | ✅ commit qilinmagan | main.py |
-| 51 | 2026-09-19 | biomass APAR: Rs24 to'g'ridan-to'g'ri RS24 bandidan (Rn24 ni TAU_SW bilan teskari yechish olib tashlandi) | ✅ commit qilinmagan | biomass.py |
+| 47 | 2026-09-19 | Kunlik Rn24: τ24 = Rs24/Ra24 (o'sha kun) — ochiq osmon TAU_SW o'rniga (SEBAL_B, pysebal, VIIRS); TAU_SW interpolyatsiyadan chiqarildi | ✅ commit 59372e2 | daily_et.py, monthly_analytics.py, viirs_downscaling.py, config.py |
+| 48 | 2026-09-19 | Oylik: sahnaning vakillik davri — har piksel uchun vaqt bo'yicha eng yaqin YAROQLI sahna (SEBAL_B midpoint va mavsum o'rtachasi bilan to'ldirish olib tashlandi) | ✅ commit 59372e2 | daily_et.py, monthly_analytics.py |
+| 49 | 2026-09-19 | Oylik QC: max_gap_days (> 8 kun ogohlantirish); n_landsat_scenes — shu oydagi sahnalar; pysebal Rs24 mahalliy kun; CSV oylik qatorlariga QC | ✅ commit 59372e2 | daily_et.py, monthly_analytics.py, main.py, config.py |
+| 50 | 2026-09-19 | validate: har rejim o'z oylik usulida (oldin barcha rejimlar pysebal uslubida) | ✅ commit 59372e2 | main.py |
+| 51 | 2026-09-19 | biomass APAR: Rs24 to'g'ridan-to'g'ri RS24 bandidan (Rn24 ni TAU_SW bilan teskari yechish olib tashlandi) | ✅ commit 59372e2 | biomass.py |
+| 52 | 2026-09-19 | CSV sahna bandlari `csv_bands` dan (oldin qattiq yozilgan 20 band, `csv_bands` e'tiborsiz); yo'q band logda; bir bandli guruhda ustun nomi `<band>_mean` | ✅ commit qilinmagan | main.py |
+| 53 | 2026-09-19 | `run(csv_monthly=True)` — CSV oylik (MONTHLY_ET) alohida flag bilan (`export_monthly` faqat RASTER) | ✅ commit qilinmagan | main.py, run_flux_validation.py |
+| 54 | 2026-09-19 | Tayl xatosi yutilmaydi: turi+sababi qayd, kutilmagan xatoda traceback, run oxirida ro'yxat, natijada `status`/`failed_tiles`/`empty_tiles`/`tile_warnings`; flux-validatsiya "qisman" sanaydi | ✅ commit qilinmagan | main.py, run_flux_validation.py |
+| 55 | 2026-09-19 | VIIRS: Rs24 MAHALLIY kalendar kun (utc_offset) — oldin UTC kun (`ma._get_daily_rs24`) | ✅ commit qilinmagan | viirs_downscaling.py, main.py |
 
 ---
 
@@ -1753,4 +1757,102 @@ Metadata / QC: iyul `n_landsat_scenes` 5 → **4** (shu oydagi), `max_gap_days` 
 pysebal 12-10 sahna (ekinzor o'rtachasi), eski → yangi: RN24 2.1 → 16.1 W/m²; ET_24 **0.066 → 0.50 mm/kun** (EF 0.886 — namlangan qishki ekin; dekabr ETo ~0.8–1 mm/kun); LUE 0.031 → 0.249 (namlik stressi ET orqali); PAR 49.36 → 48.91 = 0.48·RS24 (aniq). Oylik biomassa dekabr: 36.7 → 121.9 kg/ha (asosan sahna ET_24/LUE tuzatilishidan; bir xil sahnalarda oylik funksiyaning o'zi: 132.2 → 121.9, −7.8 % — 1–9 dekabr endi 12-10 sahnasidan).
 
 GEE'da sinalmagan: VIIRS yo'li (use_viirs=False, faqat kompilyatsiya), validate (OpenET — faqat AQSh).
+
+---
+
+## #52–#55 — CSV bandlari/oylik flag, tayl xatolari, VIIRS Rs24 kuni
+
+User qarori: "P1 … ha buni tuzat biz istagan bandlarni chiqaradigan qil / P2 … buni ham qo'sh / P3 … buni ham tuzat / P8 … tegilma / VIIRS'da Rs24 … buni ham tuzat agar muammo xatolik bo'lsa".
+P8 (Kc modeli De har oy qayta boshlanishi) — TEGILMADI (hot piksel water balance bilan alohida).
+
+### #52 — CSV sahna bandlari `csv_bands` dan
+
+**Oldin** (`_export_zonal_csv`):
+```python
+SCENE_GROUPS = {
+    'INST':           ['ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC', 'SOLAR_FRAC', 'ETR_INST'],
+    'DAILY_ET':       ['ET_24'],
+    'INST_KOMPONENT': ['RN', 'G0', 'H', 'ALBEDO', 'LST', 'NDVI', 'AIR_TEMP',
+                       'USTAR', 'RAH', 'DTA', 'LAI', 'TAU_SW', 'EMISSIVITY'],
+}   # `bands` parametri (run(csv_bands=…) / CSV_LYS_BANDS) umuman ishlatilmasdi
+```
+Muammo: `csv_bands` berilsa ham har doim o'sha 20 band chiqardi; CSV_LYS_BANDS'dagi 21 band (ALB_*, K_DOWN, L_DOWN, L_UP, RN_G0, G_RATIO, SAVI, U_200, L_MO, Z0M, Z0M_WIND, RHO_AIR, SLOPE, WIND_SPEED_10M, RN24, ETR24 …) HECH QACHON chiqmasdi.
+
+**Keyin:**
+```python
+INST_SET  = ('ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC', 'SOLAR_FRAC', 'ETR_INST')
+DAILY_SET = ('ET_24',)
+req = list(dict.fromkeys(bands))                          # tartib saqlanadi, takror yo'q
+avail = set(ee.Image(scenes[0]).bandNames().getInfo())
+missing = [b for b in req if b not in avail]              # → "⚠️ CSV: so'ralgan bandlar sahnada yo'q — chiqmaydi: [...]"
+use = [b for b in req if b in avail]
+SCENE_GROUPS = {'INST': [b in INST_SET], 'DAILY_ET': [b in DAILY_SET], 'INST_KOMPONENT': [qolganlari]}
+SCENE_GROUPS = {k: v for k, v in SCENE_GROUPS.items() if v}   # bo'sh guruh fayli chiqmaydi
+# _reduce: bitta bandli guruhda reducer.setOutputs(['<band>_mean', '<band>_median'])
+#   (GEE bir bandli reduceRegions'da ustunlarni band nomisiz 'mean'/'median' beradi);
+#   DAILY_ET va MONTHLY_ET — plain_single=True: eski 'mean'/'median' format saqlanadi
+#   (flux_compare_full.load_model_simple shunday o'qiydi).
+```
+Fayl nomlari (INST / DAILY_ET / INST_KOMPONENT / MONTHLY_ET) o'zgarmadi. `CSV_LYS_BANDS` ga `RS24`, `TAU24` qo'shildi (#47 Rn24 komponentlari).
+
+GEE sinovi (Samarqand 2023-07-11, SEBAL_Milliy, 2 parcel; `Export.table.toDrive` ushlab qolindi — Drive'ga hech narsa ketmadi, ustunlar kolleksiyadan o'qildi):
+
+| `csv_bands` | Natija |
+|---|---|
+| None (CSV_LYS_BANDS) | 43 band: INST 6, DAILY_ET 1 (`mean`/`median` — oldingidek), INST_KOMPONENT **36** (oldin 13) |
+| `['ET_24','K_DOWN','ALB_LIANG','TAU24','YOQ_BAND']` | `⚠️ … chiqmaydi: ['YOQ_BAND']`; DAILY_ET 1 + INST_KOMPONENT 3 (ALB_LIANG, K_DOWN, TAU24); INST fayli yo'q |
+| `['ET_24','LAMBDA_E','K_DOWN']` | INST → `LAMBDA_E_mean/_median`, INST_KOMPONENT → `K_DOWN_mean/_median` (tuzatishsiz `mean`/`median` bo'lardi); DAILY_ET → `mean`/`median` |
+
+DAILY_ET 1-qator: A parcel, ET_24 mean 3.86 / median 3.90 mm/kun. GEE tekshiruvi: 1 bandli `reduceRegions` → `['mean','median']`, 2 bandli → `['LAMBDA_E_mean', …]`, `setOutputs` → `LAMBDA_E_mean`.
+
+### #53 — `csv_monthly` flag
+
+**Oldin:** CSV rejimida oylik ET (`compute_monthly_et` + MONTHLY_ET CSV) `export_monthly=False` bo'lsa ham HAR DOIM hisoblanardi — o'chirish imkoni yo'q edi.
+**Keyin:** `run(..., csv_monthly=True)` → `_export_zonal_csv(..., csv_monthly=…)`. `False` → `⏭️  CSV MONTHLY o'tkazildi (csv_monthly=False)`, oylik hisob ham, eksport ham yo'q. Standart `True` — eski xulq (run_flux_validation `csv_monthly=True` ni aniq beradi; flux_compare_full MONTHLY_ET CSV'ni o'qiydi). `export_monthly` — faqat RASTER oylik (docstring'da).
+Sinov: yuqoridagi 2- va 3-holat — MONTHLY_ET task yaratilmadi; 1-holatda MONTHLY_ET 1-qator: mean 112.4 mm, `n_landsat_scenes` 1, `max_gap_days` 19.7 (sinov atigi 1 sahna bilan).
+
+### #54 — Tayl xatolari yutilmaydi
+
+**Oldin:**
+```python
+except Exception as e:
+    print(f"  ⚠️ {tile_label} qayta ishlashda xato ({e}) → tayl o'tkazib yuborildi")
+    continue
+...
+print(f"  ✅ Tayyor! {len(all_tasks)} ta export task")
+return {'tasks': all_tasks}
+```
+Muammo: xato turi yo'q, traceback yo'q, oxirida "✅ Tayyor!" — qaysi tayl natijasiz qolgani ko'rinmasdi; run_flux_validation uni "muvaffaqiyatli" sanardi.
+
+**Keyin:**
+```python
+failed_tiles.append({'tile': tile_label, 'error': f"{type(e).__name__}: {e}"})
+print(f"  ❌ TAYL {tile_label} O'TKAZIB YUBORILDI — {err}")
+if not isinstance(e, RuntimeError): print(traceback.format_exc())   # kutilmagan xato
+# bo'sh tayl → empty_tiles; tayl geometriyasi topilmasa → tile_warnings
+# XULOSA: ro'yxatlar + status 'OK' | 'QISMAN'
+return {'tasks', 'status', 'failed_tiles', 'empty_tiles', 'tile_warnings'}
+```
+run_flux_validation: `✅ N to'liq | ⚠️ N qisman (tayl xatosi) | ❌ N xato` + har birining sababi.
+
+Sinov (`process_tile` soxta: P155_R32 → RuntimeError, P154_R33 → TypeError, P154_R32 → bo'sh): `❌ TAYL P155_R32 O'TKAZIB YUBORILDI — RuntimeError: …`; P154_R33 — TypeError + to'liq traceback; `⏭️  P154_R32: yaroqli sahna yo'q`; `⚠️ QISMAN tayyor!`; qaytgan: `status 'QISMAN'`, `failed_tiles` 2 ta, `empty_tiles ['P154_R32']`.
+
+### #55 — VIIRS: Rs24 mahalliy kun
+
+**Oldin:** `viirs_downscaling.daily_rn24` va `_daily_etref` → `ma._get_daily_rs24(date, roi)` — UTC kalendar kun. Quvurning qolgan qismi (compute_daily_et, oylik, pysebal #41/#49) mahalliy kun (utc_offset) ishlatadi → VIIRS yo'li boshqa kun bilan.
+**Keyin:** `daily_et.get_daily_solar_radiation(date, roi, utc_offset=…)`; `utc_offset` `build_tile_monthly_et_viirs` (info['utc_offset']) va `build_daily_viirs_downscaled_collection(…, utc_offset=0)` orqali uzatiladi; `main._viirs_export_month` / `_s30_export_month` `m_info` ga `utc_offset` qo'shildi.
+
+GEE sinovi (albedo 0.20, nuqta), Rs24 / Rn24 UTC kun → mahalliy kun:
+
+| Joy | Kun | Rs24 W/m² | Rn24 W/m² |
+|---|---|---|---|
+| Samarqand (UTC+5) | 07-10 … 07-12, 12-10 | aynan bir xil | aynan bir xil |
+| Bushland (UTC−6) | 2023-07-10 | 272.9 → 274.7 (+0.7 %) | 155.2 → 156.2 |
+| Bushland | 2023-07-11 | 328.3 → 332.4 (+1.2 %) | 186.6 → 188.9 |
+| Bushland | 2023-07-12 | 320.3 → 313.4 (−2.1 %) | 182.0 → 178.0 |
+| Bushland | 2023-12-10 | 138.4 → 138.4 | 32.1 → 32.1 |
+
+Samarqandda oyna faqat tungi soatlarga suriladi (mahalliy yarim tun = 19:00 UTC) → farq 0. G'arbiy yarim sharda (AQSh flux stansiyalari) kunlik ±2 % gacha. VIIRS to'liq oylik yo'li GEE'da hali ishga tushirilmagan (faqat shu funksiya).
+
+`ma._get_daily_rs24` endi hech qayerda chaqirilmaydi (faqat izohlarda) — olib tashlanmadi.
 
