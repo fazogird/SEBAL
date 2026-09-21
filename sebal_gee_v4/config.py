@@ -384,6 +384,12 @@ ANCHOR = {
     # juda barqaror qatlam, rah_cold katta). 5 K: 8 sinov sahnasida farq −2.0…+1.9 K,
     # ERA5 T2m xatosi ~1–2 K + LST ~1.5 K; anomaliya (2023-07-11 Milliy) +9.4 K.
     'cold_ta_warn':         5.0,
+    # SEBAL_ID oilasi (SEBAL_ID, SEBAL_Milliy): λET_cold = 1.05·ETr faqat TO'LIQ QOPLAMALI
+    # cold pikselga (METRIC: "ETrF at the cold pixel is normally 1.05 unless vegetation cover
+    # is insufficient", cold — "population of fields having full cover"; Kjaersgaard & Allen
+    # 2009, Allen et al. 2007). To'liq qoplama chegarasi LAI ≥ shu (user qarori 2026-09-21).
+    # Bunday nomzod topilmasa sahna TASHLANMAYDI — cheklovsiz (oldingi) kaskad + QC flag.
+    'cold_lai_min':         4.0,
     # point_anchor: LST oralig'i chegarasiz metodlarda (default, pysebal) nomzodlar
     # ichidan eng chetdagi shu % tashlanadi (cold ≥ p5, hot ≤ p95) — absolyut
     # chetdagi (soya/artefakt) piksel anchor bo'lmasin. cimec/plan_a/plan_b — tegilmaydi.

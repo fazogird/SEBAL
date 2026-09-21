@@ -92,6 +92,7 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 87 | 2026-09-21 | Preprocessing: har Landsat L2 tasvirga mos C2 **L1** sahnaning per-piksel **SZA/SAA** bandlari (LANDSAT_SCENE_ID bo'yicha, ×0.01°, SR maskasi); L1 topilmasa YIQILMAYDI — astronomik per-piksel SZA/SAA; `SOLAR_GEOM_SOURCE` property, process_tile print, QC CSV `quyosh_geom` ustuni | ✅ commit qilinmagan | config.py, preprocessing.py, main.py |
 | 88 | 2026-09-21 | K↓ (cosθ) va albedo BRDF (θ_elev) — per-piksel SZA bandidan; oldin Landsat'da sahna markazidagi bitta `SUN_ELEVATION` (mosaic'da birinchi row'niki butun sanaga) | ✅ commit qilinmagan | radiation.py, surface_props.py |
 | 89 | 2026-09-21 | Qiya yuza: overpass cosθ va C_rad lahzali qismi — per-piksel SZA/SAA bandlaridan (Duffie & Beckman azimut shakli); C_rad kunlik integrali astronomik qoladi | ✅ commit qilinmagan | sloping_terrain.py |
+| 90 | 2026-09-21 | SEBAL_ID / SEBAL_Milliy: λET_cold = 1.05·ETr faqat TO'LIQ QOPLAMALI cold pikselga (LAI ≥ 4, METRIC); topilmasa sahna TASHLANMAYDI — oldingi (cheklovsiz) kaskad + QC ogohlantirishi (zona `…-LAI<4`); QC CSV `cold_LAI` ustuni | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
 
 ---
 
@@ -2352,4 +2353,61 @@ Ta'sir, process_tile SEBAL_Milliy, 20 km ekinzor o'rtachasi (eski = `SUN_ELEVATI
 | Bushland 2021-10-29 | 676.4 → 665.8 (−1.57 %) | 0.2102 → 0.2113 | −2.59 % | −2.45 % | 0.179 → 0.182 (+1.74 %) |
 
 K↓ ROI ichida endi fazoviy o'zgaradi (Samarqand qish: 454.0…472.2, oldin 446.9…459.3 — faqat τsw/DEM dan). Samarqand qishdagi +2.2 % — mosaic'da shimoliy row (155/032) `SUN_ELEVATION`i janubiy qismga ham qo'llanardi.
+
+---
+
+## #90 — Cold anchor: 1.05·ETr faqat to'liq qoplamaga (LAI ≥ 4), zaxira bilan
+
+User: "SEBAL_ID va Milliy rejimlarida 1.05·ETr faqat to'liq qoplamali (LAI ≥ 4) cold pikselga beriladi … bahor (mart–aprel) va oktabrda LAI > 4 har doim ham bo'lmaydi … o'tolmasa tasvir tashlab yuborilmasin, shunchaki flag bo'lib hozirgi holat qolsin".
+
+**Manba:** METRIC — "ETrF at the cold pixel is normally considered to be 1.05 ETrF unless vegetation cover is insufficient to support this assumption … The cold pixel is selected from a population of fields having full cover and relatively cold temperatures" (Kjaersgaard & Allen 2009, METRIC hisoboti; Allen et al. 2007). Chegara LAI ≥ 4 — user qarori.
+
+**Topilma (A5 diagnostikasi):** Samarqand 2023 da cold piksel ko'p sahnada QISMAN qoplama edi (06-09 LAI 2.1, 07-27 LAI 2.5, 08-04 3.1), lekin unga 1.05·ETr berilardi → λET > Rn−G → H_cold manfiy; past shamolda barqaror qatlam tuzatishi kuchaytiradi (07-27: dT_cold −8.1 K, cold Ta − ERA5 +5.7 K).
+
+**Oldin** (`select_anchor_pixels`): kaskad (cimec → plan_a → plan_b → default → pysebal; lc → ROI) cold nomzodlari LAI'ga qaramaydi.
+
+**Keyin:**
+```python
+# config.ANCHOR
+'cold_lai_min': 4.0,     # SEBAL_ID oilasi: 1.05·ETr faqat to'liq qoplamaga (METRIC)
+
+# energy_balance.select_anchor_pixels(..., cold_full_cover=False)
+def _cascade(cold_extra, sfx):          # lc → ROI, har metod; cold_extra metod chegaralaridan KEYIN
+    ...  cm = cm.And(cold_extra) ...    # zona nomi: zone + sfx
+if cold_full_cover:
+    res = _cascade(image.select('LAI').gte(lai_min), '')      # 1-o'tish: to'liq qoplama
+    if res: return res
+    res = _cascade(None, f'-LAI<{lai_min:g}')                 # 2-o'tish: oldingi (cheklovsiz) kaskad
+    res['note'] += "cold: to'liq qoplamali (LAI ≥ 4) nomzod topilmadi → cheklovsiz cold piksel …"
+else:
+    res = _cascade(None, '')                                  # SEBAL_B / pysebal — o'zgarmagan
+# main.process_tile / energy_balance.compute_all: cold_full_cover = cfg.is_id_mode(mode)
+# QC CSV: 'cold_LAI' (cold anchor LAI, _anchor_sample bilan AYNI getInfo)
+```
+Zaxira ishlatilsa: sahna qabul qilinadi, status OGOHLANTIRISH, sabab — flag matni, anchor ustuni `cimec/lc-LAI<4`.
+
+### GEE sinovlari (SEBAL_Milliy, 20 km)
+Test A (monkeypatch; P0 = oldingi, FCL = LAI ≥ 4, FCN = NDVI ≥ 0.75 — solishtirish uchun):
+
+| Samarqand 2023, 24 sahna | P0 (oldin) | FCN (NDVI ≥ 0.75) | **FCL (LAI ≥ 4) = #90** |
+|---|---|---|---|
+| Qabul qilingan | 23 | 22 (05-16 rad) | **23** |
+| Cold LAI o'rtacha | 3.6 | 5.6 | 5.6 |
+| dT_cold < −5 K | 2 | 1 | 1 |
+| cold Ta − ERA5 > 5 K | 3 | 1 | 1 |
+| H_cold < −100 W/m² | 3 | 4 | 4 |
+| Sahna ET (ekinzor) P0 ga nisbatan | — | +3.9 % (10-07 +64 %) | **+1.1 % (−18…+10)** |
+
+Misollar (FCL): 07-27 — LAI 2.5 → 6.0, dT_cold −8.09 → −1.33 K, Ta − ERA5 +5.7 → −0.9 K; 06-09 — LAI 2.1 → 6.0, dT −2.84 → −3.61, H −59 → −185 W/m² (to'liq qoplamada λET/(Rn−G) = 1.34 — Samarqand yozida to'liq qoplamada ham advektsiya); 06-01 — LAI allaqachon 6.0, o'zgarmadi (dT −10.76 K, past shamol, A5 ochiq).
+
+Bushland 2021 (22 sahna, lizimetr "Catch Precip"): hammasi qabul; RMSE 1.650 (P0) → 1.656 (FCL), MBE −35.2 % → −35.2 %; ekinzor ET o'rt +0.3 %.
+
+Production kodi (#90) tekshiruvi:
+
+| Holat | Natija |
+|---|---|
+| Oddiy (LAI ≥ 4) — Samarqand 06-01, 06-09, 07-27, 08-12; Bushland 03-10, 06-14 | FCL test bilan AYNAN (dT_cold, H_cold, ET_crop); QC `cold_LAI` 4.02…6 |
+| Zaxira (sun'iy `cold_lai_min` = 7 → 1-o'tish har doim bo'sh) — AYNI 6 sahna | P0 (oldingi kod) bilan AYNAN (07-27 dT −8.0899, ET 6.097; 06-09 ET 5.3106 …); status OGOHLANTIRISH, anchor `cimec/lc-LAI<7`, sabab va print — flag |
+| SEBAL_ID 07-27 | ishladi (empirik L↓ yo'li), cold LAI 6 |
+| SEBAL_B, pysebal 07-27 | o'zgarmagan (cold LAI 2.94, flag yo'q) |
 

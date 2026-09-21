@@ -275,6 +275,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                 method=anchor_method, anchor_mode=anchor_mode,
                 need_rn=not ldown_empirical,
                 hot_soil=cfg.is_id_mode(mode),   # SEBAL_ID oilasi: hot — faqat tuproq piksel
+                cold_full_cover=cfg.is_id_mode(mode),   # 1.05·ETr — to'liq qoplama (LAI ≥ 4)
                 exclude={(m_, z_) for m_, z_, _ in tried})
 
             # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
@@ -519,7 +520,7 @@ def _grid_tpw_qc(img, roi, mode, qc, prefix):
 def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
     """Sahna sifat jadvali (print) + CSV (joriy papkada) — eksportdan OLDIN."""
     import csv
-    cols = ['sana', 'status', 'sabab', 'quyosh_geom', 'anchor', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
+    cols = ['sana', 'status', 'sabab', 'quyosh_geom', 'anchor', 'cold_LAI', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
             'P_sum', 'window', 'converged', 'etrf_wet_start', 'etrf_dry_start', 'wet_reset',
             'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
             'dT_hot', 'dT_cold', 'H_hot', 'H_cold',

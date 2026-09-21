@@ -675,7 +675,7 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
 def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
                          method='cimec', verbose=True,
                          anchor_mode='median_anchor', need_rn=True, hot_soil=False,
-                         exclude=None):
+                         exclude=None, cold_full_cover=False):
     """
     Anchor tanlash DISPATCHER (beton kaskad).
 
@@ -702,6 +702,12 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
       θ_FC, θ_WP, tekstura bor piksellar (water_balance.soil_valid_mask). Hot
       pikselda suv balansi hisoblanadi — u tuproq bo'lishi shart (shahar/suv emas).
       Barcha bosqichlarda (lc, ROI) qo'llanadi.
+
+    cold_full_cover : True (SEBAL_ID oilasi) — λET_cold = 1.05·ETr faqat to'liq qoplamali
+      pikselga (METRIC). 1-o'tish: har metodning cold nomzodlari LAI ≥ cfg.ANCHOR
+      ['cold_lai_min'] bilan cheklanadi (butun kaskad, lc → ROI). Hech biri topmasa —
+      SAHNA TASHLANMAYDI: 2-o'tish cheklovsiz (oldingi) kaskad, zona nomi '…-LAI<4',
+      anchors['note'] → QC ogohlantirishi (1.05·ETr qisman qoplamaga berilgan bo'lishi mumkin).
     """
     hot_soil_mask = None
     if hot_soil:
@@ -720,36 +726,52 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
         hot_base = hot_base.And(hot_soil_mask)
         hot_flat = base_flat.And(hot_soil_mask)
 
-    # 1) Land-cover zonalari: cold_mask cold_base'dan, hot_mask hot_base'dan.
-    #    Metod ikki marta chaqiriladi — keraksiz yarmi (lazy) baholanmaydi.
-    for m in order:
-        if (m, 'lc') in exclude:               # fizik QC'dan o'tmagan — keyingisi
-            continue
-        dc, dh = {}, {}                        # default: qat'iy nomzodlar soni (zaxira logi)
-        cm, _ = _call_method(m, image, roi, cold_base, dc)
-        _, hm = _call_method(m, image, roi, hot_base, dh)
-        if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
-            cm, hm = _trim_tails(image, roi, cm, hm)
-        extra = ({'cold_strict_n': dc['cold_strict_n'], 'hot_strict_n': dh['hot_strict_n']}
-                 if m == 'default' else None)
-        res = _finalize_anchor(image, roi, cm, hm, m, 'lc', verbose, anchor_mode,
-                               need_rn, cold_purity, hot_purity, extra=extra)
+    def _cascade(cold_extra, sfx):
+        """
+        Kaskad: 1) land-cover zonalari (cold_mask cold_base'dan, hot_mask hot_base'dan),
+        2) ROI (cheklovsiz) — bulutli kunlarda zona bo'sh bo'lsa zaxira. Metod ikki marta
+        chaqiriladi — keraksiz yarmi (lazy) baholanmaydi. cold_extra — cold nomzodlarga
+        qo'shimcha maska (to'liq qoplama), metod chegaralaridan KEYIN; sfx — zona nomi qo'shimchasi.
+        """
+        for zone, c_base, h_base, c_pur, h_pur in (('lc', cold_base, hot_base, cold_purity, hot_purity),
+                                                   ('ROI', base_flat, hot_flat, None, None)):
+            z = zone + sfx
+            for m in order:
+                if (m, z) in exclude:          # fizik QC'dan o'tmagan — keyingisi
+                    continue
+                dc, dh = {}, {}                # default: qat'iy nomzodlar soni (zaxira logi)
+                cm, _ = _call_method(m, image, roi, c_base, dc)
+                _, hm = _call_method(m, image, roi, h_base, dh)
+                if cold_extra is not None:
+                    cm = cm.And(cold_extra)
+                if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
+                    cm, hm = _trim_tails(image, roi, cm, hm)
+                extra = ({'cold_strict_n': dc['cold_strict_n'], 'hot_strict_n': dh['hot_strict_n']}
+                         if m == 'default' else None)
+                res = _finalize_anchor(image, roi, cm, hm, m, z, verbose, anchor_mode,
+                                       need_rn, c_pur, h_pur, extra=extra)
+                if res is not None:
+                    return res
+        return None
+
+    if cold_full_cover:
+        lai_min = cfg.ANCHOR['cold_lai_min']
+        # 1-o'tish: cold — faqat to'liq qoplama (λET_cold = 1.05·ETr farazi uchun)
+        res = _cascade(image.select('LAI').gte(lai_min), '')
         if res is not None:
             return res
-
-    # 2) ROI (cheklovsiz) — bulutli kunlarda zona bo'sh bo'lsa zaxira.
-    for m in order:
-        if (m, 'ROI') in exclude:              # fizik QC'dan o'tmagan — keyingisi
-            continue
-        dc, dh = {}, {}                        # default: qat'iy nomzodlar soni (zaxira logi)
-        cm, _ = _call_method(m, image, roi, base_flat, dc)
-        _, hm = _call_method(m, image, roi, hot_flat, dh)
-        if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
-            cm, hm = _trim_tails(image, roi, cm, hm)
-        extra = ({'cold_strict_n': dc['cold_strict_n'], 'hot_strict_n': dh['hot_strict_n']}
-                 if m == 'default' else None)
-        res = _finalize_anchor(image, roi, cm, hm, m, 'ROI', verbose, anchor_mode,
-                               need_rn, extra=extra)
+        # 2-o'tish: to'liq qoplamali nomzod yo'q — sahna TASHLANMAYDI, oldingi (cheklovsiz)
+        # kaskad; QC ogohlantirishi (user qarori 2026-09-21)
+        flag = (f"cold: to'liq qoplamali (LAI ≥ {lai_min:g}) nomzod topilmadi → cheklovsiz "
+                f"cold piksel (1.05·ETr qisman qoplamaga berilgan bo'lishi mumkin)")
+        if verbose:
+            print(f"    ⚠️ {flag}")
+        res = _cascade(None, f'-LAI<{lai_min:g}')
+        if res is not None:
+            res['note'] = f"{res['note']}; {flag}" if res.get('note') else flag
+            return res
+    else:
+        res = _cascade(None, '')
         if res is not None:
             return res
 
@@ -1313,7 +1335,8 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
               .gt(15).rename('OUT15'))
     req = ee.Dictionary({
         'a': _anchor_sample(image, anchors, roi,
-                            ['DTA', 'RAH', 'H', 'ALBEDO', 'NDVI', 'WIND_SPEED_10M', 'AIR_TEMP']),
+                            ['DTA', 'RAH', 'H', 'ALBEDO', 'NDVI', 'LAI', 'WIND_SPEED_10M',
+                             'AIR_TEMP']),
         'out15': ta_out.reduceRegion(ee.Reducer.mean(), roi, crs=analysis_proj(image),
                                      scale=90, maxPixels=1e9,
                                      bestEffort=True, tileScale=4).get('OUT15'),
@@ -1327,6 +1350,8 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
             ta_qc[f'Ta_era5_{side}'] = v.get('AIR_TEMP')
     if req.get('out15') is not None:
         ta_qc['pct_Ta_out15'] = 100.0 * req['out15']
+    if fin_c.get('LAI') is not None:
+        ta_qc['cold_LAI'] = fin_c['LAI']      # to'liq qoplama (cfg.ANCHOR['cold_lai_min']) QC
     if qc is not None:
         qc.update(ta_qc)
     # Cold anchor Ta ↔ ERA5 — farq katta bo'lsa OGOHLANTIRISH (rad etish EMAS)
@@ -1575,7 +1600,8 @@ def compute_all(image, roi, cold_zone=None, hot_zone=None, anchors=None,
         anchors = select_anchor_pixels(image, roi, cold_zone=cold_zone,
                                        hot_zone=hot_zone, method=anchor_method,
                                        anchor_mode=anchor_mode,
-                                       hot_soil=cfg.is_id_mode(mode))
+                                       hot_soil=cfg.is_id_mode(mode),
+                                       cold_full_cover=cfg.is_id_mode(mode))
         anchors, _ = materialize_anchors(anchors)
 
     # ---- SEBAL_ID: instant alfalfa ETr → cold/hot λET skalyarlari ----
