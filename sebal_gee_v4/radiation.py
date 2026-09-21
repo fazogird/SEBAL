@@ -466,11 +466,18 @@ def compute_lst_smw(image):
     tpw_cm = _era5_tcwv_cm(image)
     pos = tpw_cm.divide(SMW_TPW_STEP).floor().min(SMW_TPW_NBIN - 1).max(0).toInt()
 
-    # 3) TPW bin → A,B,C (remap)
+    # 3) TPW bin → A,B,C (remap) → .resample('bilinear') — Ermida ORIGINAL GEE kodi
+    #    (sofiaermida/Landsat_SMW_LST, modules/SMWalgorithm.js):
+    #      var A_img = image.remap(A_lookup.get(0), A_lookup.get(1),0.0,'TPWpos').resample('bilinear');
+    #    Klass diskret qoladi (0.6 sm, 10 ta); faqat koeffitsient RASTRLARI ERA5 katak
+    #    markazlari orasida bilinear → katak chegarasida A/B/C (va LST) sakramaydi.
+    #    Oldin nearest: klass chegarasida hot pikselda +2…3 K LST pog'onasi
+    #    (Samarqand 2023: 21 sahnadan 10 tasida ROI ichida 2 klass). TCWV'ning o'zi
+    #    silliqlanmaydi, A(TPW) uzluksiz formulasi yo'q — asl algoritmdagidek.
     idx = list(range(10))
-    a = pos.remap(idx, _SMW_L8['A'])
-    b = pos.remap(idx, _SMW_L8['B'])
-    c = pos.remap(idx, _SMW_L8['C'])
+    a = pos.remap(idx, _SMW_L8['A']).resample('bilinear')
+    b = pos.remap(idx, _SMW_L8['B']).resample('bilinear')
+    c = pos.remap(idx, _SMW_L8['C']).resample('bilinear')
 
     # 4) LST = A·Tb/ε + B/ε + C
     #    Tb (Landsat UTM 30 m) BIRINCHI operand — natija Landsat gridini meros oladi.

@@ -1266,6 +1266,12 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
                 .multiply(-1).rename('L_MO'))
         L_mo = L_mo.clamp(-1e6, 1e6)
 
+        # Oxirgi qadam: H aynan shu rah/u* bilan hisoblandi → RAH/USTAR bandlari SHU
+        # qiymatda qoladi (H = ρ·cp·DTA/RAH izchil; ANCHOR_RAH_HOT ham). Oldin sikl
+        # keyingi qadam uchun u*/rah ni yana yangilardi → bandlar H'dan bir qadam oldinda.
+        if i == N_A - 1:
+            break
+
         # ψ (Dhungel damping — A bilan bir xil mantiq)
         psi_m_calc, psi_h_calc = _stability_corrections(L_mo, z_blend, z1, z2)
         if prev_psi_m_img is not None:

@@ -58,18 +58,21 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 53 | 2026-09-19 | `run(csv_monthly=True)` — CSV oylik (MONTHLY_ET) alohida flag bilan (`export_monthly` faqat RASTER) | ✅ commit 847f22e | main.py, run_flux_validation.py |
 | 54 | 2026-09-19 | Tayl xatosi yutilmaydi: turi+sababi qayd, kutilmagan xatoda traceback, run oxirida ro'yxat, natijada `status`/`failed_tiles`/`empty_tiles`/`tile_warnings`; flux-validatsiya "qisman" sanaydi | ✅ commit 847f22e | main.py, run_flux_validation.py |
 | 55 | 2026-09-19 | VIIRS: Rs24 MAHALLIY kalendar kun (utc_offset) — oldin UTC kun (`ma._get_daily_rs24`) | ✅ commit 847f22e | viirs_downscaling.py, main.py |
-| 56 | 2026-09-19 | ETr24 soatlik yig'indi: Ra/Rso davri SSRD bilan bir xil — ERA5 akkumulyativ yorliq T = [T−1, T] (oldin [T, T+1], 1 soat kechikkan) | ✅ commit qilinmagan | ref_et.py |
-| 57 | 2026-09-19 | Instant ETr: Ra oynasi overpass markazida [t−0.5, t+0.5] (oldin butun soat [floor(t), floor(t)+1]) | ✅ commit qilinmagan | ref_et.py |
-| 58 | 2026-09-19 | pysebal ETREF_24/ETPOT_24 (sahna + oylik): MAHALLIY kun + soatlik yig'indi (oldin UTC kun + kunlik-qadam) — boshqa rejimlar bilan bir xil | ✅ commit qilinmagan | ref_et.py, et_decomposition.py, main.py, monthly_analytics.py |
-| 59 | 2026-09-19 | `get_daily_era5_aggregate`: sana yarim tunga qirqiladi (vaqtli sana berilsa oyna overpassdan boshlanmasin) | ✅ commit qilinmagan | ref_et.py |
-| 60 | 2026-09-19 | pysebal oylik T/E: TACT = f_T·ET_kun (f_T = BENEFICIAL_FRACTION = TACT_24/ET_24), EACT = ET − TACT — mavsum o'rtacha RN24 bilan masshtab olib tashlandi (T + E = ET) | ✅ commit qilinmagan | monthly_analytics.py |
-| 61 | 2026-09-19 | `run(sloping_terrain=False)` — qiya yuza sahna, oylik (barcha rejim, pysebal ham), CSV, CUirr, validate'ga uzatiladi; VIIRS/S30/Kc_ETo oylikda yo'qligi logda | ✅ commit qilinmagan | main.py, monthly_analytics.py |
-| 62 | 2026-09-19 | SEBAL_Milliy qiya yuza: ET_24 = ET_inst·(Rs24/SSRD)·C_rad (kunlik, oylik, CUirr seriyasi) | ✅ commit qilinmagan | daily_et.py |
-| 63 | 2026-09-19 | ETRF_RAW bandi (cheklanmagan ET_inst/ETr_inst) + QC: ekinzorda ETrF_raw > 1.10 ulushi > 1 % → ogohlantirish (Milliy 1.05 ga cheklanMAYDI — user qarori (b)) | ✅ commit qilinmagan | daily_et.py, main.py |
-| 64 | 2026-09-19 | QC: C_RAD / RA24_RATIO [0.5, 2.0] chegarasidagi ROI piksellari > 1 % → ogohlantirish (ETrF24 qayta clamp QILINMAYDI) | ✅ commit qilinmagan | main.py |
-| 65 | 2026-09-19 | VIIRS/S30: ALBEDO eng yaqin yaroqli sahna; kunlik ETREF bevosita (grass soatlik yig'indi, mahalliy kun) — proksi o'rniga; VIIRS target per-piksel vaqt to'ldirish; S30 utc_offset (#55 qoldig'i) | ✅ commit qilinmagan | viirs_downscaling.py, hls_s30_etrf.py |
-| 66 | 2026-09-19 | S30 `interp_temporal_per_pixel`: `ee.Number − Image` runtime xatosi (S30 oylik HECH QACHON ishlamagan) → Image konstanta | ✅ commit qilinmagan | hls_s30_etrf.py |
-| 67 | 2026-09-21 | O'lik kod olib tashlandi: `monthly_analytics._get_daily_rs24` (UTC kun Rs24), `_interpolate_bands` (midpoint + mavsum o'rtachasi) va uning izohdagi eski nusxasi; VIIRS'dagi ishlatilmaydigan `monthly_analytics` importi | ✅ commit qilinmagan | monthly_analytics.py, viirs_downscaling.py |
+| 56 | 2026-09-19 | ETr24 soatlik yig'indi: Ra/Rso davri SSRD bilan bir xil — ERA5 akkumulyativ yorliq T = [T−1, T] (oldin [T, T+1], 1 soat kechikkan) | ✅ commit fca6a48 | ref_et.py |
+| 57 | 2026-09-19 | Instant ETr: Ra oynasi overpass markazida [t−0.5, t+0.5] (oldin butun soat [floor(t), floor(t)+1]) | ✅ commit fca6a48 | ref_et.py |
+| 58 | 2026-09-19 | pysebal ETREF_24/ETPOT_24 (sahna + oylik): MAHALLIY kun + soatlik yig'indi (oldin UTC kun + kunlik-qadam) — boshqa rejimlar bilan bir xil | ✅ commit fca6a48 | ref_et.py, et_decomposition.py, main.py, monthly_analytics.py |
+| 59 | 2026-09-19 | `get_daily_era5_aggregate`: sana yarim tunga qirqiladi (vaqtli sana berilsa oyna overpassdan boshlanmasin) | ✅ commit fca6a48 | ref_et.py |
+| 60 | 2026-09-19 | pysebal oylik T/E: TACT = f_T·ET_kun (f_T = BENEFICIAL_FRACTION = TACT_24/ET_24), EACT = ET − TACT — mavsum o'rtacha RN24 bilan masshtab olib tashlandi (T + E = ET) | ✅ commit fca6a48 | monthly_analytics.py |
+| 61 | 2026-09-19 | `run(sloping_terrain=False)` — qiya yuza sahna, oylik (barcha rejim, pysebal ham), CSV, CUirr, validate'ga uzatiladi; VIIRS/S30/Kc_ETo oylikda yo'qligi logda | ✅ commit fca6a48 | main.py, monthly_analytics.py |
+| 62 | 2026-09-19 | SEBAL_Milliy qiya yuza: ET_24 = ET_inst·(Rs24/SSRD)·C_rad (kunlik, oylik, CUirr seriyasi) | ✅ commit fca6a48 | daily_et.py |
+| 63 | 2026-09-19 | ETRF_RAW bandi (cheklanmagan ET_inst/ETr_inst) + QC: ekinzorda ETrF_raw > 1.10 ulushi > 1 % → ogohlantirish (Milliy 1.05 ga cheklanMAYDI — user qarori (b)) | ✅ commit fca6a48 | daily_et.py, main.py |
+| 64 | 2026-09-19 | QC: C_RAD / RA24_RATIO [0.5, 2.0] chegarasidagi ROI piksellari > 1 % → ogohlantirish (ETrF24 qayta clamp QILINMAYDI) | ✅ commit fca6a48 | main.py |
+| 65 | 2026-09-19 | VIIRS/S30: ALBEDO eng yaqin yaroqli sahna; kunlik ETREF bevosita (grass soatlik yig'indi, mahalliy kun) — proksi o'rniga; VIIRS target per-piksel vaqt to'ldirish; S30 utc_offset (#55 qoldig'i) | ✅ commit fca6a48 | viirs_downscaling.py, hls_s30_etrf.py |
+| 66 | 2026-09-19 | S30 `interp_temporal_per_pixel`: `ee.Number − Image` runtime xatosi (S30 oylik HECH QACHON ishlamagan) → Image konstanta | ✅ commit fca6a48 | hls_s30_etrf.py |
+| 67 | 2026-09-21 | O'lik kod olib tashlandi: `monthly_analytics._get_daily_rs24` (UTC kun Rs24), `_interpolate_bands` (midpoint + mavsum o'rtachasi) va uning izohdagi eski nusxasi; VIIRS'dagi ishlatilmaydigan `monthly_analytics` importi | ✅ commit fca6a48 | monthly_analytics.py, viirs_downscaling.py |
+| 68 | 2026-09-21 | Raster H iteratsiyasi: oxirgi qadamda u*/rah qayta yangilanmaydi — RAH/USTAR bandlari (va ANCHOR_RAH_HOT) H hisoblangan qiymatda (H = ρ·cp·DTA/RAH izchil) | ✅ commit qilinmagan | energy_balance.py |
+| 69 | 2026-09-21 | `parcels_from_points`: kvadrat nuqtaning UTM zonasida (metr) — aniq 210/150 m (oldin 215/153 m) | ✅ commit qilinmagan | main.py |
+| 70 | 2026-09-21 | SMW LST: A/B/C koeffitsient rastrlari `.resample('bilinear')` — Ermida original GEE kodidagidek (klass diskret; TCWV silliqlanmaydi); TPW 2-klass xabari OGOHLANTIRISH emas, MA'LUMOT | ✅ commit qilinmagan | radiation.py, main.py |
 
 ---
 
@@ -2037,4 +2040,89 @@ Eslatma: `monthly_analytics._interpolate_bands` va `_get_daily_rs24` endi hech q
 User: "ha olib tashla ishlatilmasa". Tekshiruv (`grep` butun loyiha, worktree'siz): ikkala funksiya faqat ta'rifda va izohlarda uchraydi — hech qayerda chaqirilmaydi.
 Olib tashlandi (`monthly_analytics.py`, 150 qator): `_get_daily_rs24` (ERA5 Rs24, UTC kun — #55 dan keyin ishlatilmaydi), `_interpolate_bands` (midpoint + bulutli piksel → mavsum o'rtachasi — #48/#65 dan keyin ishlatilmaydi) va uning izohga olingan eski nusxasi; modul docstring'i yangilandi ("eng yaqin yaroqli sahna"). `viirs_downscaling.py`: `from . import monthly_analytics as ma` (endi ishlatilmaydi) olib tashlandi.
 Sinov: `py_compile` barcha modullar; gee_env'da `main`, `viirs_downscaling`, `hls_s30_etrf`, `monthly_analytics` import OK; VIIRS `fill_temporal_gaps` sintetik sinovi (chap 5, o'ng 3) — o'zgarmadi.
+
+---
+
+## #68–#69 — RAH/USTAR bandlari izchilligi, parcel o'lchami
+
+User: "B6 va B7 ni tuzat".
+
+### #68 (B6) — RAH/USTAR H bilan bir qadamda
+
+**Oldin** (`compute_sensible_heat_flux`, raster sikl, N_A qadam): har qadamda H = ρ·cp·dT/rah (oldingi qadam rah'i), keyin ψ → u* → rah KEYINGI qadam uchun yangilanardi — oxirgi qadamda ham. Chiqish bandlari: DTA, H, L_MO — oxirgi qadam; USTAR, RAH — undan bir qadam keyingi (H da ishlatilmagan).
+**Keyin:** oxirgi qadamda (i = N_A − 1) L_MO hisoblangach sikl to'xtaydi → USTAR/RAH = H hisoblangan qiymatlar. RAH/USTAR keyingi hisobda ishlatilmaydi (faqat chiqish, CSV, ANCHOR_RAH_HOT) → ET o'zgarmaydi.
+
+GEE (Samarqand 20 km, SEBAL_Milliy, 2023-07-11, ekinzor, 30 m) — HEAD `fca6a48` vs yangi:
+
+| Ko'rsatkich | Eski | Yangi |
+|---|---|---|
+| \|ρ·cp·DTA/RAH − H\| / \|H\| o'rt / maks | 0.85 % / 25.5 % | **0 / 0** |
+| RAH o'rt | 34.75 s/m | 34.41 |
+| USTAR o'rt | 0.1386 m/s | 0.1392 |
+| H, DTA, L_MO, ET_24 (o'rt) | 67.12 / 1.627 / −9.40 / 4.9046 | aynan bir xil |
+| ANCHOR_RAH_HOT / H_HOT / DT_HOT | 16.250 / 291.555 / 4.520 | aynan bir xil (hot uchi yaqinlashgan) |
+
+### #69 (B7) — `parcels_from_points` aniq o'lcham
+
+**Oldin:** `Point.buffer(size_m/2).bounds()` — EPSG:4326 da doira ko'pburchagining chegara qutisi → maydon tomoni ~215 m, −30 m yadro ~153 m.
+**Keyin:** nuqtaning UTM zonasi (`EPSG:326xx/327xx`, boylam bo'yicha) da: `buffer(size_m/2, ErrorMargin(0.01 m, 'projected'), proj).bounds(..., proj)`, ichki bufer ham shu proyeksiyada (metr).
+
+GEE (o'lchov o'z UTM zonasida):
+
+| Holat | Eski | Yangi | 30 m piksel (markaz-ichida / vaznli) |
+|---|---|---|---|
+| Bushland lizimetr (210, −30) | 153.43 × 154.08 m | **150.00 × 150.00 m** | 25 / 24.80 → 25 / 24.96 |
+| Bushland flux (200, 0) | 205.10 × 205.47 m (6 uch) | **200.00 × 200.00 m** (4 uch) | 44 / 44.19 → 42 / 44.15 |
+| Samarqand (210, −30) | 152.46 × 153.19 m | **150.00 × 150.00 m** | 25 / 24.82 → 25 / 24.96 |
+
+Ta'sir: lizimetr/flux CSV parcel o'rtachalari biroz o'zgaradi (chekka piksel og'irligi); keyingi CSV eksportlaridan boshlab.
+
+---
+
+## #70 — SMW LST: A/B/C bilinear (Ermida original)
+
+User qarori (GPT maslahati bilan): "1, 2, 3 roziman, 4 qoldir, 5 ma'lumot qil, bos":
+1) A/B/C ga `.resample('bilinear')` — HA; 2) TCWV'ni bilinear qilish — YO'Q; 3) A(TPW) uzluksiz yangi formula — YO'Q; 4) klass chegarasi qoidasi (bizda floor → [0, 0.6) = 0; Ermida (0, 0.6] = 0) — O'ZGARMAYDI; 5) TPW 2-klass xabari — MA'LUMOT.
+
+**Asos — Ermida original kodi** (`sofiaermida/Landsat_SMW_LST`, `modules/SMWalgorithm.js`, aynan):
+```js
+var A_img = image.remap(A_lookup.get(0), A_lookup.get(1),0.0,'TPWpos').resample('bilinear');
+```
+(B, C ham shunday; `NCEP_TPW.js`: TPW — NCEP 6 soatlik chiziqli vaqt interpolyatsiyasi, TPWpos 6 mm klasslar — silliqlanmaydi.)
+
+**Oldin** (`radiation.compute_lst_smw`): `a = pos.remap(idx, _SMW_L8['A'])` — nearest: ERA5 katagi (0.25°) chegarasida A/B/C sakraydi.
+**Keyin:** `a = pos.remap(idx, _SMW_L8['A']).resample('bilinear')` (B, C ham). Natija gridi o'zgarmaydi (Tb birinchi operand, #34). `main._grid_tpw_qc`: TPW_min/max/klass ustunlari qoladi; >1 klass → `ℹ️ SMW: … A/B/C bilinear silliqlangan (Ermida)` (qc['warnings'] ga QO'SHILMAYDI).
+Faqat SEBAL_Milliy (va Kc_ETo sahnalari); SEBAL_B/ID/pysebal LST = Landsat C2L2 ST_B10 — tegilmagan.
+
+**Klass chegarasidagi LST pog'onasi (nearest)**, koeffitsient jadvalidan, ε = 0.98:
+
+| TPW chegarasi | Tb 295 K | Tb 310 K | Tb 325 K |
+|---|---|---|---|
+| 1.2 sm (1→2) | +0.61 | +1.31 | +2.00 |
+| 1.8 sm (2→3) | +0.67 | +1.80 | +2.93 |
+| 2.4 sm (3→4) | +0.38 | +1.46 | +2.54 |
+
+**GEE — LST (bir sahna, kod o'zgarmasdan, qayta hisob = quvur LST aynan):** 06-09 ΔLST −0.88…+1.49 K, o'rt −0.04, ekinzorning 5.5 %i |Δ|>0.5 K; 07-27 −1.45…+1.52 K, o'rt ~0, ekinzorning 26 %i |Δ|>0.5 K.
+
+**GEE — butun 2023 (Samarqand 20 km, SEBAL_Milliy, kaskad, point_anchor), eski (nearest) vs yangi (bilinear)**, ekinzor o'rtachasi:
+
+| Sahna | TPW klass | Anchor | hot_LST | cold_LST | dT_cold | H_cold | dT_hot | ET_24 |
+|---|---|---|---|---|---|---|---|---|
+| 1-klass 12 sahna (nazorat) | 1 | o'zgarmadi | = | = | = | = | = | 0.0 % (05-08 −0.3 %) |
+| 06-09 | 2 | cimec/lc | 329.85 = | 307.82→307.94 | −4.75→−3.04 | −117.6→−61.6 | 5.35 = | 5.80→5.35 (−7.7 %) |
+| 07-19 | 2 | cimec/lc | 322.10 = | 305.15→305.22 | −2.96→−1.05 | −105.3→−36.3 | 5.54 = | 5.29→4.54 (−14.2 %) |
+| 07-27 | 2 | cimec/lc, hot nuqta o'zgardi | 331.03→331.45 | 308.32→308.57 | −6.13→−8.42 | −131.3→−124.0 | 5.38→4.59 | 5.70→6.09 (+6.9 %) |
+| 08-04 | 2 | plan_b→cimec, hot nuqta o'zgardi | 322.87→323.26 | 307.08→305.22 | −4.74→−3.62 | −200.8→−168.4 | 5.41→4.74 | 5.72→5.34 (−6.6 %) |
+| 09-13 | 2 | cimec/lc | 308.31→307.95 | 297.35→297.41 | 0.54→−0.32 | 20.9→−11.0 | 5.02→5.31 | 2.92→3.19 (+9.2 %) |
+| 09-29 | 2 | cimec/lc, hot nuqta o'zgardi | 313.10→313.19 | 298.29→298.22 | 1.68→2.01 | 60.6→83.5 | 2.26 = | 2.82→2.52 (−10.5 %) |
+| 10-07 | 2 | cimec/lc | 307.29 = | 292.78→292.85 | 3.70→3.89 | 214.0→240.0 | 4.38 = | 1.69→1.51 (−10.7 %) |
+| 10-15 | 2 | cimec/lc | 299.36 = | 292.04→292.09 | 1.89→1.83 | 92.4→77.9 | 4.29→4.26 | 1.68→1.70 (+1.2 %) |
+| 11-16 | 2 | cimec/lc | 301.58 = | 291.03 = | 1.55→1.28 | 96.7→76.9 | 2.55 = | 0.96→1.16 (+20.6 %) |
+| 12-10 | 2 | pysebal/lc | 285.63→285.65 | 278.92→279.00 | 2.20→2.23 | 98.6→100.5 | 2.37 = | 1.18→1.17 (−1.0 %) |
+
+Ekinzor o'rtacha LST har sahnada ±0.04 K ichida o'zgardi. Rad etilgan: faqat 03-13 (nam) — ikkalasida bir xil.
+
+Oylik ET (ekinzor, mm): mart 31.6 = ; may 121.7→121.5 ; iyun 156.3→152.6 (−2.4 %); iyul 161.7→158.8 (−1.8 %); avgust 152.7→149.9 (−1.9 %); sentabr 94.6→95.2 (+0.6 %); oktabr 51.2→48.9 (−4.4 %); **noyabr 24.8→29.6 (+19.2 %, bitta sahna — 11-16)**; dekabr 30.2→29.9.
+
+**Muhim topilma (bu tuzatishga tegishli EMAS — anchor sezgirligi):** 2-klass sahnalarda ET_24 −14…+21 % o'zgardi, lekin sabab LST'ning o'zi emas (ekinzor o'rtachasi ±0.04 K): cold anchor LST ~0.1 K siljishi `point_anchor`da BOSHQA cold pikselni tanlaydi (06-09: cold_LST +0.12 K → dT_cold −4.75→−3.04, H_cold −118→−62 W/m²), 3 sahnada hot nuqta ham o'zgardi. Ya'ni sahna ET'si deyarli teng sovuq piksellar orasidagi tanlovga juda sezgir (ochiq A3 — cold anchor Ta anomaliyasi bilan bog'liq). Bilinear tuzatish to'g'ri (asl algoritm); sezgirlik alohida masala.
 

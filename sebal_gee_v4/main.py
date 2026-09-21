@@ -455,8 +455,8 @@ def _grid_tpw_qc(img, roi, mode, qc, prefix):
       1) Grid — LST, LAI, EMISSIVITY, L_UP, DTA, RN proyeksiyasi Landsat tahlil
          gridiga (NDVI) teng bo'lishi shart; farq → OGOHLANTIRISH.
       2) SEBAL_Milliy (SMW LST): ROI ichidagi ERA5 TCWV min/max va TPW klass
-         (0.6 sm) oralig'i; >1 klass → OGOHLANTIRISH (ERA5 katak chegarasida
-         ~1.4 K LST pog'onasi). Algoritm o'zgarmaydi.
+         (0.6 sm) oralig'i → QC ustunlari; >1 klass → MA'LUMOT (A/B/C Ermida-original
+         bilinear silliqlangan — pog'ona yo'q). Algoritm o'zgarmaydi.
     """
     bands = list(_GRID_QC_BANDS)            # compute_all'dan keyin doim mavjud
     req = {b: img.select(b).projection() for b in ('NDVI',) + _GRID_QC_BANDS}
@@ -488,11 +488,10 @@ def _grid_tpw_qc(img, roi, mode, qc, prefix):
         qc.update({'TPW_min': t['TPW_min'], 'TPW_max': t['TPW_max'],
                    'TPW_bin_min': b0, 'TPW_bin_max': b1, 'n_TPW_bins': b1 - b0 + 1})
         if b1 > b0:
-            msg = (f"SMW: ROI ichida {b1 - b0 + 1} ta TPW klassi ({b0}–{b1}; TCWV "
-                   f"{t['TPW_min']:.2f}–{t['TPW_max']:.2f} sm) — ERA5 katak chegarasida "
-                   f"~1.4 K LST pog'onasi bo'lishi mumkin")
-            print(f"{prefix}   ⚠️ OGOHLANTIRISH: {msg}")
-            qc.setdefault('warnings', []).append(msg)
+            # MA'LUMOT (ogohlantirish EMAS): A/B/C Ermida-original bilinear (radiation.
+            # compute_lst_smw) → klass chegarasida LST pog'onasi yo'q; QC ustunlari qoladi.
+            print(f"{prefix}   ℹ️ SMW: ROI ichida {b1 - b0 + 1} ta TPW klassi ({b0}–{b1}; TCWV "
+                  f"{t['TPW_min']:.2f}–{t['TPW_max']:.2f} sm) — A/B/C bilinear silliqlangan (Ermida)")
 
 
 def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
@@ -907,13 +906,21 @@ def parcels_from_points(points, size_m=210, inner_buffer_m=-30):
     """
     {nom: [lon, lat]} → ee.FeatureCollection: har nuqta markazida size_m kvadrat,
     ichki bufer bilan (chekka/yo'l chiqarilgan). 'name' xususiyati saqlanadi.
-    Masalan lizimetr: 210×210m dala → −30m → ~150×150m yadro.
+    Masalan lizimetr: 210×210m dala → −30m → 150×150m yadro.
+    Kvadrat nuqtaning UTM zonasida (metr) quriladi: tomoni AYNAN size_m (+2·inner).
+    Oldin buffer(r).bounds() EPSG:4326 da — doira ko'pburchagi chegara qutisi
+    ~215×216 m (yadro 153×154 m) chiqardi.
     """
     feats = []
     for nom, lonlat in points.items():
-        g = ee.Geometry.Point([lonlat[0], lonlat[1]]).buffer(size_m / 2.0).bounds()
+        lon, lat = float(lonlat[0]), float(lonlat[1])
+        epsg = (32600 if lat >= 0 else 32700) + int((lon + 180.0) // 6.0) + 1   # UTM zona
+        proj = ee.Projection(f'EPSG:{epsg}')
+        em = ee.ErrorMargin(0.01, 'projected')                             # 1 sm, proj birligida
+        g = (ee.Geometry.Point([lon, lat])
+             .buffer(size_m / 2.0, em, proj).bounds(em, proj))             # size_m kvadrat
         if inner_buffer_m:
-            g = g.buffer(inner_buffer_m)
+            g = g.buffer(inner_buffer_m, em, proj)                          # ichki bufer (m)
         feats.append(ee.Feature(g, {'name': nom}))
     return ee.FeatureCollection(feats)
 
