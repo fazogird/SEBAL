@@ -1130,9 +1130,10 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
         ln_zb_z0m_cold = math.log(z_blend / z0m_c)
         ustar_cold = max(k * u200_c / ln_zb_z0m_cold, 0.02)
         rah_cold = max(ln_z2_z1 / (k * ustar_cold), 1.0)
+        rah_cold_neutral = rah_cold                  # QC: barqarorlik kuchaytirishi uchun
         prev_psi_m_cold = prev_psi_h_cold = prev_ustar_cold = None
 
-    c4_list, c5_list, dta_list, dtac_list = [], [], [], []
+    c4_list, c5_list, dta_list, dtac_list, rahc_list = [], [], [], [], []
     prev_dt = prev_rah = prev_rah_c = None
     prev_psi_m = prev_psi_h = prev_ustar = None
     converged_at = None
@@ -1149,6 +1150,7 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
         c5_list.append(c5)
         dta_list.append(dta_hot)
         dtac_list.append(dta_cold)
+        rahc_list.append(rah_cold if is_id else None)
 
         # Konvergensiya (SEBAL Manual App.8): dT_hot va rah_hot stabillashishi.
         # NISBIY (1%): masshtabdan mustaqil (kichik/katta dT'ga bir xil mos).
@@ -1229,6 +1231,11 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     dT_h, dT_c = dta_list[N_A - 1], dtac_list[N_A - 1]
     if qc is not None:
         qc.update({'dT_hot': dT_h, 'dT_cold': dT_c, 'H_hot': H_hot, 'H_cold': H_cold})
+        if is_id:
+            # QC (qiymatga TEGMAYDI): cold barqaror qatlam kuchaytirishi — past shamol + H_cold < 0
+            # da rah_cold neytraldan bir necha barobar oshadi (2023-06-01: ×4.4, dT −2.4 → −10.8 K)
+            qc.update({'dT_cold_neutral': H_cold * rah_cold_neutral / (rho_c * cp),
+                       'rah_cold_ratio': rahc_list[N_A - 1] / rah_cold_neutral})
     fails = []
     if not H_hot > 0:
         fails.append(f"H_hot = {H_hot:.1f} W/m² ≤ 0")

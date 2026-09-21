@@ -93,6 +93,7 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 88 | 2026-09-21 | K↓ (cosθ) va albedo BRDF (θ_elev) — per-piksel SZA bandidan; oldin Landsat'da sahna markazidagi bitta `SUN_ELEVATION` (mosaic'da birinchi row'niki butun sanaga) | ✅ commit qilinmagan | radiation.py, surface_props.py |
 | 89 | 2026-09-21 | Qiya yuza: overpass cosθ va C_rad lahzali qismi — per-piksel SZA/SAA bandlaridan (Duffie & Beckman azimut shakli); C_rad kunlik integrali astronomik qoladi | ✅ commit qilinmagan | sloping_terrain.py |
 | 90 | 2026-09-21 | SEBAL_ID / SEBAL_Milliy: λET_cold = 1.05·ETr faqat TO'LIQ QOPLAMALI cold pikselga (LAI ≥ 4, METRIC); topilmasa sahna TASHLANMAYDI — oldingi (cheklovsiz) kaskad + QC ogohlantirishi (zona `…-LAI<4`); QC CSV `cold_LAI` ustuni | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
+| 91 | 2026-09-21 | Sahna QC CSV: `dT_cold_neutral` (neytral rah bilan dT_cold) va `rah_cold_ratio` (yakuniy / neytral rah_cold) — past shamolda cold barqaror qatlam kuchaytirishini ko'rsatadi; qiymatlarga TEGMAYDI (SEBAL_ID oilasi) | ✅ commit qilinmagan | energy_balance.py, main.py |
 
 ---
 
@@ -2410,4 +2411,36 @@ Production kodi (#90) tekshiruvi:
 | Zaxira (sun'iy `cold_lai_min` = 7 → 1-o'tish har doim bo'sh) — AYNI 6 sahna | P0 (oldingi kod) bilan AYNAN (07-27 dT −8.0899, ET 6.097; 06-09 ET 5.3106 …); status OGOHLANTIRISH, anchor `cimec/lc-LAI<7`, sabab va print — flag |
 | SEBAL_ID 07-27 | ishladi (empirik L↓ yo'li), cold LAI 6 |
 | SEBAL_B, pysebal 07-27 | o'zgarmagan (cold LAI 2.94, flag yo'q) |
+
+---
+
+## #91 — QC: cold barqaror qatlam kuchaytirishi (V1)
+
+User: "V1 ni qil, csv ga yozilsin".
+
+**Sabab (A5):** to'liq qoplamali cold, 1.05·ETr > Rn−G (H_cold < 0) va past shamol → barqaror MO tuzatishi rah_cold'ni bir necha barobar oshiradi → dT_cold va sahna ET oshadi. Sezgirlik sinovi (cold skalyar iteratsiyasida ψ = 0, faqat diagnostika): 2023-06-01 ET_crop 6.18 → 5.45 mm (**+13.4 %** kuchaytirish hissasi), 08-20 +3.0 %, 06-17 / 07-11 ≈ 0 (H_cold ≈ 0). Manbali tuzatish yo'q — hozircha faqat ko'rsatkich.
+
+**Keyin** (`compute_sensible_heat_flux`, SEBAL_ID oilasi):
+```python
+rah_cold_neutral = rah_cold                       # iteratsiyadan oldingi neytral rah
+rahc_list.append(rah_cold)                        # har qadamda dT_cold hisoblangan rah
+qc['dT_cold_neutral'] = H_cold * rah_cold_neutral / (rho_c * cp)
+qc['rah_cold_ratio']  = rahc_list[N_A - 1] / rah_cold_neutral
+```
+`main._scene_qc_report` ustunlari: `… H_cold, dT_cold_neutral, rah_cold_ratio …`. SEBAL_B / pysebal — bo'sh (cold dT = 0).
+
+GEE (Samarqand 20 km, production kodi):
+
+| Sahna | Rejim | dT_cold | dT_cold_neutral | rah_cold_ratio |
+|---|---|---|---|---|
+| 2023-06-01 | SEBAL_Milliy | −10.76 | −2.42 | **4.44** |
+| 2023-06-09 | SEBAL_Milliy | −3.61 | −3.07 | 1.17 |
+| 2023-07-11 | SEBAL_Milliy | −0.24 | −0.20 | 1.21 |
+| 2023-08-20 | SEBAL_Milliy | −4.16 | −3.67 | 1.13 |
+| 2023-06-01 | SEBAL_ID | −0.89 | −0.74 | 1.22 |
+| 2023-06-01 | SEBAL_B | 0 | — | — |
+
+dT_cold qiymatlari #90 bilan aynan (o'zgarmagan). A5 diagnostikasi (c_diag) bilan mos: 06-01 ×4.4, neytral −2.42 K.
+
+Qo'shimcha dalil (Bushland 2021, 21 sahna, overpass, lizimetr stansiyasi 15-min): ERA5 havo harorati − o'lchov **+0.75 K** (−1.1…+2.4) — ERA5 Ta ishonchli, cold Ta anomaliyasi model dT'sidan; ERA5 shamoli (FAO-56 bilan 2 m) / o'lchov (2.3 m, paxta ustida) median 0.80, oraliq 0.26…1.29 (07-16: 0.5 vs 2.0 m/s) — tizimli bitta koeffitsient chiqarib bo'lmaydi.
 

@@ -523,7 +523,7 @@ def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
     cols = ['sana', 'status', 'sabab', 'quyosh_geom', 'anchor', 'cold_LAI', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
             'P_sum', 'window', 'converged', 'etrf_wet_start', 'etrf_dry_start', 'wet_reset',
             'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
-            'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
+            'dT_hot', 'dT_cold', 'H_hot', 'H_cold', 'dT_cold_neutral', 'rah_cold_ratio',
             'Ta_hot', 'Ta_era5_hot', 'Ta_cold', 'Ta_era5_cold', 'pct_Ta_out15',
             'grid', 'grid_ok', 'TPW_min', 'TPW_max', 'TPW_bin_min', 'TPW_bin_max', 'n_TPW_bins',
             'pct_etrf_gt110', 'etrf_raw_p99', 'pct_crad_lo', 'pct_crad_hi',
