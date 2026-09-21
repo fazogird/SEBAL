@@ -241,6 +241,43 @@ class RefETCalculator:
 # KUNLIK ERA5 AGREGATSIYA — ETref uchun (tez, bitta so'rov)
 # ==============================================================
 
+def local_calendar_day(t, utc_offset=0):
+    """
+    Vaqt belgisi (masalan Landsat overpass, UTC) → uning MAHALLIY kalendar sanasi
+    (o'sha sananing 00:00 UTC ko'rinishida — kunlik funksiyalar KALENDAR SANA qabul qiladi
+    va o'zi utc_offset bilan UTC oynaga o'tkazadi). Butun dunyo uchun: UTC+11…+14 da
+    overpass'ning UTC sanasi mahalliy sanadan bir kun oldin bo'ladi (NZ: 10:30 mahalliy =
+    22:30 UTC oldingi kun). O'zbekiston/AQSh da UTC sanasi = mahalliy sana (o'zgarishsiz).
+    DIQQAT: faqat VAQT BELGISI uchun. Oylik sikllardagi kunlar allaqachon kalendar sana —
+    ularga qo'llanmaydi (UTC−6 da 00:00 UTC − 6 soat = oldingi kun bo'lib qolardi).
+    """
+    return ee.Date(ee.Date(t).advance(utc_offset, 'hour').format('YYYY-MM-dd'))
+
+
+def check_era5_hours(start, end):
+    """
+    ERA5-Land HOURLY: [start, end) oralig'idagi HAR soat rasmi bor-yo'qligi (klient,
+    BITTA getInfo). Soat yo'q → RuntimeError (birinchi yo'q soatlar bilan) — 23 soatlik
+    kunlik ETr24/Rs24 jimgina chiqmasin (CHIRPS uchun check_chirps_month kabi).
+    start, end — 'YYYY-MM-DD' (UTC).
+    """
+    from datetime import datetime, timedelta, timezone
+    s = datetime.strptime(start, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+    e = datetime.strptime(end, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+    got = set(ee.ImageCollection(cfg.ERA5['collection']).filterDate(start, end)
+              .aggregate_array('system:time_start').getInfo())
+    missing, t = [], s
+    while t < e:
+        if int(t.timestamp() * 1000) not in got:
+            missing.append(t.strftime('%Y-%m-%d %H:00'))
+        t += timedelta(hours=1)
+    if missing:
+        raise RuntimeError(
+            f"ERA5-Land HOURLY {start}…{end} oralig'ida {len(missing)} soat yo'q "
+            f"({', '.join(missing[:4])}{' …' if len(missing) > 4 else ''}) — kunlik "
+            f"ETr24/Rs24 24 soatsiz hisoblanmaydi (ERA5-Land ~5 kun kechikadi).")
+
+
 def get_daily_era5_aggregate(date, roi, utc_offset=0):
     """
     Butun kalendar kun uchun ERA5-Land'dan T_max/T_min/T_mean,
@@ -261,10 +298,11 @@ def get_daily_era5_aggregate(date, roi, utc_offset=0):
     # (get_daily_solar_radiation / compute_etr24_hourly_sum bilan bir xil):
     # vaqtli sana (masalan overpass 06:11 UTC) berilsa oyna overpassdan boshlanmasin.
     day_start = ee.Date(ee.Date(date).format('YYYY-MM-dd')).advance(-utc_offset, 'hour')
-    day_end = day_start.advance(1, 'day')
 
+    # ERA5 yorlig'i T = [T−1h, T] (akkumulyativ) → kun [day_start, +24h) ning soatlari
+    # yorliqlari +1h … +24h (ECMWF step-24 bilan aynan tekshirilgan, #75)
     hourly = (ee.ImageCollection(cfg.ERA5['collection'])
-              .filterDate(day_start, day_end)
+              .filterDate(day_start.advance(1, 'hour'), day_start.advance(25, 'hour'))
               .filterBounds(roi))
 
     # --- Harorat: kunlik mean/max/min ---
@@ -321,8 +359,7 @@ def compute_etref_daily(image, roi, utc_offset=0):
     parametrlar) — overpass-vaqtidagi hourly oyna EMAS, tezlik va
     aniqlik uchun.
     """
-    day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
-    day_start = ee.Date(day_str)
+    day_start = local_calendar_day(image.get('system:time_start'), utc_offset)
     dem = image.select('DEM')
 
     # SOATLIK-YIG'INDI (kitob App.B) grass — ETr24 bilan izchil usul.
@@ -424,8 +461,12 @@ def compute_etr24_hourly_sum(date, roi, dem, ref_type='alfalfa', utc_offset=0):
     calc = RefETCalculator(ref_type=ref_type)
     ymd = ee.Date(ee.Date(date).format('YYYY-MM-dd'))
     day_start = ymd.advance(-utc_offset, 'hour')    # mahalliy standart kalendar kun
+    # Soatlar: yorliq T = [T−1h, T] → kun ichidagi 24 soat = yorliqlar +1h … +24h.
+    # (Oldin +0 … +23: kunning 1-soati oldingi kunniki, oxirgi soati tushib qolardi —
+    # ECMWF step-24 bilan: Bushland 07-11 Σ00..23 28.365 vs Σ01..24 = step-24 28.614 MJ.)
+    # Ra/Rso to_etr ichida AYNI [T−1, T] davr uchun (#56).
     coll = (ee.ImageCollection(cfg.ERA5['collection'])
-            .filterDate(day_start, day_start.advance(1, 'day'))
+            .filterDate(day_start.advance(1, 'hour'), day_start.advance(25, 'hour'))
             .filterBounds(roi))
     demi = ee.Image(dem)
     E = cfg.ERA5['bands']
@@ -486,7 +527,7 @@ def compute_reference_ets_daily(image, roi, utc_offset=0):
     standart kalendar kun (utc_offset). Oldin: UTC kun + kunlik-qadam
     (get_daily_era5_aggregate) — boshqa rejimlardan farqli edi.
     """
-    day_start = ee.Date(ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'))
+    day_start = local_calendar_day(image.get('system:time_start'), utc_offset)
     dem = image.select('DEM')
     return image.addBands(_reference_ets_hourly(day_start, roi, dem, utc_offset))
 
@@ -533,6 +574,6 @@ def compute_reference_ets_daily2(image, roi, utc_offset=0):
     Landsat sahna sanasiga mos ETREF_24/ETPOT_24'ni image'ga qo'shadi.
     (et_decomposition.py uchun — sahna-darajasidagi diagnostika.)
     """
-    day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
+    day_str = local_calendar_day(image.get('system:time_start'), utc_offset)
     refs = compute_reference_ets_for_date(day_str, roi, utc_offset=utc_offset)
     return image.addBands(refs)

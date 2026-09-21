@@ -615,8 +615,13 @@ def add_crop_cloud_pct(image, roi, use_cropland=True, scale=100):
     # kalit YO'Q bo'lsa (bo'sh hudud) → fallback 1 (=100%). DIQQAT: eski
     # If(pct,pct,1) 0.0 ni ham FALSY deb 100% qilardi — kichik toza dala uchun
     # xato edi; .contains() bilan 0.0 to'g'ri saqlanadi.
-    crop_cloud_pct = ee.Number(
-        ee.Algorithms.If(d.contains('CLD'), d.get('CLD'), 1)
-    )
+    # Qiymat null ham bo'lishi mumkin (kalit BOR, lekin roi ustida yaroqli piksel yo'q —
+    # masalan sahna ROI chetiga tegadi): null → 1 (100%, sahna o'tkaziladi) — HLS variant
+    # (add_crop_cloud_pct_hls) bilan bir xil. Oldin null.multiply(100) → butun run to'xtardi
+    # (Bushland 20 km ROI, 2021: "Number.multiply: Parameter 'left' … null").
+    crop_cloud_pct = ee.Number(ee.Algorithms.If(
+        d.contains('CLD'),
+        ee.Algorithms.If(ee.Algorithms.IsEqual(d.get('CLD'), None), 1, d.get('CLD')),
+        1))
 
     return image.set('crop_cloud_pct', crop_cloud_pct.multiply(100))

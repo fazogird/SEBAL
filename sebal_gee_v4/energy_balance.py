@@ -1533,7 +1533,7 @@ def anchor_etr_inst(image, roi, anchors):
 def compute_all(image, roi, cold_zone=None, hot_zone=None, anchors=None,
                 anchor_method='cimec', anchor_mode='median_anchor',
                 mode='SEBAL_B', etrf_hot=None,
-                sloping_terrain=False, z_ws=0.0, qc=None):
+                sloping_terrain=False, z_ws=0.0, qc=None, etr24_source='era5'):
     """
     To'liq energiya balansini hisoblash.
 
@@ -1593,7 +1593,8 @@ def compute_all(image, roi, cold_zone=None, hot_zone=None, anchors=None,
             if hot_lonlat is None or None in hot_lonlat:
                 raise RuntimeError(f"{mode}: hot anchor koordinatasi topilmadi.")
             wbr = water_balance.hot_pixel_etrf(
-                image, roi, hot_lonlat, (analysis_proj(image), ANCHOR_SCALE))
+                image, roi, hot_lonlat, (analysis_proj(image), ANCHOR_SCALE),
+                etr24_source=etr24_source)   # ETr24 usuli; kun — UTC (CHIRPS bilan AYNI)
             etrf_hot = wbr['etrf_hot']
             if qc is not None:
                 qc.update(wbr)

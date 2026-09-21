@@ -137,6 +137,14 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         utc_offset = daily_et.utc_offset_from_roi(roi)
         print(f"{prefix} 🕒 utc_offset avtomatik = {utc_offset:+d} soat "
               f"(zona markazi ≈ boylam/15; aniq bo'lmasa qo'lda bering)")
+    # ERA5-Land soatlik to'liqligi (W2): sahna kunlari, oylik hisob oylari va hot suv
+    # balansi orqaga qarashi (max_lookback) — HAR soat bo'lishi shart (BITTA getInfo).
+    from datetime import datetime as _dt, timedelta as _td
+    _ds = _dt.strptime(date_start, '%Y-%m-%d')
+    _de = _dt.strptime(date_end, '%Y-%m-%d')
+    _e5_start = (_ds.replace(day=1) - _td(days=cfg.HOT_WB['max_lookback'] + 2)).strftime('%Y-%m-%d')
+    _e5_end = ((_de.replace(day=1) + _td(days=32)).replace(day=1) + _td(days=2)).strftime('%Y-%m-%d')
+    ref_et.check_era5_hours(_e5_start, _e5_end)
 
     # QIYA YUZA rejimi (Tasumi Ch.V): z_ws — "ob-havo stansiyasi" balandligi
     # (ERA5 uchun ROI o'rtacha balandligi; App.K: shamol ta'siri past)
@@ -319,7 +327,8 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
             try:
                 img = energy_balance.compute_all(
                     img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
-                    mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=att)
+                    mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=att,
+                    etr24_source=etr24_source)
             except energy_balance.SceneQCError as e:
                 tried.append((anchors.get('method'), anchors.get('zone'), str(e)))
                 print(f"{prefix}   ↪ {anchors.get('method')}/{anchors.get('zone')}: {e} "
@@ -498,7 +507,8 @@ def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
     """Sahna sifat jadvali (print) + CSV (joriy papkada) — eksportdan OLDIN."""
     import csv
     cols = ['sana', 'status', 'sabab', 'anchor', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
-            'P_sum', 'window', 'converged', 'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
+            'P_sum', 'window', 'converged', 'etrf_wet_start', 'etrf_dry_start', 'wet_reset',
+            'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
             'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
             'Ta_hot', 'Ta_era5_hot', 'Ta_cold', 'Ta_era5_cold', 'pct_Ta_out15',
             'grid', 'grid_ok', 'TPW_min', 'TPW_max', 'TPW_bin_min', 'TPW_bin_max', 'n_TPW_bins',

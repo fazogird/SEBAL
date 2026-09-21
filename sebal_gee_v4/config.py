@@ -396,13 +396,24 @@ ANCHOR_METHODS = ('default', 'cimec', 'plan_a', 'plan_b', 'pysebal', 'cascade')
 HOT_WB = {
     'ze': 0.10,                 # bug'lanish qatlami (m) — FAO-56 0.10–0.15
     'etrf_max': 1.05,           # Ke max (alfalfa ETr ga nisbatan)
-    'windows': (14, 30, 60),    # oyna (kun): De₀=0 va De₀=TEW natijasi yaqinlashguncha uzayadi
-    'conv_tol': 0.02,           # |ETrF(nam-start) − ETrF(quruq-start)| ≤ shu → yaqinlashdi
+    # Boshlang'ich holat (W3): De har doim [0, TEW] ichida → istalgan kundan boshlangan
+    # ikki chegaraviy yurish (De₀=0 nam, De₀=TEW quruq) haqiqiy holatni o'rab oladi.
+    # Overpass'dan orqaga KUNMA-KUN uzaytiriladi; ikki chegara birinchi marta ≤ conv_tol
+    # bo'lganda — javob (o'rtachasi). max_lookback kunda ham birlashmasa → HOT_WB_UNCERTAIN
+    # (anchor QC xatosi → keyingi anchor; soxta/zaxira qiymat YO'Q).
+    'max_lookback': 45,         # kun (user qarori 2026-09-21; 21 kunda qishki sahnalar rad
+                                #  bo'lardi — Samarqand 11-16 28 kun, 12-10 40 kunda birlashadi)
+    'conv_tol': 0.01,           # |ETrF(nam) − ETrF(quruq)| ≤ shu → holat aniqlandi (~6 W/m² H_hot)
+    'fetch_chunk': 7,           # P/ETr bir so'rovda necha kun olinadi (faqat tezlik uchun)
     'etrf_warn': 0.35,          # ETrF_hot bundan katta → OGOHLANTIRISH (rad etish emas)
-    # Tuproq — nuqtadagi xarita qiymatlari (Saxton EMAS):
-    'fc_asset': 'OpenLandMap/SOL/SOL_WATERCONTENT-33KPA_USDA-4B1C_M/v01',   # θ_FC 33 kPa, %
-    'fc_bands': ('b0', 'b10'),  # 0 va 10 sm (Ze=0.10 m)
-    'fc_scale': 0.01,           # % → m³/m³
+    # Tuproq — θ_FC VA θ_WP BITTA mahsulotdan (HiHydroSoil v2, 250 m), 0–5 va 5–15 sm
+    # qatlamlar o'rtachasi (Ze = 0.10 m). θ_FC = van Genuchten θ(fc_kpa) — o'sha mahsulotning
+    # θs, θr, α, n parametrlaridan (FC > WP kafolatli). Oldin θ_FC OpenLandMap 33 kPa edi
+    # (boshqa mahsulot) → 2023-11-16 hot pikselda FC 0.080 < WP 0.137 (fizik imkonsiz).
+    'hhs_base': 'projects/sat-io/open-datasets/HiHydroSoilv2_0/',
+    'hhs_layers': ('0-5cm', '5-15cm'),
+    'hhs_scale': 0.0001,        # wcsat/wcres/wcpf*, alpha (1/sm), N — ×10⁻⁴
+    'fc_kpa': 33.0,             # dala sig'imi so'rilish bosimi (kPa) — FAO-56 / oldingi 33 kPa
     'wp_collection': 'projects/sat-io/open-datasets/HiHydroSoilv2_0/wcpf4-2',  # θ_WP pF4.2 (1500 kPa)
     'wp_layers': ('0-5cm', '5-15cm'),
     'wp_scale': 0.0001,         # ×10⁴ → m³/m³

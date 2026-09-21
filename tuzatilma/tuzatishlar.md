@@ -70,9 +70,18 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 65 | 2026-09-19 | VIIRS/S30: ALBEDO eng yaqin yaroqli sahna; kunlik ETREF bevosita (grass soatlik yig'indi, mahalliy kun) — proksi o'rniga; VIIRS target per-piksel vaqt to'ldirish; S30 utc_offset (#55 qoldig'i) | ✅ commit fca6a48 | viirs_downscaling.py, hls_s30_etrf.py |
 | 66 | 2026-09-19 | S30 `interp_temporal_per_pixel`: `ee.Number − Image` runtime xatosi (S30 oylik HECH QACHON ishlamagan) → Image konstanta | ✅ commit fca6a48 | hls_s30_etrf.py |
 | 67 | 2026-09-21 | O'lik kod olib tashlandi: `monthly_analytics._get_daily_rs24` (UTC kun Rs24), `_interpolate_bands` (midpoint + mavsum o'rtachasi) va uning izohdagi eski nusxasi; VIIRS'dagi ishlatilmaydigan `monthly_analytics` importi | ✅ commit fca6a48 | monthly_analytics.py, viirs_downscaling.py |
-| 68 | 2026-09-21 | Raster H iteratsiyasi: oxirgi qadamda u*/rah qayta yangilanmaydi — RAH/USTAR bandlari (va ANCHOR_RAH_HOT) H hisoblangan qiymatda (H = ρ·cp·DTA/RAH izchil) | ✅ commit qilinmagan | energy_balance.py |
-| 69 | 2026-09-21 | `parcels_from_points`: kvadrat nuqtaning UTM zonasida (metr) — aniq 210/150 m (oldin 215/153 m) | ✅ commit qilinmagan | main.py |
-| 70 | 2026-09-21 | SMW LST: A/B/C koeffitsient rastrlari `.resample('bilinear')` — Ermida original GEE kodidagidek (klass diskret; TCWV silliqlanmaydi); TPW 2-klass xabari OGOHLANTIRISH emas, MA'LUMOT | ✅ commit qilinmagan | radiation.py, main.py |
+| 68 | 2026-09-21 | Raster H iteratsiyasi: oxirgi qadamda u*/rah qayta yangilanmaydi — RAH/USTAR bandlari (va ANCHOR_RAH_HOT) H hisoblangan qiymatda (H = ρ·cp·DTA/RAH izchil) | ✅ commit 52f726a | energy_balance.py |
+| 69 | 2026-09-21 | `parcels_from_points`: kvadrat nuqtaning UTM zonasida (metr) — aniq 210/150 m (oldin 215/153 m) | ✅ commit 52f726a | main.py |
+| 70 | 2026-09-21 | SMW LST: A/B/C koeffitsient rastrlari `.resample('bilinear')` — Ermida original GEE kodidagidek (klass diskret; TCWV silliqlanmaydi); TPW 2-klass xabari OGOHLANTIRISH emas, MA'LUMOT | ✅ commit 52f726a | radiation.py, main.py |
+| 71 | 2026-09-21 | Hot suv balansi: θ_FC va θ_WP BITTA mahsulotdan (HiHydroSoil v2: van Genuchten θ(33 kPa) + WCpF4.2); soxta `TEW = REW + 1` olib tashlandi → FC ≤ WP / TEW ≤ REW = SceneQCError (keyingi anchor); soil_valid_mask fizik izchillikni ham tekshiradi | ✅ commit qilinmagan | water_balance.py, config.py |
+| 72 | 2026-09-21 | Hot suv balansi kunlik ETr = sahna ETr24 bilan AYNI (alfalfa, 24 soatlik yig'indi, MAHALLIY kun, etr24_source) — oldin UTC kun + kunlik-qadam | ✅ commit qilinmagan | water_balance.py, energy_balance.py, main.py |
+| 73 | 2026-09-21 | water_balance: ishlatilmaydigan `SAND`, `CLAY` konstantalari va `ref_et` importi olib tashlandi (`_SOIL`, `_SOIL_DEFAULT` — etrf_water_balance ishlatadi, qoldi) | ✅ commit qilinmagan | water_balance.py |
+| 74 | 2026-09-21 | Hot suv balansi: ETr kuni = CHIRPS kuni (UTC 00–24) — yog'in va ETr siljishsiz (usul #72 dagidek soatlik yig'indi); `utc_offset` uzatish olib tashlandi | ✅ commit qilinmagan | water_balance.py, energy_balance.py, main.py |
+| 75 | 2026-09-21 | ERA5 kunlik oyna 01…24 yorliqlar (T = [T−1, T]): ETr24 soatlik yig'indi, Rs24, `get_daily_era5_aggregate` — ECMWF step-24 bilan aynan (9 joy, 2 fasl) | ✅ commit qilinmagan | ref_et.py, daily_et.py |
+| 76 | 2026-09-21 | Butun dunyo: sahna vaqt belgisi → MAHALLIY kalendar sana (`ref_et.local_calendar_day`) — compute_daily_et, compute_etref_daily, pysebal referens ET (UTC+11…+14 da UTC sanasi bir kun oldin) | ✅ commit qilinmagan | ref_et.py, daily_et.py |
+| 77 | 2026-09-21 | ERA5-Land soatlik to'liqlik QA (`check_era5_hours`, process_tile boshida bitta getInfo) — soat yo'q → xato | ✅ commit qilinmagan | ref_et.py, main.py |
+| 78 | 2026-09-21 | Hot suv balansi boshlanishi: 14/30/60 va "quruq olinadi" o'rniga KUNMA-KUN ikki chegara (De₀=0 / TEW) birlashguncha, tol 0.01, natija — o'rtacha; `max_lookback` kunda birlashmasa HOT_WB_UNCERTAIN (anchor QC); QC ustunlari (nam/quruq, kuchli yomg'ir) | ✅ commit qilinmagan (max_lookback = 45, user) | water_balance.py, config.py, main.py |
+| 79 | 2026-09-21 | Bulut precheck (Landsat): `crop_cloud_pct` null qiymat → 1 (100 %, sahna o'tkaziladi) — HLS varianti bilan bir xil; oldin null.multiply → butun run to'xtardi | ✅ commit qilinmagan | preprocessing.py |
 
 ---
 
@@ -2125,4 +2134,104 @@ Ekinzor o'rtacha LST har sahnada ±0.04 K ichida o'zgardi. Rad etilgan: faqat 03
 Oylik ET (ekinzor, mm): mart 31.6 = ; may 121.7→121.5 ; iyun 156.3→152.6 (−2.4 %); iyul 161.7→158.8 (−1.8 %); avgust 152.7→149.9 (−1.9 %); sentabr 94.6→95.2 (+0.6 %); oktabr 51.2→48.9 (−4.4 %); **noyabr 24.8→29.6 (+19.2 %, bitta sahna — 11-16)**; dekabr 30.2→29.9.
 
 **Muhim topilma (bu tuzatishga tegishli EMAS — anchor sezgirligi):** 2-klass sahnalarda ET_24 −14…+21 % o'zgardi, lekin sabab LST'ning o'zi emas (ekinzor o'rtachasi ±0.04 K): cold anchor LST ~0.1 K siljishi `point_anchor`da BOSHQA cold pikselni tanlaydi (06-09: cold_LST +0.12 K → dT_cold −4.75→−3.04, H_cold −118→−62 W/m²), 3 sahnada hot nuqta ham o'zgardi. Ya'ni sahna ET'si deyarli teng sovuq piksellar orasidagi tanlovga juda sezgir (ochiq A3 — cold anchor Ta anomaliyasi bilan bog'liq). Bilinear tuzatish to'g'ri (asl algoritm); sezgirlik alohida masala.
+
+---
+
+## #71–#73 — Hot piksel suv balansi: tuproq manbasi, kunlik ETr, tozalash
+
+User qarorlari: O1 ha (θ_FC HiHydroSoil'dan, soxta TEW yo'q), O2 ha (ETr = ETr24 usuli), O3 yo'q (yog'in — CHIRPS qoladi), O4 ha (REW — FAO Table 5.1 jadvali qoladi), O5 ha (RO = 0 hozircha qoladi; o'lik kod olib tashlanadi). RO bo'yicha taklif alohida.
+Kitob: Tasumi (2003) 117–120-betlar, Eq 5.1–5.5 — formulalar kodda to'g'ri (Kr ← De(i−1), E = Kr·1.05·ETr, 0 ≤ De ≤ TEW).
+
+### #71 (O1) — θ_FC va θ_WP bitta mahsulotdan, soxta TEW yo'q
+
+**Oldin:** θ_FC — OpenLandMap 33 kPa (0, 10 sm), θ_WP — HiHydroSoil v2 WCpF4.2 (0–5, 5–15 sm) — IKKI xil mahsulot; `if TEW <= REW: TEW = REW + 1` (soxta qiymat, faqat print).
+Dalil: 2023-11-16 hot piksel (39.5807, 66.7357): OpenLandMap FC **0.080** < WP 0.137 (fizik imkonsiz) → TEW 1.1 → soxta 10.0 → ETrF_hot 0.000. Hot zonada (bare+shrub, Samarqand 20 km) FC ≤ WP — 1.5 % piksel; hot piksel (eng issiq) aynan shunday g'ayrioddiy nuqtaga tushgan.
+**Keyin:**
+```python
+# config.HOT_WB: hhs_base (HiHydroSoilv2_0/), hhs_layers ('0-5cm','5-15cm'), hhs_scale 1e-4, fc_kpa 33
+def _vg_theta(layer, kpa):   # θ = θr + (θs−θr)/[1+(α·h)^n]^(1−1/n), h = kPa·10.197 sm
+_soil_stack(): fc = mean(_vg_theta(0-5, 33), _vg_theta(5-15, 33)); wp = WCpF4.2 (o'sha qatlamlar) — m³/m³
+soil_valid_mask(): + (FC > WP) ∧ (TEW > REW)            # nomzodlardan chiqaradi
+hot_pixel_etrf(): if not (FC > WP and TEW > REW): raise SceneQCError(...)   # soxta TEW o'rniga
+```
+VG tekshiruvi (HiHydroSoil o'z parametrlari o'z qatlamlarini qaytaradi): 11-16 nuqta θ(10 kPa) 0.394 vs WCpF2 0.395; θ(1500 kPa) 0.138 vs WCpF4.2 0.137.
+Nuqtalar (FC eski OpenLandMap → yangi HiHydroSoil VG): 11-16 hot 0.080 → 0.310; 07-11 hot 0.300 → 0.314; 12-10 hot 0.255 → 0.302. Hot zonada tuproq-yaroqli ulush 0.9209 → 0.9209 (o'zgarmadi).
+Eslatma: HiHydroSoil θ_FC ≈ 0.31 (Samarqand loam), FAO Table 5.1 loam 0.20–0.30 → TEW ≈ 24 mm (jadval 16–22 mm) — biroz yuqori; tuproq quriydi sekinroq.
+
+### #72 (O2) — kunlik ETr sahnaning ETr24 bilan bir xil
+
+**Oldin:** `ref_et.get_daily_era5_aggregate(day, roi)` (utc_offset YO'Q → UTC kun) + `RefETCalculator.calculate(mode='daily')` (Tmax/Tmin kunlik-qadam).
+**Keyin:** `daily_et.get_daily_etr24(day, roi, dem, ref_type='alfalfa', utc_offset=utc_offset, source=etr24_source)` — 24 soatlik ASCE PM yig'indisi, mahalliy kun. `utc_offset`, `etr24_source`: main.process_tile → energy_balance.compute_all → water_balance.hot_pixel_etrf.
+GEE (07-11 hot nuqta, 14 kun): ETr jami 131.8 → 136.3 mm (+3.4 %), kunlik −2.3 … +8.3 %. Vaqt: bitta sahna hot balansi 6 s → 24 s (yillik yurish 1926 → 2017 s, +5 %).
+Eslatma: yog'in CHIRPS (user qarori) — kuni UTC; ETr endi mahalliy kun → Samarqandda 5 soat siljish (kichik).
+
+### #73 (O5) — o'lik kod
+
+`SAND`, `CLAY` (OpenLandMap qum/loy — Saxton davridan qolgan) va `ref_et` importi olib tashlandi. `_SOIL` (θ_FC, θ_WP, REW) va `_SOIL_DEFAULT` QOLDI — `etrf_water_balance.py` (Appendix I) ularni import qiladi; hot balans faqat REW (3-ustun) ni oladi.
+
+### GEE — butun 2023 (Samarqand 20 km, SEBAL_Milliy, kaskad, point_anchor), eski vs yangi
+
+| Sahna | FC | TEW | oyna | ETrF_hot | H_hot | ET_24 ekinzor |
+|---|---|---|---|---|---|---|
+| 03-21 | 0.305 = | 23.7 = | 30 | 0.113 → 0.084 | 312.4 → 321.5 | 1.089 → 1.062 (−2.5 %) |
+| 05-24 | 0.225 → 0.315 | 15.6 → 24.6 | 14 | 0.000 → 0.044 | 371.7 → 347.0 | 4.421 → 4.539 (+2.7 %) |
+| 10-15 | 0.295 → 0.316 | 22.3 → 24.4 | 14 → 30 | 0.251 → 0.236 | 252.6 → 257.3 | 1.697 → 1.673 (−1.4 %) |
+| **11-16** | **0.090 → 0.310** | **10.0 (soxta) → 24.2** | 14 → 30 | **0.000 → 0.183** | 195.6 → 155.3 | **1.160 → 1.307 (+12.7 %)** |
+| 12-10 | 0.255 → 0.302 | 19.2 → 23.8 | 30 → 60 | 0.337 → 0.339 | 164.4 → 164.1 | 1.171 = |
+| qolgan 17 sahna (may–sen yozgi quruq) | 0.19–0.30 → 0.31 | 12–23 → 24 | 14 | 0.000 (P=0) = | = | = |
+
+03-13 — ikkala kodda RAD (nam: barcha anchorlar dT_hot ≤ dT_cold). Oylik ET (ekinzor): mart 31.6 → 30.9 (−2.4 %), may 121.5 → 122.5, iyun–sentabr o'zgarmadi, oktabr 48.9 → 48.5, **noyabr 29.6 → 33.1 (+12.0 %)**, dekabr 29.9 → 30.0.
+
+---
+
+## #74 — Hot suv balansi: yog'in va ETr bir xil kun (UTC)
+
+User: "hammasini vaqti bir xil bo'lsin, siljish bo'lmasin". Yog'in — CHIRPS (user qarori O3).
+**Asos:** CHIRPS DAILY kuni GEE'da aniq 00:00–24:00 UTC (`UCSB-CHG/CHIRPS/DAILY/20231111`: start 2023-11-11 00:00 UTC, end 2023-11-12 00:00 UTC); kunlik yig'indini mahalliy kunga bo'lib bo'lmaydi. ETr esa soatlikdan yig'iladi → istalgan kunga moslash mumkin.
+**Oldin (#72):** ETr — mahalliy kun (`utc_offset`), yog'in — UTC kun → Samarqandda 5 soat siljish.
+**Keyin:** `_etr_img`: `daily_et.get_daily_etr24(day, …, utc_offset=0, source=etr24_source)` — usul o'zgarmadi (24 soatlik ASCE PM yig'indisi), kun — UTC. `hot_pixel_etrf`/`compute_all` dan `utc_offset` parametri olib tashlandi (endi ishlatilmaydi); `etr24_source` qoladi. Balans overpass UTC kunidan oldingi kunlar bilan tugaydi: Samarqand — overpass'dan ~6 soat oldin (05:00 mahalliy), AQSh — ~17 soat oldin (kitob: Kr ← De(i−1)).
+GEE (Samarqand hot nuqtalar, ETrF_hot mahalliy kun #72 → UTC kun): 03-21 0.084 → 0.084; 05-24 0.044 → 0.044; 10-15 0.236 → 0.236; 11-16 0.183 → 0.181; 12-10 0.339 → 0.340 — oynalar va P o'zgarmadi.
+
+---
+
+## #75–#79 — ERA5 kun oynasi (01…24), butun dunyo sanasi, ERA5 QA, hot balans boshlanishi, bulut precheck
+
+User qarori: W1, W2, W3 — "BOS"; "model faqat Samarqandga emas — butun O'zbekiston / butun dunyo, validatsiya ham bor"; hot balans orqaga maksimum **21 kun**. GPT tavsiyalari band-band tekshirildi: qabul — 01…24 oyna, 24-soat QA, 14/30/60 + quruq zaxirani olib tashlash; allaqachon bor — Ra davr o'rtasi (#56), sana yarim tunga (#41), hot ETr UTC (#74); rad — GPT'ning "avval mahalliy sanaga" varianti oylik kalendar kunlarga qo'llansa UTC−6 da oldingi kun bo'lardi (shuning uchun #76 FAQAT sahna vaqt belgisiga); tuzatish — "pF2 = FC" emas (biz VG θ(33 kPa)); reset mezoni kitob tartibida P ≥ TEW + 1.05·ETr.
+
+### #75 (W1) — ERA5 kunlik oyna 01…24
+ERA5-Land `_hourly` yorlig'i T = [T−1h, T]. Kun [day_start, +24h) ning 24 soati = yorliqlar +1h … +24h.
+**Oldin:** `filterDate(day_start, day_start + 1 kun)` → yorliqlar +0 … +23 (1-soat oldingi kunniki, oxirgi soat tushib qolardi).
+**Keyin:** `filterDate(day_start + 1h, day_start + 25h)` — `compute_etr24_hourly_sum` (ETr24, ETREF_24, hot balans, pysebal), `get_daily_solar_radiation` (Rs24), `get_daily_era5_aggregate` (CUirr). Ra/Rso davr o'rtasi — #56 da allaqachon (T − 0.5).
+Dalil — ECMWF o'z akkumulyatsiyasi (step-24, D+1 00 UTC yorlig'i = D kun to'liq) bilan: Samarqand 07-11 29.961 = Σ01..24 29.961 (Σ00..23 ham 29.961 — kun chegarasi tunda); **Bushland 07-11 28.614 = Σ01..24 (Σ00..23 28.365)**; 03-21 19.223 = Σ01..24 (Σ00..23 19.297). GEE `ERA5_LAND/DAILY_AGGR` = Σ00..23 (u ham siljigan; loyihada ishlatilmaydi).
+Global birlik testi (yangi kod, UTC kun, Rs24·86400 vs step-24): Samarqand, Bushland, Kaliforniya, Braziliya, JAR, Avstraliya, Yangi Zelandiya, Hindiston, Misr × (01-15, 07-11) — **18/18 aynan teng**. Soatlar soni: utc_offset +5, −6, +5.5, +12, −3 — har biri 24.
+
+### #76 — sahna sanasi butun dunyo uchun
+`ref_et.local_calendar_day(t, utc_offset)` = (t + utc_offset) ning mahalliy kalendar sanasi (00:00 UTC ko'rinishida). compute_daily_et (Rs24/Ra24/ETr24), compute_etref_daily, compute_reference_ets_daily(2) — sahna vaqt belgisini shu bilan oladi. Oylik sikllar (kalendar kunlar) — o'zgarmaydi. Test: Yangi Zelandiya sahnasi UTC 2023-01-01 22:08 → mahalliy **2023-01-02**; Samarqand 06:11 → 01-16 (o'zgarishsiz); Bushland 17:20 → 01-04 (o'zgarishsiz).
+Qolgan chekka holat (tuzatilmagan): `info['dates']` / oy guruhlash UTC sanasi bo'yicha — faqat UTC+11…+14 da oy chegarasidagi sahna qo'shni oyga tushishi mumkin.
+
+### #77 (W2) — ERA5 24-soat QA
+`ref_et.check_era5_hours(start, end)` — [start, end) da har soat rasmi (klient, bitta getInfo); yo'q → RuntimeError (birinchi yo'q soatlar). process_tile boshida: [boshlanish oyi − (max_lookback + 2) kun, tugash oyi oxiri + 2 kun]. Test: 2023-01…02 OK; 2026-09-10…22 → "166 soat yo'q (2026-09-14 03:00 …)" (ERA5-Land kechikishi).
+
+### #78 (W3) — hot balans boshlanish holati
+**Oldin:** De₀ = 0 va De₀ = TEW, oyna 14 → 30 → 60, tol 0.02; yaqinlashmasa quruq-start natijasi (zaxira).
+**Keyin:** overpass'dan orqaga **kunma-kun** k = 1, 2, …: ikki chegara (De₀ = 0 / TEW) k kun yuritiladi; birinchi |ETrF_nam − ETrF_quruq| ≤ `conv_tol` (0.01) → holat aniqlandi, natija — o'rtachasi (farq ≤ 0.01). `max_lookback` kunda birlashmasa → `SceneQCError('HOT_WB_UNCERTAIN …')` (keyingi anchor; zaxira yo'q). P/ETr `fetch_chunk` (7) kunlik bo'laklarda olinadi (faqat tezlik). QC: `etrf_wet_start`, `etrf_dry_start`, `wet_reset` (oynadagi P ≥ TEW + 1.05·ETr kuni — kitob tartibida De = 0 aniq). Config: `max_lookback` 21 (user), `conv_tol` 0.01, `fetch_chunk` 7; `windows` olib tashlandi.
+
+GEE — Bushland 2021 (SEBAL_Milliy, 20 km, mart–oktabr; eski = #74 holati + #79, yangi = #75–#79):
+
+| Ko'rsatkich | Eski | Yangi |
+|---|---|---|
+| Qabul qilingan sahnalar | 22 / 22 | 22 / 22 (HOT_WB_UNCERTAIN yo'q) |
+| Holat aniqlangan kun | har doim 14 (qat'iy) | 4 … 14 (o'rt ~7) |
+| Quruq sahnalarda ETrF_hot | 0.000 (quruq start) | 0.002 … 0.005 (chegaralar o'rtachasi, ≤ tol/2) |
+| Nam sahnalar ETrF_hot | masalan 07-09 0.302, 06-14 0.428 | 0.289, 0.428 |
+| Sahna ETr24 (W1, mahalliy kun) | — | −1.0 … +0.9 % |
+| Sahna ET_24 ekinzor | — | −3.3 … +2.9 % |
+| Oylik ET (mart–oktabr) | 25.5 / 23.9 / 30.0 / 66.5 / 80.7 / 99.7 / 53.7 / 33.5 | 25.5 / 24.0 / 30.2 / 66.5 / 80.0 / 99.6 / 53.9 / 33.6 (−0.9 … +0.7 %) |
+
+GEE — Samarqand 2023 yangi kod, `max_lookback = 21`: **run to'xtadi** — 11-16 (21 kundan keyin nam 0.208 / quruq 0.177) va 12-10 (0.541 / 0.327) HOT_WB_UNCERTAIN → barcha anchorlar rad → noyabr va dekabrda yaroqli sahna yo'q → "Yaroqli sahna qolmagan oy(lar): 2023-11, 2023-12 — eksport boshlanmadi". Ikki chegara birlashishi uchun kerak bo'lgan kunlar (max_lookback = 90 bilan o'lchandi): 10-15 — 16 kun (0.241), 03-21 — 20 (0.087), **11-16 — 28 (0.185)**, **12-10 — 40 (0.343)**; bitta sahna hot balansi 7–19 s. Qishda ETr kichik → 10 sm qatlam namligi 3–6 hafta saqlanadi. 
+**User qarori: `max_lookback = 45` kun.** Tekshiruv (Samarqand 2023 mart–oktabr, 21 sahna, eski run hot nuqtalarida, faqat hot balans — 129 s): hammasi aniqlandi, holat **4–20 kunda** (21 dan oshmadi → 45 bu davrda farq qilmaydi); ETrF_hot eski → yangi: quruq sahnalar 0.000 → 0.001…0.005 (chegaralar o'rtachasi), 03-21 0.084 → 0.087, 05-24 0.044 → 0.047, 10-15 0.236 → 0.241. Qish sahnalari (11-16 — 28 kun, 12-10 — 40 kun) 45 ichida.
+
+### #79 — bulut precheck null
+**Oldin** (`add_crop_cloud_pct`): `If(d.contains('CLD'), d.get('CLD'), 1)` — kalit bor, qiymati null (ROI ustida yaroqli piksel yo'q) → `null.multiply(100)` → "Number.multiply: Parameter 'left' … null" → butun run to'xtardi (Bushland 20 km ROI).
+**Keyin:** HLS varianti bilan bir xil — null → 1 (100 %, sahna o'tkaziladi). Test: kalit yo'q → 100; null → 100; 0.0 → 0; 0.37 → 37; real bo'sh maska → 100.
 

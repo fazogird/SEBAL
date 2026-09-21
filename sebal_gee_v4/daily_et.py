@@ -99,12 +99,13 @@ def get_daily_solar_radiation(date, roi, utc_offset=0):
     # overpass vaqti (masalan 17:20 UTC) — qirqilmasa 24 soatlik oyna overpassdan
     # boshlanardi (Bushland UTC−6: sahna Rs24 −10…+10 %; Samarqand ~0 %).
     day_start = ee.Date(ee.Date(date).format('YYYY-MM-dd')).advance(-utc_offset, 'hour')
-    day_end = day_start.advance(1, 'day')
 
     ssrd_band = cfg.ERA5['bands']['ssrd']
 
+    # Yorliq T = [T−1h, T] → kun [day_start, +24h) = yorliqlar +1h … +24h (ECMWF step-24
+    # bilan aynan: Σ = kunlik akkumulyatsiya; oldin +0 … +23 — 1 soat siljigan edi)
     daily_ssrd = (ee.ImageCollection(cfg.ERA5['collection'])
-                  .filterDate(day_start, day_end)
+                  .filterDate(day_start.advance(1, 'hour'), day_start.advance(25, 'hour'))
                   .filterBounds(roi)
                   .select(ssrd_band)
                   .sum())  # 24 soat yig'indisi (J/m²)
@@ -212,7 +213,9 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
     λ = harorat bog'liq (Tasumi 3.48). 1 kg/m² = 1 mm.
     Returns: Image with ET_24 (+ RN24, TAU24; SEBAL_ID: ETRF_INST, ETR24) bands.
     """
-    date = ee.Date(image.get('system:time_start'))
+    # Sahna vaqt belgisi (UTC) → MAHALLIY kalendar sana (butun dunyo: UTC+11…+14 da UTC
+    # sanasi bir kun oldin). Rs24, Ra24, ETr24 shu kalendar kun uchun.
+    date = ref_et.local_calendar_day(image.get('system:time_start'), utc_offset)
     evap_frac = image.select('EVAP_FRAC')
     albedo = image.select('ALBEDO')
 
