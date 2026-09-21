@@ -248,7 +248,7 @@ def hot_pixel_etrf(image, roi, hot_lonlat, grid, etr24_source='era5', verbose=Tr
         De = de0
         for d in days:
             E = _kr(De) * etrf_max * etr_by_day[d]           # E_i = Ke·ETr, Ke = Kr·1.05
-            De = max(0.0, min(TEW, De - p_by_day[d] + E))
+            De = max(0.0, min(TEW, De - p_by_day[d] + E))   # RO = 0 (user qarori 2026-09-21)
         return De, _kr(De), _kr(De) * etrf_max
 
     # --- 3. Boshlang'ich holat: kunma-kun orqaga, ikki chegara birlashguncha ---

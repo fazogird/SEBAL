@@ -29,41 +29,21 @@ def compute_incoming_shortwave(image, sloping_terrain=False):
     Rs↓ = Gsc × cos(θ) × dr × τsw     [Bastiaanssen manual, Eq. 12]
 
     Gsc — quyosh doimiysi (1367 W/m², cfg.GSC)
-    cos(θ) — Landsat SUN_ELEVATION metadata'sidan (scene-level, HLS uchun SZA band)
+    cos(θ) = cos(SZA) — PER-PIKSEL SZA bandidan (preprocessing: Landsat — mos C2 L1
+             sahna, topilmasa astronomik; HLS — o'z SZA bandi)
     dr — Yer-Quyosh masofasi tuzatmasi (DOY dan)
     τsw — Allen (2007) DEM-based transmissivitet (surface_props.py da hisoblangan)
 
     """
-    band_names = image.bandNames()
-    has_sza = band_names.contains('SZA')
+    # cosθ — PER-PIKSEL (oldin Landsat'da sahna markazidagi bitta SUN_ELEVATION:
+    # yozda ±1 %, qishda −5.5…+3.7 % K↓ xatosi sahna chetlarida). SZA bandi
+    # preprocessing'da HAR Landsat/HLS tasvirga qo'shiladi; yo'q bo'lsa select
+    # xato beradi — fake qiymat ISHLATILMAYDI.
+    cos_theta = image.select('SZA').multiply(math.pi / 180).cos()
 
-    # Server-side shart — ee.Algorithms.If bilan
-    cos_theta_hls = image.select('SZA').multiply(math.pi / 180).cos()
-    # SUN_ELEVATION — Landsat sahna metadatasi (mosaic uni preprocessing'da
-    # copyProperties bilan SAQLAYDI). Landsat sahnada TOPILMASA — script
-    # ATAYLAB to'xtaydi (ee.Number(null).multiply → xato). Fake qiymat
-    # ISHLATILMAYDI: maqsad ishonchli, yuqori sifatli natija.
-    #
-    # HLS'da esa SZA bandi ishlatiladi va SUN_ELEVATION property yo'q; shu
-    # bois FAQAT SZA mavjud bo'lganda (ya'ni bu shox discard qilinadigan
-    # HLS holatida) crashning oldini olish uchun o'rin egasi (90°) beriladi
-    # — bu qiymat chiqishga umuman kirmaydi (ee.Algorithms.If SZA shoxini
-    # tanlaydi).
-    sun_elev = ee.Number(ee.Algorithms.If(
-        has_sza,
-        ee.Algorithms.If(image.get('SUN_ELEVATION'),
-                         image.get('SUN_ELEVATION'), 90),
-        image.get('SUN_ELEVATION')))
-    cos_theta_landsat = ee.Image.constant(
-        sun_elev.multiply(math.pi / 180).sin()
-    )
-    cos_theta = ee.Image(
-        ee.Algorithms.If(has_sza, cos_theta_hls, cos_theta_landsat)
-    )
-
-    # QIYA YUZA (Tasumi Eq 5.12-5.13): cosθ qiyalik+ekspozitsiyadan, keyin
-    # gorizontal ekvivalentga (÷cos s). Yassi yuzada bu sin(quyosh balandligi)
-    # ga teng bo'ladi — ya'ni sloping_terrain=False bilan mos.
+    # QIYA YUZA (Tasumi Eq 5.12-5.13): cosθ qiyalik+ekspozitsiyadan (AYNI SZA/SAA
+    # bandlaridan), keyin gorizontal ekvivalentga (÷cos s). Yassi yuzada bu
+    # cos(SZA) ga teng — ya'ni sloping_terrain=False bilan mos.
     if sloping_terrain:
         from . import sloping_terrain as slt
         cos_theta = slt.cos_theta_instant(image)

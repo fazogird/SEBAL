@@ -188,6 +188,19 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         )
 
     print(f"{prefix} Tasvirlar: {info['image_count']} | {info['dates']}")
+    # Per-piksel quyosh burchaklari (SZA/SAA) manbai — preprocessing.add_sun_angles
+    _src = info['solar_src']
+    if len(_src) != info['image_count']:
+        raise RuntimeError(f"{prefix} SOLAR_GEOM_SOURCE soni ({len(_src)}) != tasvirlar "
+                           f"({info['image_count']})")
+    _n_ok = sum(1 for s_ in _src if s_ in ('L1_ANGLE', 'HLS_ANGLE'))
+    print(f"{prefix} ☀️ Quyosh burchaklari SZA/SAA (per-piksel, K↓ / albedo BRDF / qiyalik): "
+          f"{_n_ok}/{len(_src)} sahna o'z burchak bandidan"
+          f" ({', '.join(sorted(set(_src)))})")
+    for _d, _s in zip(info['dates'], _src):
+        if _s not in ('L1_ANGLE', 'HLS_ANGLE'):
+            print(f"{prefix}   ⚠️ {_d}: mos L1 sahna topilmadi → {_s} "
+                  f"(astronomik per-piksel SZA/SAA; L1 bilan farq ≤ ~0.25°)")
 
     if info['image_count'] == 0:
         print(f"{prefix} ⚠️ Tasvir yo'q, o'tkazildi")
@@ -231,7 +244,7 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         print(f"{prefix} Sahna {i + 1}/{n}...")
 
         img = ee.Image(image_list.get(i))
-        qc = {'sana': info['dates'][i]}
+        qc = {'sana': info['dates'][i], 'quyosh_geom': info['solar_src'][i]}
         qc_rows.append(qc)
 
         # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
@@ -506,7 +519,7 @@ def _grid_tpw_qc(img, roi, mode, qc, prefix):
 def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
     """Sahna sifat jadvali (print) + CSV (joriy papkada) — eksportdan OLDIN."""
     import csv
-    cols = ['sana', 'status', 'sabab', 'anchor', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
+    cols = ['sana', 'status', 'sabab', 'quyosh_geom', 'anchor', 'cold_LST', 'hot_LST', 'dT_LST', 'etrf_hot',
             'P_sum', 'window', 'converged', 'etrf_wet_start', 'etrf_dry_start', 'wet_reset',
             'De', 'Kr', 'TEW', 'REW', 'FC', 'WP',
             'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
@@ -590,8 +603,8 @@ def _export_daily(scene_images, roi, mode, folder, scale, crs,
             et_max = st.get('ET_24_max', 0)
             ndvi_max = st.get('NDVI_max', 0)
             print(f"  📊 ET: {et_min:.1f}-{et_max:.1f} mm/day | NDVI max: {ndvi_max:.2f}")
-        except:
-            pass
+        except Exception:
+            pass                                   # faqat diagnostika chiqishi
         d = (ee.Date(img.get('system:time_start'))
              .format('YYYY-MM-dd').getInfo())
 
@@ -606,8 +619,10 @@ def _export_daily(scene_images, roi, mode, folder, scale, crs,
             print(f"⚠️ Quyidagi bandlar topilmadi va export qilinmaydi: {missing_bands}")
 
         if not existing_bands:
-            print("❌ Export bekor qilindi: so‘ralgan bandlardan hech biri image ichida yo‘q.")
-            return None
+            # Oldin `return None` → chaqiruvchida all_tasks.extend(None) xatosi va qolgan
+            # sahnalar eksport qilinmasdi. Endi shu sahna o'tkaziladi, qolganlari davom etadi.
+            print(f"❌ {name}: so'ralgan bandlardan hech biri yo'q — sahna eksport qilinmadi.")
+            continue
 
         task = ee.batch.Export.image.toDrive(
             image=_round_export(img.select(existing_bands)),
@@ -616,8 +631,7 @@ def _export_daily(scene_images, roi, mode, folder, scale, crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
         
         task.start()
-        if task is not None:
-            tasks.append(task)
+        tasks.append(task)
         print(f"  ✅ {name} ({len(existing_bands)} band)")
 
     return tasks
@@ -661,7 +675,7 @@ def _viirs_export_month(scenes, info, tile_roi, year, month, month_key,
             fileNamePrefix=name, region=tile_roi, scale=scale, crs=crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
         task.start()
-        tasks.append(task.id)
+        tasks.append(task)
         print(f"  ✅ VIIRS ET {month_key} export boshlandi")
     except Exception as e:
         print(f"  ⚠️ VIIRS ET {month_key}: {e}")
@@ -707,7 +721,7 @@ def _s30_export_month(scenes, info, tile_roi, year, month, month_key,
             fileNamePrefix=name, region=tile_roi, scale=scale, crs=crs,
             maxPixels=1e13, fileFormat='GeoTIFF')
         task.start()
-        tasks.append(task.id)
+        tasks.append(task)
         print(f"  ✅ S30 ET {month_key} export boshlandi")
 
         # Diagnostika CSV (har anchor)
@@ -832,7 +846,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
                 description=cu_name, folder=folder, fileNamePrefix=cu_name,
                 region=roi, scale=scale, crs=crs, maxPixels=1e13,
                 fileFormat='GeoTIFF')
-            cu_task.start(); tasks.append(cu_task.id)
+            cu_task.start(); tasks.append(cu_task)
             print(f"  ⚡ ET+CU/AW birlashgan → {cu_name} @ {scale}m | bandlar: {out_bands}")
             products = [p for p in products if p[1] != 'ET_MONTHLY']
         except Exception as e:
@@ -865,7 +879,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
             )
 
             task.start()
-            tasks.append(task.id)
+            tasks.append(task)
 
             print(f"  ✅ {prod_name} export boshlandi")
 
@@ -1788,12 +1802,12 @@ def run_polygons(polygon_asset,
         t = ee.batch.Export.table.toAsset(
             collection=work, description=f'polyET_{stamp}_asset',
             assetId=out_asset)
-        t.start(); tasks.append(t.id)
+        t.start(); tasks.append(t)
         print(f"  ✅ Asset export → {out_asset}")
     t2 = ee.batch.Export.table.toDrive(
         collection=work, description=f'polyET_{stamp}_csv',
         folder=out_folder, fileFormat='CSV')
-    t2.start(); tasks.append(t2.id)
+    t2.start(); tasks.append(t2)
     print(f"  ✅ CSV export → Drive/{out_folder}/")
 
     # 10. Ixtiyoriy — oylik ET raster (polygonga clip)
@@ -1811,7 +1825,7 @@ def run_polygons(polygon_asset,
                 image=_round_export(img), description=name, folder=out_folder,
                 fileNamePrefix=name, region=poly_geom.bounds(), scale=30,
                 crs=crs, maxPixels=1e13, fileFormat='GeoTIFF')
-            tr.start(); tasks.append(tr.id)
+            tr.start(); tasks.append(tr)
         print(f"  ✅ {len(months)} oylik raster export (clip)")
 
     print(f"\n  ✅ Tayyor! {len(tasks)} export task")

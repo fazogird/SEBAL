@@ -903,9 +903,9 @@ def compute_rah_neutral(image):
     """
     Aerodinamik qarshilik — neytral sharoit (1-iteratsiya).
 
-    rah = ln(z2_rah/z1) / (k × u*)   [SEBAL_B: z1=0.1m, z2_rah=0.2m → ln(2)]
+    rah = ln(z2_rah/z1) / (k × u*)   [z1 = 0.1 m, z2_rah = 2.0 m → ln(20); cfg.WIND]
 
-    DIQQAT: rah uchun z2_rah=0.2m; stability ψ uchun ALOHIDA z2=2.0m (boshqa).
+    z2_rah va stability ψ ning z2 — ikkalasi 2.0 m (2026-07-24 dan; oldin z2_rah 0.2 edi).
 
     Bu faqat boshlang'ich qiymat — iteratsiyada ψh bilan tuzatiladi.
     """
@@ -914,7 +914,7 @@ def compute_rah_neutral(image):
 
     ustar = image.select('USTAR')
 
-    ln_ratio = ee.Number(wcfg['z2_rah'] / wcfg['z1']).log()   # ln(0.2/0.1)=ln(2)
+    ln_ratio = ee.Number(wcfg['z2_rah'] / wcfg['z1']).log()   # ln(2.0/0.1) = ln(20)
 
     rah = (ee.Image(ln_ratio)
            .divide(ustar.multiply(k))
@@ -1020,7 +1020,7 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
     cp = cfg.CP_AIR
     z_blend = wcfg['z_blending']
     z1 = wcfg['z1']            # past balandlik (rah + stability)
-    z2_rah = wcfg['z2_rah']    # rah LOG hadi (0.2m)
+    z2_rah = wcfg['z2_rah']    # rah LOG hadi (2.0 m, cfg.WIND)
     z2 = wcfg['z2']            # STABILITY ψ yuqori balandligi (2.0m)
 
     max_iter = cfg.ITERATION['max_iter']

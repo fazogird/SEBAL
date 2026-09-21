@@ -1,5 +1,5 @@
 """
-SEBAL-GEE v4 — CONSUMPTIVE USE (faqat mode='SEBAL_Milliy')
+SEBAL-GEE v4 — CONSUMPTIVE USE (istalgan rejim; ETa — rejimning kunlik ET seriyasi)
 ==========================================================
 Sug'orish suvi iste'moli (CUirr), effektiv yog'in (Prz) va net sug'orish talabi
 (NIWR) — OpenET / ET Demands metodologiyasi (Allen et al. 1998 FAO-56;
@@ -18,8 +18,8 @@ Kunlik FAO-56 ildiz-zona suv balansi (server-side, oy kunlari bo'yicha iteratsiy
 
 Manba tuproq/yog'in — GLOBAL (O'zbekistonga ham ishlaydi, empirik-ofsetsiz):
   - Yog'in P: CHIRPS DAILY (water_balance.CHIRPS)
-  - θ_FC/θ_WP: Saxton-Rawls (2006), OpenLandMap sand/clay (RASTER)
-  - ETa: SEBAL_Milliy kunlik ET (daily_et.daily_et_series)
+  - θ_FC/θ_WP: Saxton-Rawls (2006), SoilGrids 2.0 sand/clay 0–5/5–15 sm (RASTER)
+  - ETa: rejimning kunlik ET seriyasi (daily_et.daily_et_series; Kc_ETo → Kc model)
   - ETr: ASCE-EWRI kunlik referens ET (daily_et.get_daily_etr24)
 """
 
@@ -37,9 +37,8 @@ def _saxton_fc_wp_raster(sand, clay, om=2.0):
     """
     θ_FC (33 kPa) va θ_WP (1500 kPa) — Saxton & Rawls (2006) pedotransfer, RASTER.
 
-    Kirish: sand, clay — OG'IRLIK % (ee.Image, OpenLandMap b0), om — organik modda %.
-    Chiqish: (FC, WP) hajmiy nam [m³/m³] ee.Image. water_balance._saxton_fc_wp
-    (point skalyar) ning AYNAN RASTER nusxasi.
+    Kirish: sand, clay — OG'IRLIK % (ee.Image, SoilGrids 2.0), om — organik modda %.
+    Chiqish: (FC, WP) hajmiy nam [m³/m³] ee.Image (CUirr, AW, Kc_ETo TEW uchun).
     """
     S = sand.divide(100.0)
     C = clay.divide(100.0)

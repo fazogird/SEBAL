@@ -29,35 +29,51 @@ from . import water_balance as wb
 
 
 def _ndvi_interp(coll, date):
-    """NDVI ni ikki qamrovchi sahna orasida vaqt bo'yicha LINEER interpolyatsiya.
-    Oralig'dan tashqarida — eng yaqin uchning qiymati (ushlab turadi)."""
-    t = ee.Number(ee.Date(date).millis())
-    before = (coll.filter(ee.Filter.lte('system:time_start', t))
-              .sort('system:time_start', False))
-    after = (coll.filter(ee.Filter.gte('system:time_start', t))
-             .sort('system:time_start', True))
-    first = ee.Image(coll.sort('system:time_start', True).first())
-    last = ee.Image(coll.sort('system:time_start', False).first())
-    b_img = ee.Image(ee.Algorithms.If(before.size().gt(0), before.first(), first))
-    a_img = ee.Image(ee.Algorithms.If(after.size().gt(0), after.first(), last))
-    tb = ee.Number(b_img.get('system:time_start'))
-    ta = ee.Number(a_img.get('system:time_start'))
-    w = ee.Number(ee.Algorithms.If(ta.gt(tb),
-                                   t.subtract(tb).divide(ta.subtract(tb)), 0.0))
-    return (b_img.select('NDVI').multiply(ee.Image(1.0).subtract(ee.Image(w)))
-            .add(a_img.select('NDVI').multiply(ee.Image(w))).rename('NDVI'))
-
-
-def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
-                          etr24_source='era5', crop_assets=None, **_ignore):
     """
-    Oylik ET (mm/oy) — NDVI-langan FAO-56 qo'sh koeffitsient.
-    Kunlik holatli suv balansi (ee.List.iterate): De topsoil depletion.
-    Transpiratsiya (Kcb) + tuproq bug'lanishi (Ke) bir kunda hisoblanadi.
+    NDVI — HAR PIKSEL uchun vaqt bo'yicha eng yaqin YAROQLI oldingi/keyingi sahna
+    orasida LINEER interpolyatsiya; bir tomon bo'sh (oralig'dan tashqari yoki piksel u
+    tomonda doim bulutli) → mavjud tomon qiymati (ushlab turadi).
+    Oldin TASVIR darajasida (before.first()/after.first()): o'sha sahnada bulutli piksel
+    shu kuni NDVI'siz qolardi va kunlik iterate'da maska butun OY oxirigacha saqlanardi
+    (oylik ET/AW o'sha pikselda bo'sh). Ikkala sahna ham yaroqli pikselda natija AYNAN
+    oldingidek (bir xil vaqt og'irligi).
+    """
+    t = ee.Number(ee.Date(date).millis())
 
-    crop_assets — None: bitta (paxta-kalibrlangan) Kc butun ROI'ga (Bushland).
-      List of asset ID (crop-code raster): PER-CROP — har piksel o'z ekinining
-      kcb_max/kcb_end_frac/sen_len (crop_kc_table, FAO-56). kod=0 → maska.
+    def with_t(im):
+        nd = ee.Image(im).select('NDVI')
+        tt = (ee.Image.constant(ee.Image(im).get('system:time_start')).toDouble()
+              .updateMask(nd.mask()).rename('t'))
+        return nd.addBands(tt)
+
+    sc = coll.map(with_t)
+    before = sc.filter(ee.Filter.lte('system:time_start', t))
+    after = sc.filter(ee.Filter.gte('system:time_start', t))
+    z = ee.Image.constant(0).updateMask(ee.Image.constant(0))
+    empty = z.rename('NDVI').addBands(z.rename('t'))
+    b = ee.Image(ee.Algorithms.If(before.size().gt(0), before.qualityMosaic('t'), empty))
+    a = ee.Image(ee.Algorithms.If(
+        after.size().gt(0),
+        after.map(lambda im: im.addBands(im.select('t').multiply(-1).rename('nt')))
+             .qualityMosaic('nt'),
+        empty))
+    bv, bt = b.select('NDVI'), b.select('t')
+    av, at = a.select('NDVI'), a.select('t')
+    tdi = ee.Image.constant(t).toDouble()               # ee.Number − Image mumkin emas
+    w = tdi.subtract(bt).divide(at.subtract(bt).max(1)).clamp(0, 1)
+    out = bv.multiply(ee.Image(1).subtract(w)).add(av.multiply(w))
+    out = out.unmask(bv).unmask(av)                     # bir tomonlama — mavjud tomon
+    proj = ee.Image(coll.first()).select('NDVI').projection()
+    return out.rename('NDVI').setDefaultProjection(proj)
+
+
+def _kc_model(image_list, roi, year, month, utc_offset=0, etr24_source='era5',
+              crop_assets=None):
+    """
+    Kc modelining umumiy sozlamasi va BIR KUNLIK qadami — oylik ET (compute_monthly_et_kc)
+    va kunlik seriya (daily_et_series_kc → CUirr/Prz) AYNI qadamni ishlatadi.
+    Qaytaradi: dict(days, month_start, TEW, day_step, crop_mask) —
+      day_step(d, De) → (De_new, T, E)  [mm].
     """
     kc = cfg.MILLIY_KC
     if crop_assets is None:                      # main.run cfg.CROP_ASSETS orqali beradi
@@ -68,10 +84,10 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
     ndvi_coll = ee.ImageCollection(image_list).select('NDVI')
     dem = ee.Image(image_list[0]).select('DEM')
 
-    # TEW/REW — PER-PIKSEL (bitta universal qiymat EMAS): OpenLandMap qum/gil
+    # TEW/REW — PER-PIKSEL (bitta universal qiymat EMAS): SoilGrids 2.0 qum/gil
     # (global, O'zbekiston ham) → Saxton-Rawls FC/WP → topsoil bug'lanish qatlami.
     #   TEW = 1000·(FC − 0.5·WP)·Ze  (FAO-56 Eq.7.1, Ze=0.10 m)
-    #   REW ~ tekstura (FAO-56 Table 19): gil ko'p → REW yuqori.
+    #   REW = 0.15·loy% + 2 (2…11 mm; gil ko'p → REW yuqori).
     from . import consumptive_use as _cu
     _ze = 0.10
     # Tuproq: SoilGrids 2.0 (ISRIC, 2020, 250m, global — O'zbekiston ham).
@@ -132,14 +148,7 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
     t_peak = (ee.ImageCollection([_add_t(im) for im in image_list])
               .qualityMosaic('NDVI').select('t'))
 
-    init = ee.Image(TEW).rename('De').addBands(ee.Image(0.0).rename('ET'))
-
-    def _step(off, acc):
-        acc = ee.Image(acc)
-        off = ee.Number(off)
-        De = acc.select('De')
-        d = month_start.advance(off, 'day')
-
+    def day_step(d, De):
         ndvi = _ndvi_interp(ndvi_coll, d)
         days_after = (ee.Image.constant(d.millis()).subtract(t_peak)
                       .divide(86400000.0).max(0.0))       # cho'qqidan keyingi kunlar
@@ -184,14 +193,62 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
         E = ke.multiply(eto)                 # tuproq bug'lanishi (mm)
         T = kcb.multiply(eto)                # transpiratsiya (mm)
         De_new = De2.add(E).min(TEW).rename('De')
-        et_acc = acc.select('ET').add(T).add(E).rename('ET')
-        return De_new.addBands(et_acc)
+        return De_new, T, E
 
-    res = ee.Image(ee.List.sequence(0, days - 1).iterate(_step, init))
+    return {'days': days, 'month_start': month_start, 'TEW': TEW, 'day_step': day_step,
+            'crop_mask': CROP_MASK if PER_CROP else None, 'n_scenes': ndvi_coll.size()}
+
+
+def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
+                          etr24_source='era5', crop_assets=None, **_ignore):
+    """
+    Oylik ET (mm/oy) — NDVI-langan FAO-56 qo'sh koeffitsient.
+    Kunlik holatli suv balansi (ee.List.iterate): De topsoil depletion.
+    Transpiratsiya (Kcb) + tuproq bug'lanishi (Ke) bir kunda hisoblanadi (_kc_model).
+
+    crop_assets — None: bitta (paxta-kalibrlangan) Kc butun ROI'ga (Bushland).
+      List of asset ID (crop-code raster): PER-CROP — har piksel o'z ekinining
+      kcb_max/kcb_end_frac/sen_len (crop_kc_table, FAO-56). kod=0 → maska.
+    """
+    m = _kc_model(image_list, roi, year, month, utc_offset, etr24_source, crop_assets)
+    init = ee.Image(m['TEW']).rename('De').addBands(ee.Image(0.0).rename('ET'))
+
+    def _step(off, acc):
+        acc = ee.Image(acc)
+        d = m['month_start'].advance(ee.Number(off), 'day')
+        De_new, T, E = m['day_step'](d, acc.select('De'))
+        return De_new.addBands(acc.select('ET').add(T).add(E).rename('ET'))
+
+    res = ee.Image(ee.List.sequence(0, m['days'] - 1).iterate(_step, init))
     et_monthly = res.select('ET').max(0.0).rename('ET_MONTHLY')
-    if PER_CROP:
-        et_monthly = et_monthly.updateMask(CROP_MASK)      # faqat ekin piksellari
+    if m['crop_mask'] is not None:
+        et_monthly = et_monthly.updateMask(m['crop_mask'])     # faqat ekin piksellari
     return (et_monthly
             .set('year', year).set('month', month)
-            .set('days_in_month', days)
-            .set('n_landsat_scenes', ndvi_coll.size()))
+            .set('days_in_month', m['days'])
+            .set('n_landsat_scenes', m['n_scenes']))
+
+
+def daily_et_series_kc(image_list, roi, year, month, utc_offset=0, etr24_source='era5',
+                       crop_assets=None):
+    """
+    Oyning har kuni uchun Kc-model ET (T + E, mm/kun) — ee.List(ee.Image 'ET_DAY').
+    compute_monthly_et_kc bilan AYNI kunlik qadam (_kc_model.day_step) va AYNI De holati —
+    Σ kunlar = ET_MONTHLY. daily_et.daily_et_series Kc_ETo rejimida shuni qaytaradi
+    (CUirr/Prz suv balansi Kc ET bilan haydalsin — oldin SEBAL_B EF·Rn24 edi).
+    Returns: (ee.List of ee.Image, days_in_month:int, month_start:ee.Date)
+    """
+    m = _kc_model(image_list, roi, year, month, utc_offset, etr24_source, crop_assets)
+    init = ee.List([ee.Image(m['TEW']).rename('De'), ee.List([])])
+
+    def _step(off, acc):
+        acc = ee.List(acc)
+        d = m['month_start'].advance(ee.Number(off), 'day')
+        De_new, T, E = m['day_step'](d, ee.Image(acc.get(0)))
+        et = T.add(E).max(0.0).rename('ET_DAY')
+        if m['crop_mask'] is not None:
+            et = et.updateMask(m['crop_mask'])
+        return ee.List([De_new, ee.List(acc.get(1)).add(et)])
+
+    res = ee.List(ee.List.sequence(0, m['days'] - 1).iterate(_step, init))
+    return ee.List(res.get(1)), m['days'], m['month_start']

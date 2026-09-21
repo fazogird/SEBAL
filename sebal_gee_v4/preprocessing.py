@@ -8,6 +8,7 @@ Vazifalar:
   2. Cloud cover bo'yicha filtr
   3. QA_PIXEL bitmask — bulut, soya, qor, suv olib tashlanmaydi 
   4. Scale factors qo'llash (SR → 0-1, ST → Kelvin)
+     + per-piksel quyosh burchaklari SZA/SAA (mos C2 L1 sahnadan; topilmasa astronomik)
   5. DEM va slope qo'shish
   6. ERA5 vaqtga moslashtirish
 
@@ -15,6 +16,7 @@ Input:  ROI, date_range, satellite config
 Output: Toza ee.ImageCollection (har bir image tayyor)
 """
 
+import math
 import ee
 from . import config as cfg
 
@@ -165,6 +167,71 @@ def apply_scale_factors(image):
     return (image
             .addBands(sr_scaled, overwrite=True)
             .addBands(st_scaled))
+
+
+# ==============================================================
+# QUYOSH BURCHAKLARI — per-piksel SZA / SAA (Landsat C2 L1)
+# ==============================================================
+
+def build_l1_angle_collection(roi, date_start, date_end, sat_keys):
+    """L2 sahnalariga mos L1 kolleksiya (AYNI roi va sanalar) — faqat SZA/SAA uchun."""
+    merged = None
+    for sat_key in sat_keys:
+        col = (ee.ImageCollection(cfg.LANDSAT_L1_COLLECTIONS[sat_key])
+               .filterBounds(roi)
+               .filterDate(date_start, date_end))
+        merged = col if merged is None else merged.merge(col)
+    return merged
+
+
+def _astro_sun_angles(image):
+    """
+    ZAXIRA (mos L1 topilmasa): per-piksel SZA, SAA (gradus) — astronomik, overpass
+    UTC vaqtida (sloping_terrain geometriyasi: δ Eq 5.14, Sc Eq 5.16, ω Eq 5.15):
+        cosZ = sinφ·sinδ + cosφ·cosδ·cosω
+        SAA  = atan2(−cosδ·sinω,  sinδ·cosφ − cosδ·sinφ·cosω)   [shimoldan soat yo'n.]
+    L1 SZA bilan farq: yozda ~0.05°, qishda ~0.24° (K↓ < 1 %). Grid — sahna UTM 30 m.
+    """
+    from . import sloping_terrain as slt
+    ll = ee.Image.pixelLonLat()
+    phi = ll.select('latitude').multiply(math.pi / 180)
+    date = ee.Date(image.get('system:time_start'))
+    doy = ee.Number(date.getRelative('day', 'year')).add(1)
+    t_utc = date.difference(ee.Date(date.format('YYYY-MM-dd')), 'hour')
+    delta = slt._decl(doy)
+    om = slt._omega(t_utc, ll.select('longitude'), slt._sc(doy))
+    sza = slt._sin_phi_sun(phi, delta, om).acos().multiply(180 / math.pi)
+    y = om.sin().multiply(delta.cos()).multiply(-1)
+    x = (phi.cos().multiply(delta.sin())
+         .subtract(phi.sin().multiply(delta.cos()).multiply(om.cos())))
+    # DIQQAT: GEE da a.atan2(b) = atan2(b, a) (sinov: Image(1).atan2(Image(0)) = 0)
+    # → atan2(y, x) uchun x.atan2(y).
+    saa = x.atan2(y).multiply(180 / math.pi).add(360).mod(360)
+    return (ee.Image.cat([sza, saa]).rename(['SZA', 'SAA']).toFloat()
+            .setDefaultProjection(image.select(cfg.BAND_NAMES['red']).projection()))
+
+
+def add_sun_angles(image, l1_col):
+    """
+    Per-piksel quyosh burchaklari SZA, SAA (gradus) — preprocessing'da, scale bilan birga.
+      1) mos C2 L1 sahna (LANDSAT_SCENE_ID bo'yicha) → uning SZA/SAA bandlari × 0.01
+      2) topilmasa — YIQILMAYDI: astronomik per-piksel (_astro_sun_angles)
+    Property SOLAR_GEOM_SOURCE = 'L1_ANGLE' | 'ASTRONOMIK' (process_tile print + QC CSV).
+    Maska — SR maskasi (bulut/fill): mosaic'da piksel burchagi o'sha piksel
+    reflektansi olingan sahnadan bo'ladi.
+    Ishlatadi: K↓ (radiation), albedo BRDF (surface_props), qiya yuza cosθ va
+    C_rad lahzali qismi (sloping_terrain).
+    """
+    match = l1_col.filter(ee.Filter.eq('LANDSAT_SCENE_ID',
+                                       image.get('LANDSAT_SCENE_ID')))
+    has_l1 = match.size().gt(0)
+    l1_angles = (ee.Image(match.first()).select(['SZA', 'SAA'])
+                 .multiply(cfg.L1_ANGLE_SCALE).toFloat())
+    angles = ee.Image(ee.Algorithms.If(has_l1, l1_angles, _astro_sun_angles(image)))
+    angles = angles.updateMask(image.select(cfg.BAND_NAMES['red']).mask())
+    return (image.addBands(angles)
+            .set('SOLAR_GEOM_SOURCE',
+                 ee.Algorithms.If(has_l1, 'L1_ANGLE', 'ASTRONOMIK')))
 
 
 # ==============================================================
@@ -344,13 +411,17 @@ def _mosaic_same_date(collection):
         date = ee.Date(date_str)
         daily = collection.filterDate(date, date.advance(1, 'day'))
         first = ee.Image(daily.first())
+        # quyosh burchaklari manbai — sanadagi BARCHA sahnalardan (masalan
+        # 'L1_ANGLE' yoki 'L1_ANGLE+ASTRONOMIK'), birinchisidan emas
+        srcs = daily.aggregate_array('SOLAR_GEOM_SOURCE').distinct()
         merged = (daily.mosaic()
                   .setDefaultProjection(
                       first.select(cfg.BAND_NAMES['red']).projection())
                   .copyProperties(first)
                   .set({'system:time_start': first.get('system:time_start'),
                         'system:index': first.get('system:index'),
-                        'system:footprint': daily.geometry()}))
+                        'system:footprint': daily.geometry(),
+                        'SOLAR_GEOM_SOURCE': srcs.join('+')}))
         return ee.Algorithms.If(daily.size().gt(1), merged, first)
 
     return ee.ImageCollection(dates.map(per_date))
@@ -390,6 +461,8 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
         def preprocess_hls(image):
             processed = apply_qa_mask_hls(image)
             processed = apply_scale_factors_hls(processed)
+            # HLS'da per-piksel SZA/SAA bandlari O'ZIDA bor (gradus)
+            processed = processed.set('SOLAR_GEOM_SOURCE', 'HLS_ANGLE')
             processed = add_terrain(processed, roi)
             processed = get_era5_for_image(processed, roi)
             processed = add_air_density(processed)
@@ -433,10 +506,14 @@ def build_collection(roi, date_start, date_end, satellite='BOTH',
     merged = filter_by_crop_cloud(merged, cloud_geom, cfg.CROP_CLOUD_MAX,
                                   cloud_use_cropland, cloud_scale)
 
+    # Mos L1 sahnalar — per-piksel quyosh burchaklari (SZA/SAA) uchun
+    l1_col = build_l1_angle_collection(roi, date_start, date_end, collections)
+
     # Landsat preprocessing
     def preprocess_image(image):
         processed = apply_qa_mask(image)
         processed = apply_scale_factors(processed)
+        processed = add_sun_angles(processed, l1_col)
         processed = add_terrain(processed, roi)
         processed = get_era5_for_image(processed, roi)
         processed = add_air_density(processed)
@@ -461,18 +538,25 @@ def collection_info(collection):
     """
     Collection haqida qisqacha ma'lumot.
 
-    Returns: dict with count, dates, satellites
+    Returns: dict with count, dates, solar_src (har sahna quyosh burchaklari manbai)
     """
-    # Bitta getInfo() bilan ikkala qiymatni olish (so'rovlar sonini kamaytiradi)
+    # Bitta getInfo() bilan barcha qiymatlarni olish (so'rovlar sonini kamaytiradi).
+    # solar_src — har tasvirdan (aggregate_array property'siz tasvirni tashlab ketadi →
+    # indeks siljimasligi uchun toList.map; property yo'q bo'lsa "YO'Q").
     info = ee.Dictionary({
         'count': collection.size(),
         'dates': (collection.aggregate_array('system:time_start')
                   .map(lambda t: ee.Date(t).format('YYYY-MM-dd'))),
+        'solar_src': collection.toList(collection.size()).map(
+            lambda im: ee.Algorithms.If(
+                ee.Image(im).propertyNames().contains('SOLAR_GEOM_SOURCE'),
+                ee.Image(im).get('SOLAR_GEOM_SOURCE'), "YO'Q")),
     }).getInfo()
 
     return {
         'image_count': info['count'],
         'dates': info['dates'],
+        'solar_src': info['solar_src'],
     }
     
 def get_cropland_mask():

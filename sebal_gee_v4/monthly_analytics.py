@@ -292,61 +292,56 @@ def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0,
 # OYLIK O'RTACHA BANDLAR
 # ==============================================================
 
-def compute_monthly_averages(scene_images):
+def compute_monthly_averages(scene_images, year, month):
     """
-    O'rtacha olinadigan bandlar.
-    Faqat mavjud bandlar hisoblanadi.
-    Yo'q bandlar tashlab ketiladi.
+    O'rtacha (va IRRIGATION_CLASS — maksimum) bandlar — O'SHA OY uchun.
+
+    Har kun (oy kunlari) har piksel uchun vaqt bo'yicha ENG YAQIN YAROQLI sahna
+    (daily_et._nearest_valid — oylik ET bilan AYNI vakillik davri), keyin oy kunlari
+    bo'yicha o'rtacha (vaqt-og'irlikli). Guruhlar alohida (umumiy maska bir-biriga
+    ta'sir qilmasin): Landsat bandlari, SMAP namligi, IRRIGATION_CLASS (max).
+    Oldin: col.mean() — run'ning BARCHA sahnalari (butun mavsum) → har oy bir xil.
+    Yo'q bandlar tashlab ketiladi (logda).
     """
+    from . import daily_et
     col = ee.ImageCollection(scene_images)
+    days = calendar.monthrange(year, month)[1]
+    month_start = ee.Date.fromYMD(year, month, 1)
 
-    requested_avg_bands = [
-        'KC', 'KC_MAX', 'EVAP_FRAC', 'BENEFICIAL_FRACTION',
-        'TOP_SOIL_MOISTURE', 'ROOT_ZONE_MOISTURE', 'SM_WETNESS',
-        'FPAR', 'LUE', 'WATER_PRODUCTIVITY', 'NDVI', 'LAI'
-    ]
-
-    first_img = ee.Image(scene_images[0])
     try:
-        available_bands = first_img.bandNames().getInfo()
+        available_bands = ee.Image(scene_images[0]).bandNames().getInfo()
     except Exception as e:
         print(f"  ⚠️ Monthly average: bandlar aniqlanmadi: {e}")
         available_bands = []
 
-    existing_avg_bands = [
-        b for b in requested_avg_bands if b in available_bands
-    ]
+    landsat = ['KC', 'KC_MAX', 'EVAP_FRAC', 'BENEFICIAL_FRACTION',
+               'FPAR', 'LUE', 'WATER_PRODUCTIVITY', 'NDVI', 'LAI']
+    smap = ['TOP_SOIL_MOISTURE', 'ROOT_ZONE_MOISTURE', 'SM_WETNESS']
+    missing = [b for b in landsat + smap + ['IRRIGATION_CLASS'] if b not in available_bands]
+    if missing:
+        print(f"    ⚠️ Monthly average: bandlar topilmadi: {missing}")
 
-    missing_avg_bands = [
-        b for b in requested_avg_bands if b not in available_bands
-    ]
-
-    if missing_avg_bands:
-        print(f"    ⚠️ Monthly average: bandlar topilmadi: {missing_avg_bands}")
+    def _daily(bands):
+        sub = col.select(bands)
+        return ee.ImageCollection(ee.List.sequence(0, days - 1).map(
+            lambda o: daily_et._nearest_valid(sub, month_start.advance(ee.Number(o), 'day'))))
 
     monthly_parts = []
-
-    if existing_avg_bands:
-        monthly_avg = col.select(existing_avg_bands).mean()
-        monthly_parts.append(monthly_avg)
-    else:
-        print("    ⚠️ Monthly average: o'rtacha hisoblash uchun band yo'q.")
-
+    for grp in (landsat, smap):
+        g = [b for b in grp if b in available_bands]
+        if g:
+            monthly_parts.append(_daily(g).mean())
     if 'IRRIGATION_CLASS' in available_bands:
-        irr_class = col.select(['IRRIGATION_CLASS']).max()
-        monthly_parts.append(irr_class)
+        monthly_parts.append(_daily(['IRRIGATION_CLASS']).max())
     else:
         print("    ⚠️ IRRIGATION_CLASS topilmadi, tashlab ketildi.")
 
     if not monthly_parts:
-        print("    ❌ Monthly averages bo'sh. Empty image qaytarildi.")
         return ee.Image([])
-
-    result = monthly_parts[0]
+    out = ee.Image(monthly_parts[0])
     for part in monthly_parts[1:]:
-        result = result.addBands(part)
-
-    return result
+        out = out.addBands(part)
+    return out
 
 
 # ==============================================================
@@ -386,7 +381,7 @@ def compute_all_monthly(scene_images, roi, year, month, utc_offset=0,
                                       sloping_terrain=sloping_terrain)
 
     print(f"    [{year}-{month:02d}] O'rtacha bandlar...")
-    averages = compute_monthly_averages(scene_images)
+    averages = compute_monthly_averages(scene_images, year, month)
 
     # Birlashtirish
     monthly = (et_components

@@ -47,6 +47,17 @@ LANDSAT_COLLECTIONS = {
     'L9': 'LANDSAT/LC09/C02/T1_L2',
 }
 
+# Landsat C2 LEVEL 1 — PER-PIKSEL quyosh burchaklari (SZA, SAA) uchun.
+# L2 da faqat sahna markazidagi SUN_ELEVATION / SUN_AZIMUTH (bitta son) bor; L1 da
+# 30 m SZA/SAA bandlari (L2 bilan AYNI grid, int16 × 0.01 → gradus; SAA shimoldan
+# soat yo'nalishida — SUN_AZIMUTH bilan bir konvensiya). L2 sahnaga mos L1 —
+# LANDSAT_SCENE_ID bo'yicha (preprocessing.add_sun_angles).
+LANDSAT_L1_COLLECTIONS = {
+    'L8': 'LANDSAT/LC08/C02/T1',
+    'L9': 'LANDSAT/LC09/C02/T1',
+}
+L1_ANGLE_SCALE = 0.01        # SZA/SAA DN → gradus
+
 # Band mapping — L8 va L9 bir xil band nomlari
 BAND_NAMES = {
     'coastal': 'SR_B1',     # coastal aerosol — albedo 'ke'/'avg3' uchun
@@ -110,8 +121,9 @@ OLMEDO_COEFFICIENTS = {
 
 # Quyosh balandligi (BRDF) tuzatishi — 'olmedo_brdf' usuli (DEFAULT production ALBEDO):
 #   α_final = α_olmedo − (slope · θ_elev − intercept)
-#   θ_elev — quyosh balandligi (gradus): Landsat SUN_ELEVATION (sahna metama'lumoti),
-#            HLS: 90 − SZA band. Metama'lumot yo'q bo'lsa — script TO'XTAYDI (fake qiymat yo'q).
+#   θ_elev — quyosh balandligi (gradus) = 90 − SZA, PER-PIKSEL (preprocessing SZA bandi:
+#            Landsat — mos C2 L1 sahna, topilmasa astronomik; HLS — o'z SZA bandi).
+#            SZA bandi yo'q bo'lsa — script TO'XTAYDI (fake qiymat yo'q).
 ALBEDO_BRDF = {
     'slope':     0.001464,   # 1/gradus
     'intercept': 0.079103,

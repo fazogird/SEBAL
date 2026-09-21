@@ -20,6 +20,8 @@ bayrog'i bilan yoqiladi. False (default) → hech narsa o'zgarmaydi.
 2. **cosθ qiya yuzada** (Eq 5.12-5.13, Duffie & Beckman 1980):
    quyosh tushish burchagi qiyalik (s) va ekspozitsiya (γ) bilan o'zgaradi;
    keyin gorizontal ekvivalentga keltiriladi (÷cos s). K↓ ga kiradi.
+   Overpass momenti — PER-PIKSEL SZA/SAA bandlaridan (preprocessing: mos C2 L1
+   sahna, topilmasa astronomik); sutkalik integral (C_rad kunlik qismi) — astronomik.
 
 3. **ETrF / Rs24 radiatsiya tuzatishi** (Eq 5.17-5.19):
        C_rad = [Rso_inst_Flat/Rso_inst_Pixel] × [Rso_24_Pixel/Rso_24_Flat]
@@ -127,6 +129,21 @@ def _cos_theta_slope(phi, delta, s, gamma, omega):
     return cos_u.divide(cs)          # (5.13) gorizontal ekvivalent
 
 
+def _cos_theta_slope_sun(image, s, gamma):
+    """
+    Overpass momentidagi cosθ qiya yuzada — PER-PIKSEL SZA/SAA bandlaridan
+    (Duffie & Beckman 1980, Eq 5.12 ning azimut shakli):
+        cosθ_u = cos s·cosZ + sin s·sinZ·cos(γ_s − γ),   γ_s = SAA − 180°
+    (γ_s va γ — ikkalasi janubdan; γ_s − γ = SAA − aspect), keyin ÷cos s (5.13).
+    Yassi yuzada (s = 0) → cos(SZA).
+    """
+    z = image.select('SZA').multiply(math.pi / 180.0)
+    gamma_s = image.select('SAA').subtract(180.0).multiply(math.pi / 180.0)
+    cos_u = (s.cos().multiply(z.cos())
+             .add(s.sin().multiply(z.sin()).multiply(gamma_s.subtract(gamma).cos())))
+    return cos_u.divide(s.cos())
+
+
 def _sin_phi_sun(phi, delta, omega):
     """Quyoshning ufqdan balandligi sinusi — yassi yuza (E.5)."""
     return (phi.sin().multiply(delta.sin())
@@ -147,12 +164,11 @@ def _geom(image):
 
 def cos_theta_instant(image):
     """
-    Overpass momentidagi cosθ (qiyalik/ekspozitsiya bilan, gorizontal ekvivalent).
-    K↓ = Gsc·cosθ·dr·τsw uchun. Quyi chegara COS_THETA_MIN.
+    Overpass momentidagi cosθ (qiyalik/ekspozitsiya bilan, gorizontal ekvivalent) —
+    per-piksel SZA/SAA bandlaridan. K↓ = Gsc·cosθ·dr·τsw uchun. Quyi chegara COS_THETA_MIN.
     """
-    phi, lon, doy, delta, sc, s, gamma, t_utc = _geom(image)
-    om = _omega(t_utc, lon, sc)
-    return (_cos_theta_slope(phi, delta, s, gamma, om)
+    s, gamma = slope_aspect(image)
+    return (_cos_theta_slope_sun(image, s, gamma)
             .max(COS_THETA_MIN).rename('COS_THETA_SLOPE'))
 
 
@@ -186,11 +202,12 @@ def c_radiation(image, n_steps=N_DAY_STEPS):
 
     (K_B+K_D) flat va pixel uchun bir xil → qisqaradi → sof geometriya:
         C_rad = [sinφ_sun / cosθ_pixel] × [Ra24_pixel / Ra24_flat]
+    Lahzali qism — per-piksel SZA/SAA bandlaridan (sinφ_sun = cos SZA);
+    kunlik qism — astronomik 24 qadamli integral.
     """
-    phi, lon, doy, delta, sc, s, gamma, t_utc = _geom(image)
-    om = _omega(t_utc, lon, sc)
-    cos_px = _cos_theta_slope(phi, delta, s, gamma, om).max(COS_THETA_MIN)
-    sin_fl = _sin_phi_sun(phi, delta, om).max(COS_THETA_MIN)
+    s, gamma = slope_aspect(image)
+    cos_px = _cos_theta_slope_sun(image, s, gamma).max(COS_THETA_MIN)
+    sin_fl = image.select('SZA').multiply(math.pi / 180.0).cos().max(COS_THETA_MIN)
     inst_ratio = sin_fl.divide(cos_px)
     day_ratio = _daily_ratio(image, n_steps)
     return (inst_ratio.multiply(day_ratio)

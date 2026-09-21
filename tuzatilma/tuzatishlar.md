@@ -73,15 +73,25 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 68 | 2026-09-21 | Raster H iteratsiyasi: oxirgi qadamda u*/rah qayta yangilanmaydi — RAH/USTAR bandlari (va ANCHOR_RAH_HOT) H hisoblangan qiymatda (H = ρ·cp·DTA/RAH izchil) | ✅ commit 52f726a | energy_balance.py |
 | 69 | 2026-09-21 | `parcels_from_points`: kvadrat nuqtaning UTM zonasida (metr) — aniq 210/150 m (oldin 215/153 m) | ✅ commit 52f726a | main.py |
 | 70 | 2026-09-21 | SMW LST: A/B/C koeffitsient rastrlari `.resample('bilinear')` — Ermida original GEE kodidagidek (klass diskret; TCWV silliqlanmaydi); TPW 2-klass xabari OGOHLANTIRISH emas, MA'LUMOT | ✅ commit 52f726a | radiation.py, main.py |
-| 71 | 2026-09-21 | Hot suv balansi: θ_FC va θ_WP BITTA mahsulotdan (HiHydroSoil v2: van Genuchten θ(33 kPa) + WCpF4.2); soxta `TEW = REW + 1` olib tashlandi → FC ≤ WP / TEW ≤ REW = SceneQCError (keyingi anchor); soil_valid_mask fizik izchillikni ham tekshiradi | ✅ commit qilinmagan | water_balance.py, config.py |
-| 72 | 2026-09-21 | Hot suv balansi kunlik ETr = sahna ETr24 bilan AYNI (alfalfa, 24 soatlik yig'indi, MAHALLIY kun, etr24_source) — oldin UTC kun + kunlik-qadam | ✅ commit qilinmagan | water_balance.py, energy_balance.py, main.py |
-| 73 | 2026-09-21 | water_balance: ishlatilmaydigan `SAND`, `CLAY` konstantalari va `ref_et` importi olib tashlandi (`_SOIL`, `_SOIL_DEFAULT` — etrf_water_balance ishlatadi, qoldi) | ✅ commit qilinmagan | water_balance.py |
-| 74 | 2026-09-21 | Hot suv balansi: ETr kuni = CHIRPS kuni (UTC 00–24) — yog'in va ETr siljishsiz (usul #72 dagidek soatlik yig'indi); `utc_offset` uzatish olib tashlandi | ✅ commit qilinmagan | water_balance.py, energy_balance.py, main.py |
-| 75 | 2026-09-21 | ERA5 kunlik oyna 01…24 yorliqlar (T = [T−1, T]): ETr24 soatlik yig'indi, Rs24, `get_daily_era5_aggregate` — ECMWF step-24 bilan aynan (9 joy, 2 fasl) | ✅ commit qilinmagan | ref_et.py, daily_et.py |
-| 76 | 2026-09-21 | Butun dunyo: sahna vaqt belgisi → MAHALLIY kalendar sana (`ref_et.local_calendar_day`) — compute_daily_et, compute_etref_daily, pysebal referens ET (UTC+11…+14 da UTC sanasi bir kun oldin) | ✅ commit qilinmagan | ref_et.py, daily_et.py |
-| 77 | 2026-09-21 | ERA5-Land soatlik to'liqlik QA (`check_era5_hours`, process_tile boshida bitta getInfo) — soat yo'q → xato | ✅ commit qilinmagan | ref_et.py, main.py |
-| 78 | 2026-09-21 | Hot suv balansi boshlanishi: 14/30/60 va "quruq olinadi" o'rniga KUNMA-KUN ikki chegara (De₀=0 / TEW) birlashguncha, tol 0.01, natija — o'rtacha; `max_lookback` kunda birlashmasa HOT_WB_UNCERTAIN (anchor QC); QC ustunlari (nam/quruq, kuchli yomg'ir) | ✅ commit qilinmagan (max_lookback = 45, user) | water_balance.py, config.py, main.py |
-| 79 | 2026-09-21 | Bulut precheck (Landsat): `crop_cloud_pct` null qiymat → 1 (100 %, sahna o'tkaziladi) — HLS varianti bilan bir xil; oldin null.multiply → butun run to'xtardi | ✅ commit qilinmagan | preprocessing.py |
+| 71 | 2026-09-21 | Hot suv balansi: θ_FC va θ_WP BITTA mahsulotdan (HiHydroSoil v2: van Genuchten θ(33 kPa) + WCpF4.2); soxta `TEW = REW + 1` olib tashlandi → FC ≤ WP / TEW ≤ REW = SceneQCError (keyingi anchor); soil_valid_mask fizik izchillikni ham tekshiradi | ✅ commit 9a0646b | water_balance.py, config.py |
+| 72 | 2026-09-21 | Hot suv balansi kunlik ETr = sahna ETr24 bilan AYNI (alfalfa, 24 soatlik yig'indi, MAHALLIY kun, etr24_source) — oldin UTC kun + kunlik-qadam | ✅ commit 9a0646b | water_balance.py, energy_balance.py, main.py |
+| 73 | 2026-09-21 | water_balance: ishlatilmaydigan `SAND`, `CLAY` konstantalari va `ref_et` importi olib tashlandi (`_SOIL`, `_SOIL_DEFAULT` — etrf_water_balance ishlatadi, qoldi) | ✅ commit 9a0646b | water_balance.py |
+| 74 | 2026-09-21 | Hot suv balansi: ETr kuni = CHIRPS kuni (UTC 00–24) — yog'in va ETr siljishsiz (usul #72 dagidek soatlik yig'indi); `utc_offset` uzatish olib tashlandi | ✅ commit 9a0646b | water_balance.py, energy_balance.py, main.py |
+| 75 | 2026-09-21 | ERA5 kunlik oyna 01…24 yorliqlar (T = [T−1, T]): ETr24 soatlik yig'indi, Rs24, `get_daily_era5_aggregate` — ECMWF step-24 bilan aynan (9 joy, 2 fasl) | ✅ commit 9a0646b | ref_et.py, daily_et.py |
+| 76 | 2026-09-21 | Butun dunyo: sahna vaqt belgisi → MAHALLIY kalendar sana (`ref_et.local_calendar_day`) — compute_daily_et, compute_etref_daily, pysebal referens ET (UTC+11…+14 da UTC sanasi bir kun oldin) | ✅ commit 9a0646b | ref_et.py, daily_et.py |
+| 77 | 2026-09-21 | ERA5-Land soatlik to'liqlik QA (`check_era5_hours`, process_tile boshida bitta getInfo) — soat yo'q → xato | ✅ commit 9a0646b | ref_et.py, main.py |
+| 78 | 2026-09-21 | Hot suv balansi boshlanishi: 14/30/60 va "quruq olinadi" o'rniga KUNMA-KUN ikki chegara (De₀=0 / TEW) birlashguncha, tol 0.01, natija — o'rtacha; `max_lookback` kunda birlashmasa HOT_WB_UNCERTAIN (anchor QC); QC ustunlari (nam/quruq, kuchli yomg'ir) | ✅ commit 9a0646b | water_balance.py, config.py, main.py |
+| 79 | 2026-09-21 | Bulut precheck (Landsat): `crop_cloud_pct` null qiymat → 1 (100 %, sahna o'tkaziladi) — HLS varianti bilan bir xil; oldin null.multiply → butun run to'xtardi | ✅ commit 9a0646b | preprocessing.py |
+| 80 | 2026-09-21 | Kc_ETo + CUirr: `daily_et_series` Kc_ETo shoxi — kunlik ET Kc modelining o'zi (`ndvi_kc.daily_et_series_kc`, oylik bilan AYNI kunlik qadam); oldin SEBAL_B EF·Rn24 ga tushardi | ✅ commit qilinmagan | daily_et.py, ndvi_kc.py |
+| 81 | 2026-09-21 | pysebal oylik o'rtacha bandlar O'SHA OY bo'yicha (kunlik eng yaqin yaroqli sahna, vaqt-og'irlikli) — oldin butun mavsum o'rtachasi (har oy bir xil) | ✅ commit qilinmagan | monthly_analytics.py |
+| 82 | 2026-09-21 | Kc_ETo / AW NDVI interpolyatsiyasi PIKSEL darajasida — bulutli piksel butun oyni maskalamaydi | ✅ commit qilinmagan | ndvi_kc.py (root_zone_water ham shuni ishlatadi) |
+| 83 | 2026-09-21 | Eskirgan izohlar: energy_balance z2_rah (0.2 → 2.0), consumptive_use va ndvi_kc (OpenLandMap → SoilGrids; "faqat SEBAL_Milliy" → istalgan rejim) | ✅ commit qilinmagan | energy_balance.py, consumptive_use.py, ndvi_kc.py |
+| 84 | 2026-09-21 | ADV_FACTOR qavs xatosi tuzatildi (AF = 1 + 0.985·[e^{0.08·VPD} − 1]·EF); chaqirilmaydigan `compute_etpot` o'chirildi | ✅ commit qilinmagan | et_decomposition.py |
+| 85 | 2026-09-21 | `_export_daily`: bandsiz sahnada `None` o'rniga shu sahna o'tkaziladi; export task ro'yxatlari bir xil (task obyektlari, ID emas) | ✅ commit qilinmagan | main.py |
+| 86 | 2026-09-21 | RO = 0 (hot piksel suv balansi) — user qarori koddagi izohga yozildi; ochiq masalalar alohida faylga (`ochiq_masalalar.md`) | ✅ commit qilinmagan | water_balance.py, tuzatilma/ochiq_masalalar.md |
+| 87 | 2026-09-21 | Preprocessing: har Landsat L2 tasvirga mos C2 **L1** sahnaning per-piksel **SZA/SAA** bandlari (LANDSAT_SCENE_ID bo'yicha, ×0.01°, SR maskasi); L1 topilmasa YIQILMAYDI — astronomik per-piksel SZA/SAA; `SOLAR_GEOM_SOURCE` property, process_tile print, QC CSV `quyosh_geom` ustuni | ✅ commit qilinmagan | config.py, preprocessing.py, main.py |
+| 88 | 2026-09-21 | K↓ (cosθ) va albedo BRDF (θ_elev) — per-piksel SZA bandidan; oldin Landsat'da sahna markazidagi bitta `SUN_ELEVATION` (mosaic'da birinchi row'niki butun sanaga) | ✅ commit qilinmagan | radiation.py, surface_props.py |
+| 89 | 2026-09-21 | Qiya yuza: overpass cosθ va C_rad lahzali qismi — per-piksel SZA/SAA bandlaridan (Duffie & Beckman azimut shakli); C_rad kunlik integrali astronomik qoladi | ✅ commit qilinmagan | sloping_terrain.py |
 
 ---
 
@@ -2234,4 +2244,112 @@ GEE — Samarqand 2023 yangi kod, `max_lookback = 21`: **run to'xtadi** — 11-1
 ### #79 — bulut precheck null
 **Oldin** (`add_crop_cloud_pct`): `If(d.contains('CLD'), d.get('CLD'), 1)` — kalit bor, qiymati null (ROI ustida yaroqli piksel yo'q) → `null.multiply(100)` → "Number.multiply: Parameter 'left' … null" → butun run to'xtardi (Bushland 20 km ROI).
 **Keyin:** HLS varianti bilan bir xil — null → 1 (100 %, sahna o'tkaziladi). Test: kalit yo'q → 100; null → 100; 0.0 → 0; 0.37 → 37; real bo'sh maska → 100.
+
+---
+
+## #80–#86 — Qayta audit topilmalari: Kc_ETo CUirr, pysebal oylik o'rtachalar, Kc NDVI teshiklari, tozalash
+
+User: "A1, A2 ni tuzat, A3 ni ham tuzata olsang tuzat … B4, B5 keyin yozib qo'y … RO = 0 hot piksel water balance da … izohlarni to'g'irla … ADV_FACTOR, compute_etpot (chaqirilmasa o'chir), _export_daily None, tasks aralash — to'g'irla".
+
+### #80 (A1) — Kc_ETo rejimida CUirr kunlik ET
+**Oldin:** `daily_et.daily_et_series` shoxlari: SEBAL_Milliy / SEBAL_ID oilasi / qolgan → SEBAL_B (EF·Rn24/λ). Kc_ETo ham SEBAL_B shoxiga tushardi → `consumptive_use.effective_precip_monthly` (Prz) Kc emas, EF·Rn24 ET bilan haydalardi, ET_MONTHLY esa Kc modelidan.
+**Keyin:** `ndvi_kc._kc_model` — umumiy sozlama + bir kunlik qadam `day_step(d, De) → (De, T, E)`; `compute_monthly_et_kc` (oylik) va yangi `daily_et_series_kc` (kunlik ro'yxat) AYNI qadamni ishlatadi; `daily_et_series`: `if cfg.is_kc_mode(mode): return ndvi_kc.daily_et_series_kc(...)`.
+GEE (Samarqand 20 km, ekinzor): iyul — Σ kunlik = ET_MONTHLY aynan (farq 0; 70 972 piksel); aprel — farq ≤ 1e-13 mm. Prz/CUIRR bu sinovlarda eski = yangi (iyul Prz 0; aprel Prz 16.74, CUIRR 44.27) — chuqur perkolyatsiya bo'lmagan (Dr > infiltratsiya) → Prz = P − RO, ET'ga bog'liq emas. Ta'sir DP > 0 bo'lganda (kuchli yomg'ir, kichik depletion) ko'rinadi; tuzatish izchillik uchun.
+
+### #81 (A2) — pysebal oylik o'rtacha bandlar
+**Oldin:** `compute_monthly_averages(scene_images)` → `col.mean()` run'ning BARCHA sahnalari → KC, KC_MAX, EVAP_FRAC, BENEFICIAL_FRACTION, FPAR, LUE, WP, NDVI, LAI, SMAP namligi, IRRIGATION_CLASS (max) har oy **bir xil**.
+**Keyin:** `compute_monthly_averages(scene_images, year, month)` — oyning har kuni `daily_et._nearest_valid` (oylik ET bilan AYNI vakillik davri), oy kunlari bo'yicha o'rtacha (IRRIGATION_CLASS — max); guruhlar alohida (Landsat / SMAP / sug'orish klassi) — umumiy maska bir-biriga ta'sir qilmaydi.
+GEE (Samarqand, pysebal, 14 sahna may–avgust, ekinzor o'rtachasi):
+
+| Band | Eski (har oy) | Yangi may / iyul / avgust |
+|---|---|---|
+| KC | 0.727 | 0.870 / 0.666 / 0.644 |
+| EVAP_FRAC | 0.728 | 0.721 / 0.725 / 0.696 |
+| NDVI | 0.423 | 0.422 / 0.404 / 0.469 |
+| LAI | 0.817 | 0.822 / 0.746 / 0.996 |
+| FPAR | 0.371 | 0.369 / 0.347 / 0.429 |
+| LUE | 0.462 | 1.032 / 0.156 / 0.442 |
+| SM_WETNESS | 0.398 | 0.453 / 0.376 / 0.369 |
+| IRRIGATION_CLASS (max) | 2.993 | 2.144 / 2.962 / 2.972 |
+
+### #82 (A3) — Kc_ETo / AW NDVI interpolyatsiyasi
+**Oldin:** `ndvi_kc._ndvi_interp` — TASVIR darajasida `before.first()` / `after.first()`: o'sha sahnada bulutli piksel shu kuni NDVI'siz → `iterate` da ET/De maskasi oy oxirigacha saqlanadi → oylik ET (va AW) o'sha pikselda bo'sh.
+**Keyin:** har piksel uchun eng yaqin YAROQLI oldingi/keyingi sahna (qualityMosaic, vaqt bandi), chiziqli; bir tomon bo'sh → mavjud tomon; `setDefaultProjection` (NDVI native). Ikkala sahna yaroqli pikselda natija aynan oldingidek.
+GEE (Kc_ETo oylik ET, ekinzor): iyul — piksel 70 941 → 70 972 (+31), ikkalasi yaroqli joyda 94.4412 = 94.4412 mm; **aprel (2 sahna, bulutli) — 69 154 → 70 829 (+1 675, +2.4 %)**, ikkalasi yaroqli joyda 61.1360 = 61.1360 mm.
+
+### #83 — eskirgan izohlar
+energy_balance: `compute_rah_neutral` docstring va izohlar "z2_rah = 0.2 m, ln(2)" → "z2_rah = 2.0 m, ln(20) (cfg.WIND)"; `compute_sensible_heat_flux` izohi. consumptive_use: sarlavha "faqat SEBAL_Milliy" → "istalgan rejim"; tuproq "OpenLandMap" → "SoilGrids 2.0"; `_saxton_fc_wp_raster` mavjud bo'lmagan `water_balance._saxton_fc_wp` ga havola olib tashlandi. ndvi_kc: TEW/REW izohi OpenLandMap → SoilGrids, REW = 0.15·loy + 2. (Hisob o'zgarmadi.)
+
+### #84 — ADV_FACTOR, compute_etpot
+**Oldin:** `(exp(0.08·VPD) − 1)·0.985 + 1` keyin `× EF` → AF = EF·(1 + …) → EF < 1 da deyarli doim max(1) = 1. **Keyin:** AF = 1 + 0.985·[exp(0.08·VPD) − 1]·EF, [1, 1.5] (pySEBAL formulasi, VPD kPa). ADV_FACTOR faqat pysebal kunlik diagnostik band — ET'ga ta'sir yo'q.
+`compute_etpot` (eski PM rs_min) hech qayerda chaqirilmasdi (ETPOT_24 — `ref_et.compute_reference_ets_daily`) → o'chirildi, o'rniga izoh.
+
+### #85 — eksport
+`_export_daily`: so'ralgan bandlardan hech biri yo'q sahnada `return None` (chaqiruvchida `all_tasks.extend(None)` xatosi, qolgan sahnalar eksport qilinmasdi) → shu sahna o'tkaziladi (`continue`) va log; `except:` → `except Exception:`. Task ro'yxatlari: `_viirs_export_month`, `_s30_export_month`, `_export_monthly`, `run_polygons` endi task OBYEKTLARI (oldin `task.id` satrlari aralash).
+
+### #86 — RO va ochiq masalalar
+Hot piksel suv balansida RO = 0 — user qarori (2026-09-21), `_run` ichida izoh. Qolgan/keyinga qoldirilgan masalalar (B1–B5, P8, A4, izchillik) — `tuzatilma/ochiq_masalalar.md`.
+
+---
+
+## #87–#89 — Per-piksel quyosh geometriyasi (Landsat C2 L1 SZA/SAA)
+
+User: "L1 ni kerakli bandlarini … har bir tasvirga boshidan scale factor bo'ladigan vaqt … L2 da tanlangan har bir rasterga mos L1 tasvir SZA, SAA kabi bandlarini add qilib qo'shish … K↓ bo'yicha soddalashtirilgan variantni qil … albedo, qiyalikka kelgan vaqt L1 dan olsin … print ham chiqsin … L1 topmasa yiqilmasin".
+
+**Muammo:** GEE Landsat C2 L2 da quyosh geometriyasi faqat sahna markazidagi `SUN_ELEVATION` / `SUN_AZIMUTH` (bitta son). K↓ = Gsc·sin(SUN_ELEVATION)·dr·τsw va albedo BRDF shu bitta son bilan butun sahnaga. `_mosaic_same_date` bir sanadagi ikki row'ni birlashtirganda (Samarqand: 155/032 + 155/033) — BIRINCHI row'ning `SUN_ELEVATION`i butun sanaga. C2 L1 (`LANDSAT/LC0x/C02/T1`) da 30 m SZA/SAA/VZA/VAA bandlari bor.
+
+Oldindan tekshirildi (GEE):
+- L1 qamrovi — L2 T1 sahnalardan mos L1 (LANDSAT_SCENE_ID) yo'q: O'zbekiston 2023 — **0 / 3 816**; Bushland 2020–21 — **0 / 177**; O'zbekiston 2026-08-01…09-21 — **0 / 506**.
+- L1 grid = L2 grid (EPSG:32642, transform aynan); L2 yaroqli piksellarda SZA maskasi yo'q (0 piksel).
+- SAA konvensiyasi = `SUN_AZIMUTH` (shimoldan soat yo'nalishida): LC08_155032_20230711 — 128.797 vs L1 markaz 128.790; LC09_155032_20231210 — 161.765 vs 161.770.
+- HLS L30 da SZA/SAA bandlari o'zida bor (gradus) — o'zgartirilmadi.
+
+### #87 — preprocessing (scale bosqichida)
+**Keyin:** `build_collection` (Landsat) — AYNI roi/sana bilan L1 kolleksiya (`cfg.LANDSAT_L1_COLLECTIONS`); `preprocess_image`: `apply_qa_mask → apply_scale_factors → add_sun_angles → add_terrain → …`.
+`add_sun_angles`: L1 sahna `LANDSAT_SCENE_ID` bo'yicha → `SZA`, `SAA` × 0.01 (float, gradus), SR maskasi bilan (mosaic'da piksel burchagi o'sha piksel reflektansi olingan sahnadan). Topilmasa — `_astro_sun_angles` (per-piksel, overpass UTC vaqti, δ/Sc/ω sloping_terrain formulalari; SAA = atan2(−cosδ·sinω, sinδ·cosφ − cosδ·sinφ·cosω)). Property `SOLAR_GEOM_SOURCE` = `L1_ANGLE` | `ASTRONOMIK` (mosaic — sanadagi barcha sahnalar manbalari, masalan `L1_ANGLE+ASTRONOMIK`; HLS — `HLS_ANGLE`).
+`collection_info` → `solar_src` (AYNI getInfo). process_tile print:
+```
+☀️ Quyosh burchaklari SZA/SAA (per-piksel, K↓ / albedo BRDF / qiyalik): 1/1 sahna o'z burchak bandidan (L1_ANGLE)
+```
+L1 topilmasa: `0/1 … (ASTRONOMIK)` + `⚠️ 2023-07-11: mos L1 sahna topilmadi → ASTRONOMIK (…)`. QC CSV: `quyosh_geom` ustuni.
+Topilgan GEE xususiyati: `a.atan2(b)` = atan2(**b**, a) (`Image(1).atan2(Image(0))` = 0) — zaxira SAA'da hisobga olingan (loyihada boshqa atan2 yo'q).
+
+### #88 — K↓ va albedo BRDF
+**Oldin:** `radiation.compute_incoming_shortwave` — Landsat: `ee.Image.constant(sin(SUN_ELEVATION))`, HLS: cos(SZA) (`ee.Algorithms.If` + 90° o'rin egasi); `surface_props._sun_elevation` — Landsat: `SUN_ELEVATION` konstanta.
+**Keyin:** ikkalasi ham `image.select('SZA')` dan: cosθ = cos(SZA), θ_elev = 90 − SZA (SZA bandidan boshlanadi → sahna UTM 30 m grid, konstanta 1° emas). SZA yo'q → select xatosi (fake qiymat yo'q). `SUN_ELEVATION` endi hisobda ishlatilmaydi.
+
+### #89 — qiya yuza
+**Oldin:** `cos_theta_instant`, `c_radiation` lahzali qismi — astronomik (δ, Sc, ω; sahna vaqt belgisi butun mosaic'ga).
+**Keyin:** `_cos_theta_slope_sun`: cosθ_u = cos s·cosZ + sin s·sinZ·cos(γ_s − γ), γ_s = SAA − 180° (Eq 5.12 ning azimut shakli), ÷cos s; C_rad lahzali: sinφ_sun = cos(SZA). Kunlik integral (`_daily_ratio`, `ra24_ratio`) — astronomik (L1 faqat overpass lahzasi).
+
+### GEE sinovlari
+Zaxira (L1 yo'q simulyatsiya) − L1, Samarqand 20 km:
+
+| Sahna | SZA | SAA | K↓ |
+|---|---|---|---|
+| 2023-07-11 | −0.039 … +0.036° | +0.17 … +0.36° | −0.03 … +0.03 % |
+| 2023-12-10 | +0.220 … +0.259° | −0.34 … −0.22° | −0.97 … −0.82 % |
+
+To'liq process_tile L1 yo'q holatda (2023-07-11, SEBAL_Milliy): **yiqilmadi**, status OK, `quyosh_geom = ASTRONOMIK`; L1 varianti bilan farq K↓ +0.017 %, albedo −0.017 %, Rn +0.028 %, ET_24 −0.094 %.
+
+Qiya yuza (Samarqand janubi tog' etagi, 15 km, qiyalik 0…63°), yangi/eski − 1:
+
+| Sahna | cosθ p1…p99 (o'rt) | C_rad p1…p99 (o'rt) |
+|---|---|---|
+| 2023-07-11, L1 | −0.03 … +0.17 % (+0.04) | −0.12 … +0.07 % (−0.01) |
+| 2023-12-10, L1 | +0.01 … +5.69 % (+1.06) | −2.91 … +0.96 % (−0.06) |
+| 2023-12-10, zaxira (astronomik) | −0.14 … +0.67 % (+0.10) | −0.32 … +0.23 % (0.00) |
+
+Qishda farq katta — quyosh past, shimoliy qiyaliklarda cosθ kichik (nisbiy farq kuchayadi) + astronomik SZA L1 dan 0.24° past. Zaxira-vs-eski qoldiq farqi — har row o'z vaqti bilan (oldin mosaic'ning bitta vaqti).
+
+Ta'sir, process_tile SEBAL_Milliy, 20 km ekinzor o'rtachasi (eski = `SUN_ELEVATION`, yangi = L1 SZA), anchorlar (cold/hot LST, ETrF_hot) o'zgarmagan:
+
+| Sahna | K↓ | Albedo | Rn | G₀ | ET_24 (mm) |
+|---|---|---|---|---|---|
+| Samarqand 2023-07-11 | 911.2 → 913.2 (+0.22 %) | 0.1686 → 0.1682 | +0.37 % | +0.31 % | 4.840 → 4.778 (−1.27 %) |
+| Samarqand 2023-12-10 | 448.3 → 458.2 (**+2.21 %**) | 0.1625 → 0.1616 | +3.24 % | +3.15 % | 1.172 → 1.163 (−0.81 %) |
+| Bushland 2021-07-09 | 939.3 → 933.3 (−0.64 %) | 0.1872 → 0.1884 | −1.01 % | −0.85 % | 3.276 → 3.273 (−0.08 %) |
+| Bushland 2021-10-29 | 676.4 → 665.8 (−1.57 %) | 0.2102 → 0.2113 | −2.59 % | −2.45 % | 0.179 → 0.182 (+1.74 %) |
+
+K↓ ROI ichida endi fazoviy o'zgaradi (Samarqand qish: 454.0…472.2, oldin 446.9…459.3 — faqat τsw/DEM dan). Samarqand qishdagi +2.2 % — mosaic'da shimoliy row (155/032) `SUN_ELEVATION`i janubiy qismga ham qo'llanardi.
 

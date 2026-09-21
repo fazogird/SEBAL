@@ -126,17 +126,13 @@ ALBEDO_METHOD = 'olmedo_brdf'
 
 def _sun_elevation(image):
     """
-    Quyosh balandligi θ_elev (gradus) — albedo BRDF tuzatishi uchun.
-      Landsat: SUN_ELEVATION sahna metama'lumoti (skalyar).
-      HLS:     90 − SZA band.
-    Metama'lumot yo'q bo'lsa GEE xato beradi — fake qiymat ISHLATILMAYDI.
+    Quyosh balandligi θ_elev (gradus) = 90 − SZA — albedo BRDF tuzatishi uchun, PER-PIKSEL.
+      SZA bandi preprocessing'da (Landsat — mos C2 L1 sahna, topilmasa astronomik;
+      HLS — o'z SZA bandi). Oldin Landsat'da sahna markazidagi bitta SUN_ELEVATION.
+    SZA yo'q bo'lsa GEE xato beradi — fake qiymat ISHLATILMAYDI.
+    (SZA bandidan boshlanadi → natija sahna UTM gridida, konstanta 1° emas.)
     """
-    has_sza = image.bandNames().contains('SZA')
-    return ee.Image(ee.Algorithms.If(
-        has_sza,
-        ee.Image(90).subtract(image.select('SZA')),
-        ee.Image.constant(ee.Number(image.get('SUN_ELEVATION')))
-    )).rename('SUN_ELEV')
+    return image.select('SZA').multiply(-1).add(90).rename('SUN_ELEV')
 
 
 def _albedo_variants(image):

@@ -324,12 +324,19 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
 
     compute_monthly_et'ning kunlik qadami (compute_day_et) bilan AYNAN bir xil
     mantiq: SEBAL_Milliy → SOLAR_FRAC×Rs24; SEBAL_ID → ETRF_INST×ETr24;
-    SEBAL_B/pysebal → EF×Rn24/λ. consumptive_use shu seriyani ildiz-zona suv
+    SEBAL_B/pysebal → EF×Rn24/λ; Kc_ETo → Kc model (ndvi_kc.daily_et_series_kc). consumptive_use shu seriyani ildiz-zona suv
     balansini haydash uchun ishlatadi (ET va Prz bir xil kunlik ET'dan).
 
     Returns: (ee.List of ee.Image, days_in_month:int, month_start:ee.Date)
     """
     import calendar
+    # Kc_ETo: kunlik ET — Kc modelining o'zi (ndvi_kc, compute_monthly_et_kc bilan AYNI
+    # kunlik qadam). Oldin bu rejim SEBAL_B shoxiga (EF·Rn24) tushib qolardi → CUirr/Prz
+    # oylik ET'dan boshqa ET bilan hisoblanardi.
+    if cfg.is_kc_mode(mode):
+        from . import ndvi_kc
+        return ndvi_kc.daily_et_series_kc(image_list, roi, year, month,
+                                          utc_offset=utc_offset, etr24_source=etr24_source)
     days = calendar.monthrange(year, month)[1]
     month_start = ee.Date.fromYMD(year, month, 1)
 

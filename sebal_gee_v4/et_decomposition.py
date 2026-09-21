@@ -153,68 +153,9 @@ def compute_etref(image, roi, utc_offset=0):
     return ref_et.compute_etref_daily(image, roi, utc_offset=utc_offset)
   
 # ==============================================================
-# 3. ETpot_24 — Potential ET (haqiqiy o'simlik uchun)
+# 3. ETpot_24 — ref_et.compute_reference_ets_daily (alfalfa ETr, 24 soatlik yig'indi)
+#    beradi (compute_all). Eski PM-rs_min compute_etpot() chaqirilmas edi — o'chirildi.
 # ==============================================================
-
-def compute_etpot(image):
-    """
-    Potensial ET — o'simlik suvga to'yingan sharoitda.
-
-    Penman-Monteith bilan, lekin:
-    - rs_min (minimal stomatal resistance) ishlatiladi
-    - rah PM (Penman-Monteith) uchun alohida hisoblanadi
-    - dT = 4°C (potensial sharoit uchun standart)
-
-    rs_min = 100 / LAI (s/m) — minimal o'simlik qarshiligi
-    LAI < 0.5 → rs_min = 200 (yalang'och tuproq)
-
-    ETpot > ETact bo'lishi kerak (aks holda ETact ishlatiladi)
-    """
-    rn24 = image.select('RN24')
-    slope_es = image.select('SLOPE_ES')
-    psychro = image.select('PSYCHRO')
-    vpd = image.select('VPD')
-    ta_c = image.select('AIR_TEMP').subtract(273.15)
-    rho_air = image.select('RHO_AIR')
-    lai = image.select('LAI')
-    z0m = image.select('Z0M')
-
-    # Rn24 → MJ/m²/day
-    rn24_mj = rn24.multiply(0.0864)
-
-    # Minimal surface resistance (s/m)
-    rs_min = ee.Image(100.0).divide(lai.max(0.5))
-    rs_min = rs_min.min(500.0).max(20.0)
-
-    # Aerodynamic resistance for PM — dT=4°C (potensial)
-    wind_2m = image.select('WIND_SPEED_10M').multiply(0.745).max(0.5)
-    rah_pot = (ee.Image(208.0).divide(wind_2m)).max(25.0)
-
-    # PM formula bilan ETpot
-    numerator_rad = slope_es.multiply(0.408).multiply(rn24_mj)
-
-    # VPD termi — rah_pot bilan
-    numerator_aero = (rho_air.multiply(CP)
-                      .multiply(vpd)
-                      .divide(rah_pot)
-                      .multiply(86400.0)  # s → day
-                      .divide(1e6)  # J → MJ
-                      .divide(LAMBDA_V / 1e6))
-
-    denominator = (slope_es
-                   .add(psychro.multiply(
-                       ee.Image(1.0).add(rs_min.divide(rah_pot)))))
-
-    etpot = (numerator_rad.add(numerator_aero)
-             .divide(denominator)
-             .max(0)
-             .rename('ETPOT_24'))
-
-    # ETpot ≥ ETact bo'lishi kerak
-    eta = image.select('ET_24')
-    etpot = etpot.max(eta)
-
-    return image.addBands(etpot).addBands(rs_min.rename('RS_MIN'))
 
 
 # # ==============================================================
@@ -263,11 +204,13 @@ def compute_advection_factor(image):
     vpd = image.select('VPD')
     ef = image.select('EVAP_FRAC')
 
+    # AF = 1 + 0.985·[exp(0.08·VPD) − 1]·EF  (VPD kPa). Oldin qavs xato edi: EF butun
+    # (1 + …) ga ko'paytirilardi → EF < 1 da AF deyarli doim max(1) = 1.
     af = (vpd.multiply(0.08).exp()
           .subtract(1.0)
           .multiply(0.985)
-          .add(1.0)
           .multiply(ef)
+          .add(1.0)
           .max(1.0)  # AF ≥ 1 har doim
           .min(1.5)  # AF ≤ 1.5 fizik limit
           .rename('ADV_FACTOR'))
