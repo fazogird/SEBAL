@@ -138,7 +138,7 @@ def compute_vapor_pressure(image):
 
 #     return image.addBands(etref)
 
-def compute_etref(image, roi):
+def compute_etref(image, roi, utc_offset=0):
     """
     FAO-56/ASCE-EWRI grass reference ET (mm/day) — kunlik ERA5
     agregatsiyadan, TO'LIQ ASCE-EWRI formula (Ra/Rso/Rnl astronomik
@@ -150,7 +150,7 @@ def compute_etref(image, roi):
 
     Source: ref_et.py — ASCE-EWRI (2005) Standardized Reference ET.
     """
-    return ref_et.compute_etref_daily(image, roi)
+    return ref_et.compute_etref_daily(image, roi, utc_offset=utc_offset)
   
 # ==============================================================
 # 3. ETpot_24 — Potential ET (haqiqiy o'simlik uchun)
@@ -407,7 +407,7 @@ def compute_et_separation(image):
 # MAIN: Compute all ET decomposition
 # ==============================================================
 
-def compute_all(image, roi):
+def compute_all(image, roi, utc_offset=0):
     """
     Barcha ET decomposition analitikalarini hisoblash.
 
@@ -438,7 +438,7 @@ def compute_all(image, roi):
     # ETREF_24 (grass) + ETPOT_24 (alfalfa) — ASCE-EWRI, bitta so'rov.
     # (Eski compute_etpot() Penman-Monteith aerodinamik edi — kunlik/oylik
     #  mos kelmasdi. Endi oylik monthly_analytics bilan bir xil.)
-    image = ref_et.compute_reference_ets_daily(image, roi)
+    image = ref_et.compute_reference_ets_daily(image, roi, utc_offset=utc_offset)   # mahalliy kun
 
     # ETpot >= ETact (fizik cheklov)
     eta = image.select('ET_24')

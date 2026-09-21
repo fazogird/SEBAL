@@ -339,9 +339,10 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                                         utc_offset=utc_offset,
                                         etr24_source=etr24_source,
                                         sloping_terrain=sloping_terrain)
+        _daily_qc(img, roi, mode, qc, prefix, sloping_terrain)   # qiymatlarga TEGMAYDI
 
         if mode == 'pysebal':
-            img = et_decomposition.compute_all(img, roi)
+            img = et_decomposition.compute_all(img, roi, utc_offset=utc_offset)
             img = soil_moisture.compute_all(img)
             img = biomass.compute_all(img)
             img = irrigation.compute_all(img)
@@ -386,6 +387,66 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
 
 
 _GRID_QC_BANDS = ('LST', 'LAI', 'EMISSIVITY', 'L_UP', 'DTA', 'RN')
+
+
+# Kunlik bosqich QC chegaralari — faqat LOG/QC-CSV ogohlantirishi (qiymatga tegmaydi)
+ETRF_RAW_WARN = 1.10         # ETrF_raw > 1.10: cold anchordan (1.05) sezilarli "namroq"
+ETRF_RAW_WARN_PCT = 1.0      # ekinzor piksellarining shu %idan ko'pi → ogohlantirish
+CRAD_CLAMP_WARN_PCT = 1.0    # C_RAD / RA24_RATIO [0.5, 2.0] chegarasidagi ROI piksellari %
+
+
+def _daily_qc(img, roi, mode, qc, prefix, sloping_terrain=False):
+    """
+    Kunlik bosqich QC (qiymatlarga TEGMAYDI), BITTA getInfo (kerak bo'lsa):
+      1) SEBAL_ID oilasi: ETRF_RAW (= ET_inst/ETr_inst, cheklanmagan) > ETRF_RAW_WARN
+         bo'lgan EKINZOR piksellari ulushi va p99. SEBAL_ID ET_24 ETrF ni 1.05 da
+         cheklaydi; SEBAL_Milliy — cheklamaydi (xom nisbat, user qarori (b)).
+         Ulush > ETRF_RAW_WARN_PCT → OGOHLANTIRISH (sahna nam / cold anchor issiq?).
+      2) sloping_terrain: C_RAD (SEBAL_ID oilasi) yoki RA24_RATIO (SEBAL_B, pysebal)
+         [C_RAD_MIN, C_RAD_MAX] clamp chegarasiga urilgan ROI piksellari ulushi.
+         > CRAD_CLAMP_WARN_PCT → OGOHLANTIRISH (tik/soya qiyalik — tuzatish kesilgan).
+    """
+    from . import sloping_terrain as slt
+    req = {}
+    kw = dict(geometry=roi, crs=energy_balance.analysis_proj(img), scale=90,
+              maxPixels=1e9, bestEffort=True, tileScale=4)
+    if cfg.is_id_mode(mode):
+        raw = img.select('ETRF_RAW').updateMask(preprocessing.get_cropland_mask())
+        req['etrf'] = (raw.gt(ETRF_RAW_WARN).rename('GT').addBands(raw.rename('R'))
+                       .reduceRegion(ee.Reducer.mean().combine(
+                           ee.Reducer.percentile([99]), sharedInputs=True), **kw))
+    cband = None
+    if sloping_terrain:
+        cband = 'C_RAD' if cfg.is_id_mode(mode) else 'RA24_RATIO'
+        c = img.select(cband)
+        req['crad'] = (c.lte(slt.C_RAD_MIN + 1e-6).rename('LO')
+                       .addBands(c.gte(slt.C_RAD_MAX - 1e-6).rename('HI'))
+                       .reduceRegion(ee.Reducer.mean(), **kw))
+    if not req:
+        return
+    d = ee.Dictionary(req).getInfo()
+    e = d.get('etrf') or {}
+    if e.get('GT_mean') is not None:
+        pct, p99 = 100.0 * e['GT_mean'], e.get('R_p99')
+        qc.update({'pct_etrf_gt110': pct, 'etrf_raw_p99': p99})
+        if pct > ETRF_RAW_WARN_PCT:
+            msg = (f"ETrF_raw > {ETRF_RAW_WARN} ekinzorning {pct:.1f} %ida "
+                   f"(> {ETRF_RAW_WARN_PCT} %; p99 = {p99:.3f}) — "
+                   + ("SEBAL_ID'da 1.05 ga kesilgan" if mode == 'SEBAL_ID'
+                      else "SEBAL_Milliy ET_24 xom nisbat bilan (kesilmagan)")
+                   + "; sahna nam yoki cold anchor issiq bo'lishi mumkin")
+            print(f"{prefix}   ⚠️ OGOHLANTIRISH: {msg}")
+            qc.setdefault('warnings', []).append(msg)
+    c = d.get('crad') or {}              # yagona mean reduktor → kalitlar band nomi (LO, HI)
+    if c.get('LO') is not None:
+        lo, hi = 100.0 * c['LO'], 100.0 * c['HI']
+        qc.update({'pct_crad_lo': lo, 'pct_crad_hi': hi})
+        if lo + hi > CRAD_CLAMP_WARN_PCT:
+            msg = (f"{cband} clamp chegarasida ROI'ning {lo + hi:.1f} %i "
+                   f"(≤{slt.C_RAD_MIN}: {lo:.1f} %, ≥{slt.C_RAD_MAX}: {hi:.1f} %; "
+                   f"> {CRAD_CLAMP_WARN_PCT} %) — tik/soya qiyalikda kunlik tuzatish kesilgan")
+            print(f"{prefix}   ⚠️ OGOHLANTIRISH: {msg}")
+            qc.setdefault('warnings', []).append(msg)
 
 
 def _grid_tpw_qc(img, roi, mode, qc, prefix):
@@ -442,6 +503,7 @@ def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
             'dT_hot', 'dT_cold', 'H_hot', 'H_cold',
             'Ta_hot', 'Ta_era5_hot', 'Ta_cold', 'Ta_era5_cold', 'pct_Ta_out15',
             'grid', 'grid_ok', 'TPW_min', 'TPW_max', 'TPW_bin_min', 'TPW_bin_max', 'n_TPW_bins',
+            'pct_etrf_gt110', 'etrf_raw_p99', 'pct_crad_lo', 'pct_crad_hi',
             'lon', 'lat']
     n_bad = sum(1 for r in rows if r.get('status') == 'RAD ETILDI')
     n_warn = sum(1 for r in rows if r.get('status') == 'OGOHLANTIRISH')
@@ -696,7 +758,8 @@ def _export_monthly(scene_images, roi, year, month, mode,
 
     if mode == 'pysebal':
         monthly = monthly_analytics.compute_all_monthly(
-            scene_images, roi, year, month, utc_offset=utc_offset)
+            scene_images, roi, year, month, utc_offset=utc_offset,
+            sloping_terrain=sloping_terrain)
     else:
         monthly = daily_et.compute_monthly_et(
             scene_images, roi, year, month, mode=mode,
@@ -815,7 +878,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
 #  SEBAL diagnostika: NDVI, LAI, u*, rah, dT, EF.)
 CSV_LYS_BANDS = [
     # --- yakuniy / oqim ---
-    'ET_24', 'ET_INST_MM_HR', 'ETRF_INST', 'LAMBDA_E', 'EVAP_FRAC',
+    'ET_24', 'ET_INST_MM_HR', 'ETRF_INST', 'ETRF_RAW', 'LAMBDA_E', 'EVAP_FRAC',
     'RN', 'G0', 'H', 'RN_G0', 'G_RATIO',
     # --- yuza / radiometriya ---
     'LST', 'ALBEDO', 'NDVI', 'SAVI', 'LAI', 'EMISSIVITY',
@@ -857,7 +920,7 @@ def parcels_from_points(points, size_m=210, inner_buffer_m=-30):
 
 def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
                       tile_label, mode, utc_offset, scale=30, save_cuirr=False,
-                      save_aw=False, csv_monthly=True):
+                      save_aw=False, csv_monthly=True, sloping_terrain=False):
     """
     region_fc (parcel) ustida MEAN+MEDIAN zonal-stat → BATCH table CSV.
       • per-scene CSV: har sahna, instant+daily bandlar (date bilan)
@@ -900,8 +963,8 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     # Fayl TURKUMLARI (nomlari o'zgarmaydi — flux_compare shu nomlarni o'qiydi);
     # BANDLAR esa `bands` dan (oldin qattiq yozilgan 20 band — `bands` e'tiborsiz edi,
     # CSV_LYS_BANDS'ning 21 bandi hech qachon chiqmasdi).
-    INST_SET = ('ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'EVAP_FRAC', 'SOLAR_FRAC',
-                'ETR_INST')
+    INST_SET = ('ET_INST_MM_HR', 'LAMBDA_E', 'ETRF_INST', 'ETRF_RAW', 'EVAP_FRAC',
+                'SOLAR_FRAC', 'ETR_INST')
     DAILY_SET = ('ET_24',)
     req = list(dict.fromkeys(bands))                     # tartib saqlanadi, takror yo'q
     avail = set(ee.Image(scenes[0]).bandNames().getInfo())
@@ -961,7 +1024,8 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
     for mk in scene_months:
         yr, mo = int(mk[:4]), int(mk[5:7])
         monthly = daily_et.compute_monthly_et(scenes, roi, yr, mo, mode=mode,
-                                              utc_offset=utc_offset)
+                                              utc_offset=utc_offset,
+                                              sloping_terrain=sloping_terrain)
         if monthly is None:
             continue
         if save_cuirr:
@@ -970,7 +1034,7 @@ def _export_zonal_csv(scenes, info, roi, region_fc, bands, folder,
             from . import consumptive_use
             cu = consumptive_use.compute_all(
                 monthly.select('ET_MONTHLY'), scenes, roi, yr, mo,
-                mode=mode, utc_offset=utc_offset)
+                mode=mode, utc_offset=utc_offset, sloping_terrain=sloping_terrain)
             bn = cu.bandNames()
             cu = cu.select(bn, bn.map(lambda b: ee.Algorithms.If(
                 ee.String(b).equals('AW'), 'AW_CU', b)))
@@ -1119,6 +1183,12 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         # 0.85 (METRIC) kabi qiymatlar sinaladi. SEBAL_ID default'da o'zgarmaydi.
         cold_etrf=1.05,
 
+        # QIYA YUZA (Tasumi 2003 Ch.V): Ts–DEM (dT), cosθ → K↓, kunlik C_rad (SEBAL_ID,
+        # SEBAL_Milliy) / Ra24_ratio·Rs24 (SEBAL_B, pysebal), z0m/u200 tuzatishlari.
+        # Default False (tekis). Sahna + standart oylik + CSV + CUirr yo'llariga uzatiladi.
+        # VIIRS / S30 / Kc_ETo oylik yo'llarida kunlik qiyalik tuzatishi YO'Q (logda aytiladi).
+        sloping_terrain=False,
+
         # Ekin-spetsifik z0m (h=f(LAI) → z0m=0.123·h; Tasumi/Wright R²0.98-0.99).
         # FAQAT export_csv rejimida (tadqiqot nuqtasi ekin turi ma'lum) qo'llanadi.
         # None → default z0m=0.018·LAI. Qiymatlar: cfg.CROP_H_LAI kalitlari
@@ -1202,6 +1272,13 @@ def run(roi_type='gaul', date_start=None, date_end=None,
     energy_balance.COLD_ETRF = cold_etrf
     if cold_etrf != 1.05:
         print(f"  🧊 cold anchor ETrF = {cold_etrf} (default 1.05 dan farqli)")
+    if sloping_terrain:
+        no_slope = [n for n, on in (('VIIRS oylik', use_viirs), ('S30 oylik', use_s30_etrf),
+                                    ('Kc_ETo oylik', cfg.is_kc_mode(mode))) if on]
+        print("  ⛰️ sloping_terrain=True — qiya yuza tuzatishlari (sahna, oylik, CSV, CUirr)")
+        if no_slope:
+            print(f"  ⚠️ OGOHLANTIRISH: {', '.join(no_slope)} yo'lida kunlik qiyalik "
+                  f"tuzatishi (C_rad / Ra24_ratio) YO'Q — faqat sahna (lahzalik) qismi")
 
     # Broadband albedo usuli — production 'ALBEDO' (default 'olmedo_brdf').
     # ALB_* diagnostika bandlari har doim CSV'ga chiqadi (usuldan qat'i nazar).
@@ -1290,7 +1367,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                     tile_roi, date_start, date_end, mode,
                     satellite, cloud_max, tile_label,
                     anchor_method=anchor_method, anchor_mode=anchor_mode,
-                    utc_offset=utc_offset,
+                    utc_offset=utc_offset, sloping_terrain=sloping_terrain,
                     cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
             except Exception as e:
                 import traceback
@@ -1312,7 +1389,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                     scenes, info, tile_roi, csv_region,
                     csv_bands or CSV_LYS_BANDS, folder, tile_label, mode,
                     info.get('utc_offset', 0), csv_scale, save_cuirr=save_cuirr,
-                    save_aw=save_aw, csv_monthly=csv_monthly)
+                    save_aw=save_aw, csv_monthly=csv_monthly,
+                    sloping_terrain=sloping_terrain)
                 all_tasks.extend(ctasks)
 
             if export_daily:
@@ -1369,6 +1447,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             mode, folder, scale, crs, tile_label,
                             False, save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
+                            sloping_terrain=sloping_terrain,
                             save_cuirr=save_cuirr, save_prz=save_prz,
                             save_niwr=save_niwr, save_aw=save_aw,
                             dr_init_img=dr_carry)
@@ -1384,6 +1463,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             False,  # save_et=False → VIIRS ET ishlatiladi
                             save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
+                            sloping_terrain=sloping_terrain,
                             save_cuirr=save_cuirr, save_prz=save_prz,
                             save_niwr=save_niwr, save_aw=save_aw,
                             dr_init_img=dr_carry)
@@ -1394,6 +1474,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             save_et, save_biomass, save_etref,
                             save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
+                            sloping_terrain=sloping_terrain,
                             save_cuirr=save_cuirr, save_prz=save_prz,
                             save_niwr=save_niwr, save_aw=save_aw,
                             dr_init_img=dr_carry)
@@ -1413,6 +1494,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             roi, date_start, date_end, mode,
             satellite, cloud_max, anchor_method=anchor_method,
             anchor_mode=anchor_mode, utc_offset=utc_offset,
+            sloping_terrain=sloping_terrain,
             cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
 
         if scenes:
@@ -1464,6 +1546,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         save_tact,
                         save_eact,
                         utc_offset=info.get('utc_offset', 0),
+                        sloping_terrain=sloping_terrain,
                         save_cuirr=save_cuirr, save_prz=save_prz,
                         save_niwr=save_niwr, save_aw=save_aw,
                         dr_init_img=dr_carry
@@ -1490,7 +1573,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                 # pysebal uslubidagi monthly_analytics ishlatilardi)
                 uo = utc_offset if utc_offset is not None else daily_et.utc_offset_from_roi(roi)
                 monthly = daily_et.compute_monthly_et(
-                    scenes, roi, start_dt.year, start_dt.month, mode=mode, utc_offset=uo)
+                    scenes, roi, start_dt.year, start_dt.month, mode=mode, utc_offset=uo,
+                    sloping_terrain=sloping_terrain)
                 
                 # OpenET oylik olish (mm/month)
                 openet = validation.get_openet_monthly(

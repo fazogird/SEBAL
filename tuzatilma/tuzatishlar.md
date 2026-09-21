@@ -54,10 +54,22 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 49 | 2026-09-19 | Oylik QC: max_gap_days (> 8 kun ogohlantirish); n_landsat_scenes — shu oydagi sahnalar; pysebal Rs24 mahalliy kun; CSV oylik qatorlariga QC | ✅ commit 59372e2 | daily_et.py, monthly_analytics.py, main.py, config.py |
 | 50 | 2026-09-19 | validate: har rejim o'z oylik usulida (oldin barcha rejimlar pysebal uslubida) | ✅ commit 59372e2 | main.py |
 | 51 | 2026-09-19 | biomass APAR: Rs24 to'g'ridan-to'g'ri RS24 bandidan (Rn24 ni TAU_SW bilan teskari yechish olib tashlandi) | ✅ commit 59372e2 | biomass.py |
-| 52 | 2026-09-19 | CSV sahna bandlari `csv_bands` dan (oldin qattiq yozilgan 20 band, `csv_bands` e'tiborsiz); yo'q band logda; bir bandli guruhda ustun nomi `<band>_mean` | ✅ commit qilinmagan | main.py |
-| 53 | 2026-09-19 | `run(csv_monthly=True)` — CSV oylik (MONTHLY_ET) alohida flag bilan (`export_monthly` faqat RASTER) | ✅ commit qilinmagan | main.py, run_flux_validation.py |
-| 54 | 2026-09-19 | Tayl xatosi yutilmaydi: turi+sababi qayd, kutilmagan xatoda traceback, run oxirida ro'yxat, natijada `status`/`failed_tiles`/`empty_tiles`/`tile_warnings`; flux-validatsiya "qisman" sanaydi | ✅ commit qilinmagan | main.py, run_flux_validation.py |
-| 55 | 2026-09-19 | VIIRS: Rs24 MAHALLIY kalendar kun (utc_offset) — oldin UTC kun (`ma._get_daily_rs24`) | ✅ commit qilinmagan | viirs_downscaling.py, main.py |
+| 52 | 2026-09-19 | CSV sahna bandlari `csv_bands` dan (oldin qattiq yozilgan 20 band, `csv_bands` e'tiborsiz); yo'q band logda; bir bandli guruhda ustun nomi `<band>_mean` | ✅ commit 847f22e | main.py |
+| 53 | 2026-09-19 | `run(csv_monthly=True)` — CSV oylik (MONTHLY_ET) alohida flag bilan (`export_monthly` faqat RASTER) | ✅ commit 847f22e | main.py, run_flux_validation.py |
+| 54 | 2026-09-19 | Tayl xatosi yutilmaydi: turi+sababi qayd, kutilmagan xatoda traceback, run oxirida ro'yxat, natijada `status`/`failed_tiles`/`empty_tiles`/`tile_warnings`; flux-validatsiya "qisman" sanaydi | ✅ commit 847f22e | main.py, run_flux_validation.py |
+| 55 | 2026-09-19 | VIIRS: Rs24 MAHALLIY kalendar kun (utc_offset) — oldin UTC kun (`ma._get_daily_rs24`) | ✅ commit 847f22e | viirs_downscaling.py, main.py |
+| 56 | 2026-09-19 | ETr24 soatlik yig'indi: Ra/Rso davri SSRD bilan bir xil — ERA5 akkumulyativ yorliq T = [T−1, T] (oldin [T, T+1], 1 soat kechikkan) | ✅ commit qilinmagan | ref_et.py |
+| 57 | 2026-09-19 | Instant ETr: Ra oynasi overpass markazida [t−0.5, t+0.5] (oldin butun soat [floor(t), floor(t)+1]) | ✅ commit qilinmagan | ref_et.py |
+| 58 | 2026-09-19 | pysebal ETREF_24/ETPOT_24 (sahna + oylik): MAHALLIY kun + soatlik yig'indi (oldin UTC kun + kunlik-qadam) — boshqa rejimlar bilan bir xil | ✅ commit qilinmagan | ref_et.py, et_decomposition.py, main.py, monthly_analytics.py |
+| 59 | 2026-09-19 | `get_daily_era5_aggregate`: sana yarim tunga qirqiladi (vaqtli sana berilsa oyna overpassdan boshlanmasin) | ✅ commit qilinmagan | ref_et.py |
+| 60 | 2026-09-19 | pysebal oylik T/E: TACT = f_T·ET_kun (f_T = BENEFICIAL_FRACTION = TACT_24/ET_24), EACT = ET − TACT — mavsum o'rtacha RN24 bilan masshtab olib tashlandi (T + E = ET) | ✅ commit qilinmagan | monthly_analytics.py |
+| 61 | 2026-09-19 | `run(sloping_terrain=False)` — qiya yuza sahna, oylik (barcha rejim, pysebal ham), CSV, CUirr, validate'ga uzatiladi; VIIRS/S30/Kc_ETo oylikda yo'qligi logda | ✅ commit qilinmagan | main.py, monthly_analytics.py |
+| 62 | 2026-09-19 | SEBAL_Milliy qiya yuza: ET_24 = ET_inst·(Rs24/SSRD)·C_rad (kunlik, oylik, CUirr seriyasi) | ✅ commit qilinmagan | daily_et.py |
+| 63 | 2026-09-19 | ETRF_RAW bandi (cheklanmagan ET_inst/ETr_inst) + QC: ekinzorda ETrF_raw > 1.10 ulushi > 1 % → ogohlantirish (Milliy 1.05 ga cheklanMAYDI — user qarori (b)) | ✅ commit qilinmagan | daily_et.py, main.py |
+| 64 | 2026-09-19 | QC: C_RAD / RA24_RATIO [0.5, 2.0] chegarasidagi ROI piksellari > 1 % → ogohlantirish (ETrF24 qayta clamp QILINMAYDI) | ✅ commit qilinmagan | main.py |
+| 65 | 2026-09-19 | VIIRS/S30: ALBEDO eng yaqin yaroqli sahna; kunlik ETREF bevosita (grass soatlik yig'indi, mahalliy kun) — proksi o'rniga; VIIRS target per-piksel vaqt to'ldirish; S30 utc_offset (#55 qoldig'i) | ✅ commit qilinmagan | viirs_downscaling.py, hls_s30_etrf.py |
+| 66 | 2026-09-19 | S30 `interp_temporal_per_pixel`: `ee.Number − Image` runtime xatosi (S30 oylik HECH QACHON ishlamagan) → Image konstanta | ✅ commit qilinmagan | hls_s30_etrf.py |
+| 67 | 2026-09-21 | O'lik kod olib tashlandi: `monthly_analytics._get_daily_rs24` (UTC kun Rs24), `_interpolate_bands` (midpoint + mavsum o'rtachasi) va uning izohdagi eski nusxasi; VIIRS'dagi ishlatilmaydigan `monthly_analytics` importi | ✅ commit qilinmagan | monthly_analytics.py, viirs_downscaling.py |
 
 ---
 
@@ -1855,4 +1867,174 @@ GEE sinovi (albedo 0.20, nuqta), Rs24 / Rn24 UTC kun → mahalliy kun:
 Samarqandda oyna faqat tungi soatlarga suriladi (mahalliy yarim tun = 19:00 UTC) → farq 0. G'arbiy yarim sharda (AQSh flux stansiyalari) kunlik ±2 % gacha. VIIRS to'liq oylik yo'li GEE'da hali ishga tushirilmagan (faqat shu funksiya).
 
 `ma._get_daily_rs24` endi hech qayerda chaqirilmaydi (faqat izohlarda) — olib tashlanmadi.
+
+---
+
+## #56–#59 — Vaqt oynalari: ERA5 soatlik Ra davri, instant ETr, pysebal referens ET kuni
+
+User qarori: "T1, T2, T3, T5 — shularni tuzat hozir" (vaqt auditi: T4 — hot piksel suv balansi — alohida; C1–C6 — keyin).
+
+**Asos (GEE, Samarqand 2023-07-11 ochiq kun):** ERA5-Land `surface_solar_radiation_downwards_hourly` yorlig'i T qaysi soatni qamraydi — Rs/Ra (soatlik transmissivlik):
+
+| UTC soat | 01 | 03 | 05 | 07 | 09 | 11 | 13 | 15 |
+|---|---|---|---|---|---|---|---|---|
+| Ra davri [T−1, T] | 0.36 | 0.64 | 0.74 | 0.78 | 0.78 | 0.75 | 0.66 | 0.41 |
+| Ra davri [T, T+1] (joriy kod) | 0.07 | 0.44 | 0.64 | 0.75 | 0.84 | 0.92 | 1.12 | — (14: 1.88) |
+
+[T−1, T] — ochiq kunda simmetrik (fizik); [T, T+1] — 1 dan oshadi (fizik emas). Bu `preprocessing.get_era5_for_image` dagi konvensiya bilan bir xil ("akkumulyativ yorliq T = [T−1h, T]").
+
+### #56 (T1) — ETr24 soatlik yig'indida Ra/Rso davri
+
+**Oldin** (`compute_etr24_hourly_sum.to_etr`):
+```python
+d = ee.Date(img.get('system:time_start'))
+hour = ee.Number(d.get('hour'))
+Ra = calc.Ra_hourly(lat, lon, doy, hour, dr, dec)     # davr [T, T+1] — SSRD esa [T−1, T]
+```
+**Keyin:**
+```python
+d = ee.Date(img.get('system:time_start')).advance(-1, 'hour')   # davr boshi T−1
+doy = d.getRelative('day','year') + 1; hour = d.get('hour')
+Ra = calc.Ra_hourly(lat, lon, doy, hour, dr, dec)     # davr [T−1, T] = SSRD davri
+```
+Rso (demak Rs/Rso → fcd → Rnl) endi Rs bilan AYNI soat uchun. `_omega_mid_hour` docstring: `hour` — davr BOSHI. Ta'sir: ETr24 (SEBAL_ID), ETREF_24 (grass, KC), ETPOT_24, Kc-model ETo.
+
+### #57 (T2) — instant ETr (overpass)
+
+**Oldin:** `hour = date.get('hour')` → Ra davri [floor(t), floor(t)+1]; SSRD esa overpass t markazidagi 1 soatga interpolyatsiya qilingan.
+**Keyin:** `t_h = date.difference(yarim tun, 'hour')` (kasrli) → `Ra_hourly(..., t_h − 0.5, ...)` → davr [t−0.5, t+0.5] = SSRD davri. Ta'sir: ETR_INST → SEBAL_ID oilasi cold/hot λET, ETRF_INST.
+
+### #58 (T3) — pysebal ETREF_24 / ETPOT_24
+
+**Oldin:** sahnada `compute_reference_ets_daily(image, roi)` va oylikda `compute_reference_ets_for_date(date, roi)` → `get_daily_era5_aggregate(day)` — `utc_offset` YO'Q (UTC kun) + kunlik-qadam formulasi (Tmax/Tmin). Boshqa rejimlar (ETr24, ETREF_24 → KC) — mahalliy kun + 24 soatlik yig'indi (kitob App.B).
+**Keyin:**
+```python
+def _reference_ets_hourly(day_start, roi, dem, utc_offset):
+    ETREF_24 = compute_etr24_hourly_sum(day, roi, dem, 'grass',   utc_offset)
+    ETPOT_24 = compute_etr24_hourly_sum(day, roi, dem, 'alfalfa', utc_offset)
+compute_reference_ets_daily(image, roi, utc_offset=0)       # sahna
+compute_reference_ets_for_date(date, roi, utc_offset=0)     # oylik (har kun)
+# et_decomposition.compute_all(img, roi, utc_offset) ← main.process_tile (pysebal)
+# monthly_analytics.compute_monthly_et_components → compute_reference_ets_for_date(..., utc_offset)
+```
+(`compute_reference_ets_daily2`, `et_decomposition.compute_etref` — chaqirilmaydi, lekin `utc_offset` uzatiladigan qilindi.)
+
+### #59 (T5) — `get_daily_era5_aggregate` yarim tun
+
+**Oldin:** `day_start = ee.Date(date).advance(-utc_offset, 'hour')` — vaqtli sana berilsa oyna overpassdan boshlanardi. **Keyin:** `ee.Date(ee.Date(date).format('YYYY-MM-dd')).advance(-utc_offset, 'hour')`. Hozirgi chaqiriqlar (CUirr, hot WB) yarim tun beradi → ularning natijasi o'zgarmaydi; himoya.
+
+### GEE sinovlari — eski (HEAD `847f22e` nusxasi) va yangi kod, AYNI so'rov
+
+ETr24 (alfalfa) va ETo24 (grass) — #56; pysebal ETREF_24 / ETPOT_24 — #58 (mm/kun, nuqta):
+
+| Joy, kun | ETr24 | ETo24 | pysebal ETREF_24 | pysebal ETPOT_24 |
+|---|---|---|---|---|
+| Samarqand 04-10 | 5.66 → 5.71 (+0.8 %) | 4.31 → 4.35 | 3.84 → 4.35 (+13 %) | 4.91 → 5.71 (+16 %) |
+| Samarqand 07-11 | 9.39 → 9.40 (+0.1 %) | 7.45 → 7.46 | 7.19 → 7.46 (+3.7 %) | 9.17 → 9.40 (+2.5 %) |
+| Samarqand 12-10 | 1.32 → 1.38 (+4.8 %) | 1.10 → 1.16 | 0.77 → 1.16 (+49 %) | 1.14 → 1.38 (+21 %) |
+| Bushland 07-09 | 5.09 → 5.11 | 4.04 → 4.06 | 5.64 → 4.06 (**−28 %**) | 7.69 → 5.11 (−34 %) |
+| Bushland 07-12 | 11.53 → 11.53 | 8.66 → 8.66 | 10.01 → 8.66 (−13 %) | 14.32 → 11.53 (−20 %) |
+| Bushland 12-10 | 3.90 → 3.93 (+0.9 %) | 2.61 → 2.64 | 2.91 → 2.64 (−9 %) | 4.76 → 3.93 (−17 %) |
+| **Iyul jami**, Samarqand | 316.8 → 318.4 (+0.5 %) | — | 233.8 → 240.5 (+2.9 %) | 310.0 → 318.4 (+2.7 %) |
+| **Iyul jami**, Bushland | 337.2 → 336.5 (−0.2 %) | — | 267.6 → 251.5 (−6.0 %) | 371.5 → 336.5 (−9.4 %) |
+
+Yangi pysebal ETREF_24 = ETo24, ETPOT_24 = ETr24 (aynan) — rejimlar endi bir xil referens ET ishlatadi. Qishki farq katta: soatlik yig'indida Ra davri tuzatilishi (#56) past quyoshda ko'proq sezilarli (+4.8 %); pysebal'da qo'shimcha UTC kun (Samarqand = mahalliy 05:00→05:00) va kunlik-qadam formulasi.
+
+Instant ETR_INST (#57), overpass nuqtasi: Samarqand (t = 6.18 UTC, 3 sahna) −0.3 %; Bushland (t = 17.33–17.44 UTC) 0.0 … −0.1 %.
+
+`get_daily_era5_aggregate` (#59), Samarqand 07-11, UTC+5: yarim tun bilan T_min 21.74 °C; `'2023-07-11T06:11'` bilan eski 23.85 °C (siljigan oyna) → yangi 21.74 °C (aynan).
+
+pysebal to'liq zanjir (Samarqand 20 km, 2023-07-11, ekinzor o'rtachasi) — sahna: ET_24 6.1415 → 6.1415 (o'zgarmadi), ETREF_24 7.19 → 7.47 (+3.8 %), ETPOT_24 9.20 → 9.43 (+2.6 %), MOISTURE_STRESS 0.671 → 0.652, LUE 0.0738 → 0.0713, BIOMASS_PROD 8.35 → 8.05 kg/ha/kun (−3.6 %), KC 0.856 → 0.823; oylik iyul: ET_MONTHLY 178.67 → 178.67, ETREF 231.2 → 238.6 (+3.2 %), ETPOT 306.4 → 315.7 (+3.0 %), DEFICIT 127.7 → 137.1 (+7.3 %), TACT/EACT o'zgarmadi.
+
+---
+
+## #60–#66 — C guruhi: pysebal T/E, qiya yuza ulanishi, Milliy C_rad, ETRF_RAW/C_RAD QC, VIIRS/S30
+
+User qarorlari: C2 → **(b)** (Milliy'ni 1.05 ga cheklamaslik, ETRF_RAW + QC); "qolgan hammasini tuzat, ogohlantirishlarni o'zing kerakli raqamni qo'y, logda ogohlantirsin". GPT fikri bilan birga ko'rib chiqilgan (C1: qayta clamp yo'q; C6: target chiziqli to'ldiriladi, TAU_SW allaqachon #47 da olib tashlangan).
+
+### #60 (C5) — pysebal oylik TACT/EACT
+
+**Oldin** (`monthly_analytics.compute_monthly_et_components`):
+```python
+scene_rn24_mean = scene_col.select('RN24').mean().max(1)      # BUTUN mavsum sahnalari
+rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
+tact_day = interp.select('TACT_24').multiply(rad_ratio)
+eact_day = et_day.subtract(tact_day).max(0)                   # T > ET bo'lsa E = 0, T + E ≠ ET
+```
+**Keyin:**
+```python
+tact_day = interp.select('BENEFICIAL_FRACTION').multiply(et_day)   # f_T = TACT_24/ET_24 (0–1), AYNI sahna
+eact_day = et_day.subtract(tact_day)                               # T + E = ET
+```
+`BENEFICIAL_FRACTION` sahnada allaqachon bor edi (et_decomposition) va interpolyatsiya ro'yxatida edi.
+
+GEE (Samarqand 20 km, pysebal, point, ekinzor o'rtachasi, mm/oy):
+
+| Sinov | Oy | ET | T eski → yangi | E eski → yangi | |T+E−ET| eski (o'rt / maks) | T > ET piksel (eski) |
+|---|---|---|---|---|---|---|
+| sahnalar may–avg (12 ta), eski kod vs yangi kod | 2023-05 | 142.6 | 54.4 → 54.1 | 88.2 → 88.4 | 0.004 / 2.1 | 0 % |
+| — " — | 2023-07 | 157.8 | 58.4 → 57.5 | 99.4 → 100.3 | 0.010 / 5.3 | 0 % |
+| sahnalar may–okt (20 ta), eski formula qayta tuzilgan | 2023-04 | 115.6 | 57.9 → 49.2 (−15 %) | 58.2 → 66.5 | 0.47 / 36.9 | 3.4 % |
+| — " — | 2023-07 | 157.8 | 68.9 → 57.5 (−17 %) | 89.0 → 100.3 | 0.17 / 22.3 | 0.2 % |
+| — " — | 2023-10 | 50.7 | **6.7 → 14.4 (+115 %)** | 44.0 → 36.3 | 0 / 0 | 0 % |
+
+Yangi kodda |T+E−ET| = 0 (barcha oylar). Eski formula T ni mavsum o'rtacha Rn24 ga bog'lardi: yozda oshirar, kuzda ikki barobar kamaytirardi; xato mavsum qanchalik uzun bo'lsa shuncha katta. ET o'zgarmaydi.
+
+### #61 (C4) — `run(sloping_terrain=…)` ulanishi
+
+**Oldin:** `run()` da parametr yo'q → tayl va ROI yo'lidagi `process_tile`, `_export_monthly` (4 joy), CSV `compute_monthly_et`, validate — hammasi `False`; faqat `run_polygons` ulangan edi.
+**Keyin:** `run(sloping_terrain=False)` → `process_tile` (2), `_export_monthly` (4), `_export_zonal_csv` (→ `compute_monthly_et`, `consumptive_use.compute_all`), validate. pysebal oylik (`compute_all_monthly` → ET/komponentlar/biomassa) ham: `RA24_RATIO` eng yaqin sahnadan, `Rs24_qiya = Rs24·RA24_RATIO` (sahna RS24 bilan bir xil). VIIRS / S30 / Kc_ETo oylik yo'llarida kunlik qiyalik tuzatishi yo'q → `⚠️ OGOHLANTIRISH` logda.
+Sinov (soxta `process_tile`/`_export_*`/`compute_monthly_et`, kwarg ushlab qolindi): True/False — tayl yo'lida 4 chaqiriq, ROI yo'lida 3 chaqiriq, hammasi to'g'ri qiymat; Kc_ETo + slope → ogohlantirish chiqdi. Standart `False` — hozirgi natijalar o'zgarmaydi.
+
+### #62 (C3) — SEBAL_Milliy qiya yuza
+
+**Oldin:** `ET_24 = ET_inst × Rs24/SSRD` (tekis yuza nisbati) — `C_RAD` hisoblanardi, lekin Milliy'da ishlatilmasdi.
+**Keyin:** `ET_24 = ET_inst × Rs24/SSRD × C_rad` (compute_daily_et); oylik/CUirr seriyasida `SOLAR_FRAC × C_RAD × Rs24`. Asos: ET_inst·(Rs24/Rs_inst)_piksel = ET_inst·(Rs24/SSRD)_tekis·C_rad, C_rad = (Rso_inst_flat/Rso_inst_px)·(Rso24_px/Rso24_flat) — SEBAL_ID'dagi ETrF24 = C_rad·ETrF_inst bilan bir xil; ikki marta hisoblash yo'q.
+
+GEE (Zarafshon tizmasi etagi, 66.95°E 39.45°N, 12 km, 2023-07-11, SEBAL_Milliy, sloping_terrain=True):
+
+| Hudud | Qiyalik o'rt | C_RAD o'rt (min–max) | ET_24 C_rad'siz → bilan | Iyul oylik |
+|---|---|---|---|---|
+| butun ROI | 11.7° | 1.040 (0.79–2.00) | 1.811 → 1.877 mm/kun | 63.2 → 65.8 mm (+4.1 %) |
+| ekinzor | 2.2° | 1.003 (0.91–1.13) | 4.570 → 4.579 (+0.2 %) | — |
+| qiyalik > 10° | 19.4° | 1.078 (0.79–2.00) | 0.612 → 0.735 (+20 %) | 30.0 → 34.9 mm (+16.5 %) |
+
+### #63 (C2, variant b) — ETRF_RAW + QC
+
+**Keyin** (compute_daily_et, SEBAL_ID oilasi): `ETRF_RAW = ET_inst/ETr_inst` (cheklanmagan) bandi; `ETRF_INST = ETRF_RAW.clamp(0, 1.05)` — SEBAL_ID ET_24 undan (o'zgarmadi); SEBAL_Milliy ET_24 xom ET_inst dan (o'zgarmadi — cheklanmaydi). `ETRF_RAW` → `CSV_LYS_BANDS` (INST fayli).
+QC `main._daily_qc` (BITTA getInfo, 90 m, ekinzor): `pct_etrf_gt110`, `etrf_raw_p99` → QC CSV. **Chegara:** `ETRF_RAW_WARN = 1.10`, `ETRF_RAW_WARN_PCT = 1.0 %` (cold anchor 1.05 — undan 5 % yuqori piksel ekinzorning 1 %idan ko'p bo'lsa sahna nam yoki cold anchor issiq bo'lishi mumkin).
+GEE (Samarqand, iyul, SEBAL_Milliy): 07-03 0.09 % (p99 1.027), 07-11 0.02 % (1.019), 07-19 0.93 % (1.098), 07-27 0.62 % (1.082) — chegaradan past, ogohlantirish yo'q. 07-03 sahna: ETRF_RAW maks 1.085 vs ETRF_INST maks 1.050.
+
+### #64 (C1) — C_RAD / RA24_RATIO clamp QC
+
+ETrF24 = ETrF_inst × C_rad dan keyin qayta clamp **qo'yilmadi** (ETr24 tekis yuza uchun — quyoshli qiyalikda ETrF24 > 1.05 fizik). QC: `pct_crad_lo`, `pct_crad_hi` — `C_RAD` (SEBAL_ID oilasi) yoki `RA24_RATIO` (SEBAL_B, pysebal) [0.5, 2.0] chegarasidagi ROI piksellari. **Chegara:** `CRAD_CLAMP_WARN_PCT = 1.0 %`.
+GEE (Zarafshon etagi, 07-11): SEBAL_Milliy C_RAD ≥ 2.0 — 0.14 %, ≤ 0.5 — 0 %; SEBAL_B RA24_RATIO — 0 % / 0 % → ogohlantirish yo'q. Chegaralar vaqtincha 0.5 % / 0.1 % ga pasaytirilganda ikkala ogohlantirish logda va QC CSV'da to'g'ri chiqdi.
+(Sinov paytida topilgan o'z xatoyim tuzatildi: yagona `mean` reduktor kalitlari `LO`/`HI`, `LO_mean` emas — QC ustunlari bo'sh chiqqan edi.)
+
+### #65 (C6) — VIIRS / S30
+
+| Joy | Oldin | Keyin |
+|---|---|---|
+| `interp_radiation_bands` (VIIRS Lambda ALBEDO) | `ma._interpolate_bands`: (oldingi+keyingi)/2, bulutli piksel → mavsum o'rtachasi | `daily_et._nearest_valid` (eng yaqin yaroqli sahna) |
+| `_daily_etref` (VIIRS KC, S30) | sahna ETREF_24 × Rn24(kun)/Rn24(sahna), clamp 1.5 (proksi; midpoint + mavsum o'rtachasi) | `daily_et.get_daily_etr24(ref_type='grass', utc_offset)` — o'sha kun, soatlik yig'indi, mahalliy kun (sahna ETREF_24 bilan AYNI usul) |
+| `fill_temporal_gaps` (VIIRS target) | tasvir darajasida `before.first()/after.first()` — o'sha tasvirda maskali piksel shu kuni BO'SH | piksel darajasida (qualityMosaic; S30 `interp_temporal_per_pixel` mantig'i) |
+| S30 `_daily_etref(anchors, day, tile_roi)` | `utc_offset` yo'q → Rs24/ETREF UTC kun (#55 da o'tkazib yuborilgan) | `utc_offset=info['utc_offset']` |
+
+GEE: per-piksel to'ldirish (sintetik: 07-01 chap yarmi maskali = 1, 07-09 = 5, kun 07-05) — chap: eski **bo'sh** → yangi 5; o'ng: 3 → 3.
+ETREF (Samarqand ekinzor, mm/kun) eski proksi → yangi: 07-03 (sahna kuni) 7.535 → 7.535 = sahna ETREF_24; 07-05 7.10 → 6.67 (−6.2 %); 07-20 8.23 → 7.96 (−3.3 %); 07-28 6.50 → 6.47.
+ALBEDO 07-20 (ekinzor): 0.1683 → 0.1693.
+**VIIRS oylik — birinchi to'liq runtime** (iyul 2023, 4 sahna, ndvi modeli, ekinzor): kc 168.5 mm, lambda 185.9 mm; standart SEBAL_Milliy oylik 161.7 mm (VIIRS yo'llari o'z kunlik usuli bilan: Λ×Rn24 / KC×ETo).
+
+### #66 — S30 `interp_temporal_per_pixel` runtime xatosi
+
+**Oldin:** `td = ee.Number(...)`; `td.subtract(bt)` (bt — Image) → GEE: *"Number.subtract, argument 'right': Invalid type. Expected type: Number. Actual type: Image"* — `linear` ham, `nearest` ham HAR DOIM xato → S30 oylik ET hech qachon hisoblanmagan. (Yangi VIIRS per-piksel funksiyasida ham shu ifoda bor edi — sinovda ushlandi.)
+**Keyin:** `tdi = ee.Image.constant(td).toDouble()`; `tdi.subtract(bt)`. Sinov (sintetik, kun 07-05): linear 3, nearest 1 (to'g'ri).
+
+Eslatma: `monthly_analytics._interpolate_bands` va `_get_daily_rs24` endi hech qayerda chaqirilmaydi (o'lik kod — olib tashlanmadi).
+
+### #67 — O'lik kod olib tashlandi
+
+User: "ha olib tashla ishlatilmasa". Tekshiruv (`grep` butun loyiha, worktree'siz): ikkala funksiya faqat ta'rifda va izohlarda uchraydi — hech qayerda chaqirilmaydi.
+Olib tashlandi (`monthly_analytics.py`, 150 qator): `_get_daily_rs24` (ERA5 Rs24, UTC kun — #55 dan keyin ishlatilmaydi), `_interpolate_bands` (midpoint + bulutli piksel → mavsum o'rtachasi — #48/#65 dan keyin ishlatilmaydi) va uning izohga olingan eski nusxasi; modul docstring'i yangilandi ("eng yaqin yaroqli sahna"). `viirs_downscaling.py`: `from . import monthly_analytics as ma` (endi ishlatilmaydi) olib tashlandi.
+Sinov: `py_compile` barcha modullar; gee_env'da `main`, `viirs_downscaling`, `hls_s30_etrf`, `monthly_analytics` import OK; VIIRS `fill_temporal_gaps` sintetik sinovi (chap 5, o'ng 3) — o'zgarmadi.
 

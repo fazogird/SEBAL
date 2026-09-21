@@ -7,8 +7,9 @@ Usul: Λ/FPAR/LUE interpolyatsiya + ERA5 har kungi radiatsiya.
 × 31 EMAS! Har kun alohida hisoblanadi.
 
 Mantiq:
-  1. Landsat sahnalar orasida parametrlarni interpolyatsiya
-  2. ERA5 dan har kungi Rs24 (quyosh radiatsiyasi)
+  1. Har kun, har piksel — vaqt bo'yicha ENG YAQIN YAROQLI Landsat sahna
+     (daily_et._nearest_valid — sahnaning vakillik davri)
+  2. ERA5 dan har kungi Rs24 (quyosh radiatsiyasi, mahalliy kun)
   3. Har kun: ET_kun, Biomass_kun hisoblash
   4. Oylik: yig'indi (ET, biomass) va o'rtacha (kc, NDVI, SM)
 
@@ -22,160 +23,11 @@ from . import config as cfg
 
 
 # ==============================================================
-# ERA5 KUNLIK RADIATSIYA
-# ==============================================================
-
-def _get_daily_rs24(date, roi):
-    """ERA5 dan bitta kun uchun Rs24 (W/m²)."""
-    day_start = ee.Date(date)
-    day_end = day_start.advance(1, 'day')
-
-    ssrd = (ee.ImageCollection(cfg.ERA5['collection'])
-            .filterDate(day_start, day_end)
-            .filterBounds(roi)
-            .select(cfg.ERA5['bands']['ssrd'])
-            .sum()
-            .divide(cfg.DAILY_ET['seconds_per_day']))
-
-    return ssrd.rename('RS24_DAILY')
-
-
-# ==============================================================
-# INTERPOLYATSIYA — eng yaqin Landsat sahnadan
-# ==============================================================
-
-# def _interpolate_bands(scene_collection, target_date, bands):
-#     """
-#     Landsat sanalar orasida lineer interpolyatsiya.
-#     Bulut/NoData teshiklari composite mean bilan to'ldiriladi.
-#     """
-#     target_millis = target_date.millis()
-
-#     before_col = (scene_collection
-#                   .filter(ee.Filter.lte('system:time_start', target_millis))
-#                   .sort('system:time_start', False))
-
-#     after_col = (scene_collection
-#                  .filter(ee.Filter.gte('system:time_start', target_millis))
-#                  .sort('system:time_start', True))
-
-#     has_before = before_col.size().gt(0)
-#     has_after = after_col.size().gt(0)
-
-#     # Oy ichidagi barcha mavjud sahnalar bo'yicha piksel-wise mean.
-#     # Bulut teshiklarini to'ldirish uchun fallback.
-#     default_img = scene_collection.select(bands).mean()
-
-#     before_img = ee.Image(ee.Algorithms.If(
-#         has_before,
-#         ee.Image(before_col.select(bands).first()).unmask(default_img),
-#         default_img
-#     ))
-
-#     after_img = ee.Image(ee.Algorithms.If(
-#         has_after,
-#         ee.Image(after_col.select(bands).first()).unmask(default_img),
-#         default_img
-#     ))
-
-#     before_millis = ee.Number(ee.Algorithms.If(
-#         has_before,
-#         ee.Date(before_img.get('system:time_start')).millis(),
-#         target_millis
-#     ))
-
-#     after_millis = ee.Number(ee.Algorithms.If(
-#         has_after,
-#         ee.Date(after_img.get('system:time_start')).millis(),
-#         target_millis
-#     ))
-
-#     time_range = after_millis.subtract(before_millis).max(1)
-
-#     weight = (ee.Number(target_millis)
-#               .subtract(before_millis)
-#               .divide(time_range)
-#               .min(1)
-#               .max(0))
-
-#     interpolated = (before_img.multiply(ee.Image(1).subtract(weight))
-#                     .add(after_img.multiply(weight)))
-
-#     result = ee.Image(ee.Algorithms.If(
-#         has_before.And(has_after),
-#         interpolated,
-#         ee.Algorithms.If(has_before, before_img, after_img)
-#     ))
-
-#     # Oxirgi himoya: qolgan NoData joylar ham composite bilan to'ladi
-#     return ee.Image(result).unmask(default_img)
-
-def _interpolate_bands(scene_collection, target_date, bands):
-    """
-    Ikkita eng yaqin Landsat sana orasida — MIDPOINT (o'rtacha) qiymat.
-    Bulut/NoData teshiklari composite mean bilan to'ldiriladi.
-
-    ⚠️ Endi FAQAT viirs_downscaling (o'z anchor-interpolyatsiya usuli) ishlatadi.
-    SEBAL oylik hisoblari (daily_et, bu modulning compute_* funksiyalari)
-    daily_et._nearest_valid (sahnaning vakillik davri) ga o'tkazilgan.
-    Mantiq — chiziqli og'irlik EMAS, pog'onali:
-
-    Agar target_date barcha tasvirlardan OLDIN bo'lsa:
-      -- eng yaqin (birinchi) tasvirning qiymati (ekstrapolyatsiya)
-    Agar target_date barcha tasvirlardan KEYIN bo'lsa:
-      -- eng yaqin (oxirgi) tasvirning qiymati (ekstrapolyatsiya)
-    Aks holda:
-      -- oldingi va keyingi sahna orasidagi BARCHA kunlarga bitta xil
-         qiymat: (before + after) / 2
-    """
-    target_millis = target_date.millis()
-
-    before_col = (scene_collection
-                  .filter(ee.Filter.lte('system:time_start', target_millis))
-                  .sort('system:time_start', False))
-
-    after_col = (scene_collection
-                 .filter(ee.Filter.gte('system:time_start', target_millis))
-                 .sort('system:time_start', True))
-
-    has_before = before_col.size().gt(0)
-    has_after = after_col.size().gt(0)
-
-    # Oy ichidagi barcha mavjud sahnalar bo'yicha piksel-wise mean.
-    # Bulut teshiklarini to'ldirish uchun fallback.
-    default_img = scene_collection.select(bands).mean()
-
-    before_img = ee.Image(ee.Algorithms.If(
-        has_before,
-        ee.Image(before_col.select(bands).first()).unmask(default_img),
-        default_img
-    ))
-
-    after_img = ee.Image(ee.Algorithms.If(
-        has_after,
-        ee.Image(after_col.select(bands).first()).unmask(default_img),
-        default_img
-    ))
-
-    # O'rtacha (midpoint) qiymat: ikki sahna orasidagi BARCHA kunlarga
-    # bir xil qiymat beriladi (chiziqli og'irlik EMAS)
-    interpolated = (before_img.add(after_img)).multiply(0.5)
-
-    result = ee.Image(ee.Algorithms.If(
-        has_before.And(has_after),
-        interpolated,
-        ee.Algorithms.If(has_before, before_img, after_img)
-    ))
-
-    # Oxirgi himoya: qolgan NoData joylar ham composite bilan to'ladi
-    return ee.Image(result).unmask(default_img)
-
-
-# ==============================================================
 # OYLIK ET — Λ interpolyatsiya + ERA5
 # ==============================================================
 
-def compute_monthly_et(scene_images, roi, year, month, utc_offset=0):
+def compute_monthly_et(scene_images, roi, year, month, utc_offset=0,
+                       sloping_terrain=False):
     """
     Oylik ET (mm/month) — daily_et.compute_monthly_et SEBAL_B bilan AYNI mantiq.
 
@@ -190,7 +42,8 @@ def compute_monthly_et(scene_images, roi, year, month, utc_offset=0):
     spd = cfg.DAILY_ET['seconds_per_day']
 
     scene_col = ee.ImageCollection(scene_images)
-    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'LST']
+    interp_bands = ['EVAP_FRAC', 'ALBEDO', 'LST'] + \
+                   (['RA24_RATIO'] if sloping_terrain else [])
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
@@ -199,10 +52,13 @@ def compute_monthly_et(scene_images, roi, year, month, utc_offset=0):
         interp = daily_et._nearest_valid(scene_col.select(interp_bands), current_date)
 
         rs24 = daily_et.get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
+        rs24_s = (rs24.multiply(interp.select('RA24_RATIO'))     # qiya yuza Rs24
+                  if sloping_terrain else rs24)
         albedo = interp.select('ALBEDO')
         evap_frac = interp.select('EVAP_FRAC')
 
-        rn24, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(current_date))
+        rn24, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(current_date),
+                                      rs24_surface=rs24_s)
 
         # λ haroratga bog'liq (Tasumi 3.48): (2.501-0.00236·(Ts-273.15))·10⁶
         lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
@@ -221,7 +77,8 @@ def compute_monthly_et(scene_images, roi, year, month, utc_offset=0):
 # OYLIK BIOMASS — FPAR/LUE interpolyatsiya + ERA5 PAR
 # ==============================================================
 
-def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0):
+def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0,
+                            sloping_terrain=False):
     """
     Oylik biomassa (kg DM/ha/month).
 
@@ -238,7 +95,7 @@ def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0):
     month_start = ee.Date.fromYMD(year, month, 1)
 
     scene_col = ee.ImageCollection(scene_images)
-    interp_bands = ['FPAR', 'LUE']
+    interp_bands = ['FPAR', 'LUE'] + (['RA24_RATIO'] if sloping_terrain else [])
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
@@ -250,7 +107,9 @@ def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0):
         fpar = interp.select('FPAR')
         lue = interp.select('LUE')
 
-        # PAR = Rs24 × 0.48 (W/m²)
+        # PAR = Rs24 × 0.48 (W/m²); qiya yuza — Rs24 × RA24_RATIO (sahna RS24 kabi)
+        if sloping_terrain:
+            rs24 = rs24.multiply(interp.select('RA24_RATIO'))
         par = rs24.multiply(0.48)
 
         # APAR = FPAR × PAR (W/m²)
@@ -275,7 +134,8 @@ def compute_monthly_biomass(scene_images, roi, year, month, utc_offset=0):
 # OYLIK ET DECOMPOSITION — ETref, ETpot, deficit, T/E
 # ==============================================================
 
-def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
+def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0,
+                                  sloping_terrain=False):
     """
     Oylik ET komponentlari.
 
@@ -284,9 +144,10 @@ def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
     interpolyatsiya/scaling QILINMAYDI (chunki bu sof meteorologik
     miqdor, har kuni aniq hisoblash mumkin).
 
-    TACT_24, EACT_24 — hali ham Landsat sahnalardan interpolyatsiya
-    (chunki bular LAI/canopy-ga bog'liq, faqat Landsat orqali biladi),
-    radiatsiya nisbati bilan masshtablanadi.
+    TACT, EACT — sahnaning transpiratsiya ULUSHI f_T = TACT_24/ET_24
+    (BENEFICIAL_FRACTION, 0–1; LAI/kanopiyga bog'liq — faqat Landsat biladi)
+    eng yaqin sahnadan × o'sha kunning ET'i: TACT = f_T·ET, EACT = ET − TACT →
+    har kuni T + E = ET (massa balansi).
     """
     from . import ref_et
     from . import daily_et
@@ -297,12 +158,11 @@ def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
 
     scene_col = ee.ImageCollection(scene_images)
 
-    scene_rn24_mean = (scene_col.select('RN24').mean().max(1))
-
     # ETREF_24/ETPOT_24 ENDI shu ro'yxatda YO'Q — Landsat'dan
     # interpolyatsiya qilinmaydi, alohida, to'g'ridan-to'g'ri hisoblanadi
     interp_bands = ['EVAP_FRAC', 'ALBEDO', 'LST',
-                    'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION']
+                    'TACT_24', 'EACT_24', 'KC', 'BENEFICIAL_FRACTION'] + \
+                   (['RA24_RATIO'] if sloping_terrain else [])
 
     def compute_day(day_offset):
         day_offset = ee.Number(day_offset)
@@ -312,10 +172,11 @@ def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
         rs24 = daily_et.get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
 
         albedo = interp.select('ALBEDO')
+        rs24_s = (rs24.multiply(interp.select('RA24_RATIO'))     # qiya yuza Rs24
+                  if sloping_terrain else rs24)
         rn24_actual, _ = daily_et.daily_rn24(albedo, rs24,
-                                             daily_et.get_daily_ra24(current_date))
-
-        rad_ratio = rn24_actual.divide(scene_rn24_mean).clamp(0, 1.5)
+                                             daily_et.get_daily_ra24(current_date),
+                                             rs24_surface=rs24_s)
 
         # ET (haqiqiy) — λ haroratga bog'liq (Tasumi 3.48)
         lam = (interp.select('LST').subtract(273.15).multiply(-0.00236)
@@ -324,15 +185,17 @@ def compute_monthly_et_components(scene_images, roi, year, month, utc_offset=0):
                   .multiply(rn24_actual).multiply(spd).divide(lam).max(0))
 
         # ETREF, ETPOT — ENDI to'g'ridan-to'g'ri, mustaqil, aniq hisob
-        refs = ref_et.compute_reference_ets_for_date(current_date, roi)
+        refs = ref_et.compute_reference_ets_for_date(current_date, roi, utc_offset=utc_offset)
         etref_day = refs.select('ETREF_24')
         etpot_day = refs.select('ETPOT_24')
 
         deficit_day = etpot_day.subtract(et_day).max(0)
 
-        # TACT, EACT — hali ham Landsat-interpolyatsiya (LAI-bog'liq)
-        tact_day = interp.select('TACT_24').multiply(rad_ratio)
-        eact_day = et_day.subtract(tact_day).max(0)
+        # TACT = f_T × ET_kun (f_T = BENEFICIAL_FRACTION = TACT_24/ET_24, AYNI sahnadan);
+        # EACT = ET − TACT → T + E = ET. Oldin: TACT_24 × Rn24_kun / (MAVSUM sahnalari
+        # o'rtacha RN24), clamp 1.5 — yozda T > ET, E = 0 bo'lishi mumkin edi.
+        tact_day = interp.select('BENEFICIAL_FRACTION').multiply(et_day)
+        eact_day = et_day.subtract(tact_day)
 
         return (et_day.rename('ET')
                 .addBands(etref_day.rename('ETREF'))
@@ -490,7 +353,8 @@ def compute_monthly_averages(scene_images):
 # MAIN: To'liq oylik hisoblash
 # ==============================================================
 
-def compute_all_monthly(scene_images, roi, year, month, utc_offset=0):
+def compute_all_monthly(scene_images, roi, year, month, utc_offset=0,
+                        sloping_terrain=False):
     """
     Barcha oylik analitikalarni hisoblash.
 
@@ -514,10 +378,12 @@ def compute_all_monthly(scene_images, roi, year, month, utc_offset=0):
     from . import daily_et
     n_in_month, max_gap = daily_et.month_scene_qc(scene_images, year, month)   # QC
     et_components = compute_monthly_et_components(
-        scene_images, roi, year, month, utc_offset=utc_offset)
+        scene_images, roi, year, month, utc_offset=utc_offset,
+        sloping_terrain=sloping_terrain)
 
     print(f"    [{year}-{month:02d}] Biomassa (interpolyatsiya)...")
-    biomass = compute_monthly_biomass(scene_images, roi, year, month, utc_offset=utc_offset)
+    biomass = compute_monthly_biomass(scene_images, roi, year, month, utc_offset=utc_offset,
+                                      sloping_terrain=sloping_terrain)
 
     print(f"    [{year}-{month:02d}] O'rtacha bandlar...")
     averages = compute_monthly_averages(scene_images)

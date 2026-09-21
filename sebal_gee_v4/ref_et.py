@@ -139,7 +139,9 @@ class RefETCalculator:
 
     def _omega_mid_hour(self, lon_deg, doy, hour):
         """Quyosh soat burchagi omega [rad], soat o'rtasi. FAO-56 Eq 31.
-        UTC + haqiqiy boylam (lon/15) orqali local solar vaqt."""
+        UTC + haqiqiy boylam (lon/15) orqali local solar vaqt.
+        hour — 1 soatlik davrning BOSHI (UTC, kasr bo'lishi mumkin): davr
+        [hour, hour+1], o'rtasi hour+0.5."""
         pi = math.pi
         Sc = self._seasonal_correction(doy)
         t_mid = ee.Number(hour).add(0.5)
@@ -255,8 +257,10 @@ def get_daily_era5_aggregate(date, roi, utc_offset=0):
     to'liq kun kerak, lekin barcha operatsiyalar server-side, bitta
     so'rov ichida).
     """
-    # Mahalliy standart kalendar kun → UTC oynasi
-    day_start = ee.Date(date).advance(-utc_offset, 'hour')
+    # Mahalliy standart kalendar kun → UTC oynasi. Avval YARIM TUNGA qirqiladi
+    # (get_daily_solar_radiation / compute_etr24_hourly_sum bilan bir xil):
+    # vaqtli sana (masalan overpass 06:11 UTC) berilsa oyna overpassdan boshlanmasin.
+    day_start = ee.Date(ee.Date(date).format('YYYY-MM-dd')).advance(-utc_offset, 'hour')
     day_end = day_start.advance(1, 'day')
 
     hourly = (ee.ImageCollection(cfg.ERA5['collection'])
@@ -358,7 +362,11 @@ def compute_instant_etr(image, ref_type='alfalfa', band_name='ETR_INST'):
 
     date = ee.Date(img.get('system:time_start'))
     doy = ee.Number(date.getRelative('day', 'year')).add(1)
-    hour = ee.Number(date.get('hour'))     # UTC soat (omega lon/15 bilan localga o'tadi)
+    # Ra oynasi = SSRD oynasi: SSRD (preprocessing.get_era5_for_image) overpass
+    # vaqti t MARKAZIDAGI 1 soatlik yig'indiga interpolyatsiya qilingan → Ra ham
+    # [t−0.5, t+0.5]. Oldin butun soat floor(t) → [floor(t), floor(t)+1] edi
+    # (overpass 6.18 UTC da markaz 6.5 — Rso, demak Rs/Rso va Rnl siljigan).
+    t_h = date.difference(ee.Date(date.format('YYYY-MM-dd')), 'hour')   # kasrli UTC soat
     dr, dec = calc._dr_decl(doy)
 
     # --- Meteo kirishlar (bizning ERA5 bandlaridan) ---
@@ -375,7 +383,7 @@ def compute_instant_etr(image, ref_type='alfalfa', band_name='ETR_INST'):
     Gamma = calc._gamma(P)
 
     # --- Radiatsiya (soatlik) ---
-    Ra = calc.Ra_hourly(lat_rad, lon_deg, doy, hour, dr, dec)
+    Ra = calc.Ra_hourly(lat_rad, lon_deg, doy, t_h.subtract(0.5), dr, dec)
     Rso = calc.Rso(Ra, dem)
     Rns = Rs.multiply(1.0 - calc.albedo)
     Rnl = calc.Rnl_hourly(T.add(273.16), ea, Rs, Rso)
@@ -427,7 +435,11 @@ def compute_etr24_hourly_sum(date, roi, dem, ref_type='alfalfa', utc_offset=0):
     g_day, g_night = (0.04, 0.20) if ref_type == 'alfalfa' else (0.1, 0.5)
 
     def to_etr(img):
-        d = ee.Date(img.get('system:time_start'))
+        # ERA5-Land akkumulyativ ssrd_hourly yorlig'i T → [T−1h, T] davri
+        # (preprocessing.get_era5_for_image konvensiyasi; GEE: ochiq kun Rs/Ra
+        # [T−1,T] da simmetrik 0.36→0.78→0.41, [T,T+1] da 0.07→1.88). Ra/Rso
+        # AYNI davr uchun: davr boshi T−1h (oldin T — 1 soat kechikkan edi).
+        d = ee.Date(img.get('system:time_start')).advance(-1, 'hour')   # davr boshi
         doy = ee.Number(d.getRelative('day', 'year')).add(1)
         hour = ee.Number(d.get('hour'))
         dr, dec = calc._dr_decl(doy)
@@ -461,7 +473,7 @@ def compute_etr24_hourly_sum(date, roi, dem, ref_type='alfalfa', utc_offset=0):
 # ETREF_24 (grass) + ETPOT_24 (alfalfa) — BITTA ERA5 so'rovdan
 # ==============================================================
 
-def compute_reference_ets_daily(image, roi):
+def compute_reference_ets_daily(image, roi, utc_offset=0):
     """
     Kunlik referens ET'larni hisoblab, image'ga qo'shadi:
       ETREF_24 — grass (FAO-56 ETo) — meteorologik referens
@@ -469,33 +481,31 @@ def compute_reference_ets_daily(image, roi):
                  baland/g'adir-budur ekinlarga (paxta, bug'doy to'liq
                  qoplamda) yaqinroq proksi (METRIC/Allen an'anasi)
 
-    Ikkalasi HAM bitta kunlik ERA5 agregatsiyadan (get_daily_era5_
-    aggregate) hisoblanadi — ikki marta ERA5 so'rov yuborilmaydi,
-    faqat Cn/Cd konstantalari (referens turi) farq qiladi.
+    Ikkalasi ham 24 SOATLIK ASCE PM YIG'INDISI (compute_etr24_hourly_sum —
+    kitob App.B; ETr24 / compute_etref_daily bilan AYNI usul) va MAHALLIY
+    standart kalendar kun (utc_offset). Oldin: UTC kun + kunlik-qadam
+    (get_daily_era5_aggregate) — boshqa rejimlardan farqli edi.
     """
-    day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
-    day_start = ee.Date(day_str)
-
-    daily_met = get_daily_era5_aggregate(day_start, roi)
+    day_start = ee.Date(ee.Date(image.get('system:time_start')).format('YYYY-MM-dd'))
     dem = image.select('DEM')
+    return image.addBands(_reference_ets_hourly(day_start, roi, dem, utc_offset))
 
-    # Grass — meteorologik referens
-    grass_calc = RefETCalculator(ref_type='grass')
-    grass_result = grass_calc.calculate(daily_met, dem, mode='daily')
-    etref = grass_result.select('ETr').rename('ETREF_24')
 
-    # Alfalfa — potensial (yuqori chegara)
-    alfalfa_calc = RefETCalculator(ref_type='alfalfa')
-    alfalfa_result = alfalfa_calc.calculate(daily_met, dem, mode='daily')
-    etpot = alfalfa_result.select('ETr').rename('ETPOT_24')
-
-    return image.addBands(etref).addBands(etpot)
+def _reference_ets_hourly(day_start, roi, dem, utc_offset):
+    """ETREF_24 (grass) + ETPOT_24 (alfalfa) — soatlik yig'indi, mahalliy kun."""
+    etref = (compute_etr24_hourly_sum(day_start, roi, dem, ref_type='grass',
+                                      utc_offset=utc_offset)
+             .select('ETr').rename('ETREF_24'))
+    etpot = (compute_etr24_hourly_sum(day_start, roi, dem, ref_type='alfalfa',
+                                      utc_offset=utc_offset)
+             .select('ETr').rename('ETPOT_24'))
+    return etref.addBands(etpot)
 
 # ==============================================================
 # ETREF_24 + ETPOT_24 — istalgan kalendar kun uchun, Landsat'siz
 # ==============================================================
 
-def compute_reference_ets_for_date(date, roi):
+def compute_reference_ets_for_date(date, roi, utc_offset=0):
     """
     Kunlik ETREF_24 (grass) + ETPOT_24 (alfalfa) — Landsat sahnaga
     BOG'LIQ EMAS (sof meteorologik + astronomik hisob).
@@ -504,33 +514,25 @@ def compute_reference_ets_for_date(date, roi):
     chaqiriladi — interpolyatsiya yoki radiatsiya-nisbat bilan
     "cho'zish" shart emas, chunki bu meteorologik miqdor har doim
     ERA5'dan mustaqil, aniq hisoblanadi.
+    Soatlik yig'indi + MAHALLIY kun (utc_offset) — compute_reference_ets_daily
+    bilan AYNI usul (oldin UTC kun + kunlik-qadam).
     """
-    day_start = ee.Date(date)
-    daily_met = get_daily_era5_aggregate(day_start, roi)
-
+    day_start = ee.Date(ee.Date(date).format('YYYY-MM-dd'))
     dem = (ee.Image(cfg.DEM['collection'])
            .select(cfg.DEM['band']).rename('DEM'))
-
-    grass_calc = RefETCalculator(ref_type='grass')
-    grass_result = grass_calc.calculate(daily_met, dem, mode='daily')
-    etref = grass_result.select('ETr').rename('ETREF_24')
-
-    alfalfa_calc = RefETCalculator(ref_type='alfalfa')
-    alfalfa_result = alfalfa_calc.calculate(daily_met, dem, mode='daily')
-    etpot = alfalfa_result.select('ETr').rename('ETPOT_24')
-
-    return etref.addBands(etpot).set('system:time_start', day_start.millis())
+    return (_reference_ets_hourly(day_start, roi, dem, utc_offset)
+            .set('system:time_start', day_start.millis()))
 
 
 # ==============================================================
 # Landsat sahnaga qo'shish uchun — endi yuqoridagini chaqiradi
 # ==============================================================
 
-def compute_reference_ets_daily2(image, roi):
+def compute_reference_ets_daily2(image, roi, utc_offset=0):
     """
     Landsat sahna sanasiga mos ETREF_24/ETPOT_24'ni image'ga qo'shadi.
     (et_decomposition.py uchun — sahna-darajasidagi diagnostika.)
     """
     day_str = ee.Date(image.get('system:time_start')).format('YYYY-MM-dd')
-    refs = compute_reference_ets_for_date(day_str, roi)
+    refs = compute_reference_ets_for_date(day_str, roi, utc_offset=utc_offset)
     return image.addBands(refs)

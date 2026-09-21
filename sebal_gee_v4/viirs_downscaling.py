@@ -34,7 +34,6 @@ import numpy as np
 
 from . import config as cfg
 from . import daily_et
-from . import monthly_analytics as ma
 
 
 # ==============================================================
@@ -541,9 +540,10 @@ def compute_conservation_metrics(target_30, coarse_target, roi,
 
 def interp_radiation_bands(anchor_images, target_date):
     """albedo ni anchorlar orasidan interpolyatsiya (reuse). τ endi kunlik τ24 = Rs24/Ra24."""
-    col = ee.ImageCollection([a['image'] for a in anchor_images])
-    interp = ma._interpolate_bands(col, ee.Date(target_date), ['ALBEDO'])
-    return interp.select('ALBEDO')
+    # Eng yaqin YAROQLI anchor (piksel bo'yicha) — daily_et._nearest_valid; oldin
+    # ma._interpolate_bands: (oldingi+keyingi)/2 va bulutli piksel → mavsum o'rtachasi.
+    col = ee.ImageCollection([a['image'] for a in anchor_images]).select(['ALBEDO'])
+    return daily_et._nearest_valid(col, ee.Date(target_date)).select('ALBEDO')
 
 
 # ==============================================================
@@ -655,46 +655,46 @@ def fill_temporal_gaps(source_collection, target_date, method='linear'):
     """
     source_collection: clear kunlardagi 'target_30' tasvirlari
     (har birida system:time_start). target_date uchun target_30 ni
-    vaqt bo'yicha to'ldiradi.
-      linear  : eng yaqin oldingi/keyingi orasida lineer interpolyatsiya
-      nearest : eng yaqin kuzatuv
+    vaqt bo'yicha HAR PIKSEL uchun to'ldiradi (hls_s30_etrf.
+    interp_temporal_per_pixel bilan bir xil mantiq):
+      linear  : piksel uchun eng yaqin YAROQLI oldingi/keyingi orasida lineer
+      nearest : piksel uchun eng yaqin yaroqli kuzatuv
+    Bir tomon bo'sh (oy cheti yoki piksel u tomonda doim maskali) → mavjud
+    tomon bilan to'ldiriladi. Ikkala tomonda ham yaroqli qiymat bo'lmasa — bo'sh.
+    Oldin: TASVIR darajasida before.first()/after.first() — o'sha tasvirda maskali
+    piksel shu kuni bo'sh qolardi (oylik yig'indidan tushib qolardi).
     """
-    td = ee.Date(target_date).millis()
-    col = source_collection
+    td = ee.Number(ee.Date(target_date).millis())
 
-    before = (col.filter(ee.Filter.lte('system:time_start', td))
-              .sort('system:time_start', False))
-    after = (col.filter(ee.Filter.gte('system:time_start', td))
-             .sort('system:time_start', True))
+    def with_t(img):
+        v = img.select('target_30')
+        t = (ee.Image.constant(img.get('system:time_start')).toDouble()
+             .updateMask(v.mask()).rename('t'))
+        return v.addBands(t)                     # select() xususiyatlarni saqlaydi
 
-    has_b = before.size().gt(0)
-    has_a = after.size().gt(0)
-    default_img = col.mean()
+    sc = source_collection.map(with_t)
+    before = sc.filter(ee.Filter.lte('system:time_start', td))
+    after = sc.filter(ee.Filter.gte('system:time_start', td))
+    z = ee.Image.constant(0).updateMask(ee.Image.constant(0))
+    empty = z.rename('target_30').addBands(z.rename('t'))
 
-    b_img = ee.Image(ee.Algorithms.If(has_b, before.first(), default_img))
-    a_img = ee.Image(ee.Algorithms.If(has_a, after.first(), default_img))
+    # per-piksel: eng so'nggi yaroqli (max t) / eng yaqin keyingi (max −t)
+    b = ee.Image(ee.Algorithms.If(before.size().gt(0), before.qualityMosaic('t'), empty))
+    after_n = after.map(lambda im: im.addBands(im.select('t').multiply(-1).rename('nt')))
+    a = ee.Image(ee.Algorithms.If(after.size().gt(0), after_n.qualityMosaic('nt'), empty))
 
+    bv, bt = b.select('target_30'), b.select('t')
+    av, at = a.select('target_30'), a.select('t')
+    tdi = ee.Image.constant(td).toDouble()   # ee.Number − Image mumkin emas → Image
     if method == 'nearest':
-        # td ga qaysi yaqin
-        b_t = ee.Number(ee.Algorithms.If(
-            has_b, b_img.get('system:time_start'), td))
-        a_t = ee.Number(ee.Algorithms.If(
-            has_a, a_img.get('system:time_start'), td))
-        pick_b = ee.Number(td).subtract(b_t).abs().lte(
-            a_t.subtract(td).abs())
-        result = ee.Image(ee.Algorithms.If(pick_b, b_img, a_img))
-        return ee.Image(result).rename('target_30')
-
-    # linear
-    b_t = ee.Number(ee.Algorithms.If(has_b, b_img.get('system:time_start'), td))
-    a_t = ee.Number(ee.Algorithms.If(has_a, a_img.get('system:time_start'), td))
-    rng = a_t.subtract(b_t).max(1)
-    w = ee.Number(td).subtract(b_t).divide(rng).min(1).max(0)
-    interp = b_img.multiply(ee.Image(1).subtract(w)).add(a_img.multiply(w))
-    result = ee.Image(ee.Algorithms.If(
-        has_b.And(has_a), interp,
-        ee.Algorithms.If(has_b, b_img, a_img)))
-    return ee.Image(result).rename('target_30')
+        pick_b = tdi.subtract(bt).abs().lte(at.subtract(tdi).abs())
+        out = bv.where(pick_b.Not(), av)
+    else:  # linear
+        w = tdi.subtract(bt).divide(at.subtract(bt).max(1)).clamp(0, 1)
+        out = bv.multiply(ee.Image(1).subtract(w)).add(av.multiply(w))
+    out = out.unmask(bv).unmask(av)          # bir tomonlama — mavjud tomon
+    proj = ee.Image(source_collection.first()).select('target_30').projection()
+    return out.rename('target_30').setDefaultProjection(proj)
 
 
 # ==============================================================
@@ -808,30 +808,19 @@ def build_daily_viirs_downscaled_collection(
 
 def _daily_etref(anchors, date, roi, utc_offset=0):
     """
-    KC mode uchun kunlik ETREF_24 — anchorlardan interpolyatsiya +
-    ERA5 radiatsiya nisbati.
+    KC mode (VIIRS) va HLS S30 uchun kunlik ETREF_24 (grass, mm/kun) — O'SHA KUN
+    uchun BEVOSITA: daily_et.get_daily_etr24(ref_type='grass') — 24 soatlik ASCE PM
+    yig'indisi, MAHALLIY kalendar kun (utc_offset). Sahna ETREF_24 (ref_et.
+    compute_etref_daily → KC = ET_24/ETREF_24) bilan AYNI usul.
 
-    TUZATILDI: avval Rs24 (xom quyosh radiatsiyasi) to'g'ridan-to'g'ri
-    Rn24 (neto radiatsiya)ga bo'linardi — bular boshqa-boshqa fizik
-    miqdorlar. Endi monthly_analytics.py bilan AYNAN bir xil mantiq:
-    avval bugungi Rn24 albedo/tau_sw bilan qayta tiklanadi, keyin
-    Rn24(bugun)/Rn24(sahna o'rtacha) nisbati olinadi.
+    Oldin: sahna ETREF_24 × Rn24(kun)/Rn24(sahna) (clamp 1.5) — ETREF_24, RN24, ALBEDO
+    ma._interpolate_bands bilan (midpoint + bulutli piksel → mavsum o'rtachasi). Bu
+    meteorologik miqdor har kuni ERA5'dan aniq hisoblanadi — proksi kerak emas.
     """
-    col = ee.ImageCollection([a['image'] for a in anchors])
-    interp = ma._interpolate_bands(
-        col, ee.Date(date), ['ETREF_24', 'RN24', 'ALBEDO'])
-
-    etref_scene = interp.select('ETREF_24')
-    rn_scene = interp.select('RN24').max(1)
-    albedo = interp.select('ALBEDO')
-
-    rs24 = daily_et.get_daily_solar_radiation(date, roi, utc_offset=utc_offset)  # mahalliy kun
-
-    # Bugungi Rn24 — daily_et.daily_rn24 bilan bir xil formula (τ24 = Rs24/Ra24)
-    rn24_actual, _ = daily_et.daily_rn24(albedo, rs24, daily_et.get_daily_ra24(date))
-
-    rad_ratio = rn24_actual.divide(rn_scene).clamp(0, 1.5)
-    return etref_scene.multiply(rad_ratio).rename('ETREF_24')
+    dem = ee.Image(anchors[0]['image']).select('DEM')
+    return (daily_et.get_daily_etr24(date, roi, dem, ref_type='grass',
+                                     utc_offset=utc_offset)
+            .rename('ETREF_24'))
 
 
 # ==============================================================

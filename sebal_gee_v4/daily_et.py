@@ -257,8 +257,11 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
             etr_inst = (ref_et.compute_instant_etr(
                 image, ref_type=ref_type, band_name='ETR_INST_REF')
                 .select('ETR_INST_REF').max(0.01))
-        etrf_inst = (et_inst.divide(etr_inst)
-                     .clamp(0, 1.05)         # ET_cold=1.05·ETr → fizik chegara 1.05
+        # ETRF_RAW — CHEKLANMAGAN ET_inst/ETr_inst (QC/diagnostika). SEBAL_ID ET_24
+        # 1.05 da cheklangan ETRF_INST bilan; SEBAL_Milliy ET_24 esa xom ET_inst dan
+        # (cheklanmaydi — user qarori (b)), shuning uchun ikkalasida ham QC (main._daily_qc).
+        etrf_raw = et_inst.divide(etr_inst).rename('ETRF_RAW')
+        etrf_inst = (etrf_raw.clamp(0, 1.05)   # ET_cold=1.05·ETr → fizik chegara 1.05
                      .rename('ETRF_INST'))
         # ETr24 — kunlik referens ET (ref_type bo'yicha)
         etr24 = get_daily_etr24(date, roi, image.select('DEM'),
@@ -266,7 +269,7 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
                                 source=etr24_source)
         # QIYA YUZA (Eq 5.17-5.19): ETrF24 = C_rad · ETrF_inst
         etrf24 = etrf_inst
-        image = image.addBands(etrf_inst).addBands(etr24)
+        image = image.addBands(etrf_inst).addBands(etrf_raw).addBands(etr24)
         if sloping_terrain:
             from . import sloping_terrain as slt
             c_rad = slt.c_radiation(image)             # band 'C_RAD'
@@ -284,7 +287,14 @@ def compute_daily_et(image, roi, mode='SEBAL_B', ref_type='alfalfa', utc_offset=
             ssrd = image.select('SSRD').max(1e4)                          # J/m² (overpass soati)
             solar_frac = et_inst.divide(ssrd).rename('SOLAR_FRAC')        # monthly interp uchun
             eff_hr = rs24.multiply(cfg.DAILY_ET['seconds_per_day']).divide(ssrd)  # eff.soat
-            et_24 = et_inst.multiply(eff_hr).max(0).rename('ET_24')
+            et_24 = et_inst.multiply(eff_hr)
+            if sloping_terrain:
+                # QIYA YUZA (Tasumi Eq 5.17): ET_inst qiyalikning OVERPASS soatidagi
+                # radiatsiyasini olgan; eff_hr = Rs24/SSRD esa TEKIS yuza nisbati →
+                # C_rad = (Rso_inst_flat/Rso_inst_px)·(Rso24_px/Rso24_flat) uni piksel
+                # geometriyasiga o'tkazadi (SEBAL_ID: ETrF24 = C_rad·ETrF_inst bilan bir xil).
+                et_24 = et_24.multiply(c_rad)
+            et_24 = et_24.max(0).rename('ET_24')
             image = image.addBands(solar_frac).addBands(et_24)
         else:
             # SEBAL_ID: ET₂₄ = ETrF24 · ETr24  (Tasumi Eq 5.8 / 5.19)
@@ -321,7 +331,7 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
     month_start = ee.Date.fromYMD(year, month, 1)
 
     if mode == 'SEBAL_Milliy':
-        bands = ['SOLAR_FRAC']
+        bands = ['SOLAR_FRAC'] + (['C_RAD'] if sloping_terrain else [])
     elif cfg.is_id_mode(mode):
         bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
     else:
@@ -337,7 +347,10 @@ def daily_et_series(image_list, roi, year, month, mode='SEBAL_Milliy',
         if mode == 'SEBAL_Milliy':
             interp = _nearest_valid(coll, d)
             rs24 = get_daily_solar_radiation(d, roi, utc_offset=utc_offset)
-            return (interp.select('SOLAR_FRAC').multiply(rs24)
+            sf = interp.select('SOLAR_FRAC')
+            if sloping_terrain:                       # qiya yuza: × C_rad (Eq 5.17)
+                sf = sf.multiply(interp.select('C_RAD'))
+            return (sf.multiply(rs24)
                     .multiply(cfg.DAILY_ET['seconds_per_day']).max(0).rename('ET_DAY'))
         elif cfg.is_id_mode(mode):
             interp = _nearest_valid(coll, d)
@@ -425,7 +438,7 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
     if cfg.is_id_mode(mode):
         # SEBAL_Milliy: SOLAR_FRAC interpolyatsiya (solar upscaling); SEBAL_ID: ETRF_INST
         if mode == 'SEBAL_Milliy':
-            bands = ['SOLAR_FRAC']
+            bands = ['SOLAR_FRAC'] + (['C_RAD'] if sloping_terrain else [])
         else:
             bands = ['ETRF_INST'] + (['C_RAD'] if sloping_terrain else [])
         interp_collection = ee.ImageCollection(image_list).select(bands)
@@ -449,6 +462,8 @@ def compute_monthly_et(image_list, roi, year, month, mode='SEBAL_B',
             # × o'sha kunning Rs24 jami (get_daily_solar_radiation × 86400).
             interp = _nearest_valid(lambda_collection, current_date)
             solar_frac = interp.select('SOLAR_FRAC')
+            if sloping_terrain:                       # qiya yuza: × C_rad (Eq 5.17)
+                solar_frac = solar_frac.multiply(interp.select('C_RAD'))
             rs24 = get_daily_solar_radiation(current_date, roi, utc_offset=utc_offset)
             et_day = (solar_frac.multiply(rs24)
                       .multiply(cfg.DAILY_ET['seconds_per_day']).max(0))

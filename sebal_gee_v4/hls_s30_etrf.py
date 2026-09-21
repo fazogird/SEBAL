@@ -308,12 +308,14 @@ def interp_temporal_per_pixel(source_col, target_date, method='linear'):
 
     bv, bt = b.select('target_30'), b.select('t')
     av, at = a.select('target_30'), a.select('t')
+    # td — ee.Number; ee.Number.subtract(Image) GEE'da XATO ("Invalid type") → Image
+    tdi = ee.Image.constant(td).toDouble()
 
     if method == 'nearest':
-        pick_b = td.subtract(bt).abs().lte(at.subtract(td).abs())
+        pick_b = tdi.subtract(bt).abs().lte(at.subtract(tdi).abs())
         out = bv.where(pick_b.Not(), av)
     else:  # linear
-        w = td.subtract(bt).divide(at.subtract(bt).max(1)).clamp(0, 1)
+        w = tdi.subtract(bt).divide(at.subtract(bt).max(1)).clamp(0, 1)
         out = bv.multiply(ee.Image(1).subtract(w)).add(av.multiply(w))
 
     # Bir tomonlama (ekstrapolyatsiya): bo'sh joyni mavjud tomon to'ldiradi
@@ -401,7 +403,8 @@ def build_tile_monthly_etrf_s30(scenes, info, tile_roi, start, end,
     daily_et = []
     for day in _days_in_range(start, end):
         etrf = interp_temporal_per_pixel(source_col, day, temporal_fill)
-        etref24 = _daily_etref(anchors, day, tile_roi)
+        etref24 = _daily_etref(anchors, day, tile_roi,
+                               utc_offset=info.get('utc_offset', 0))   # mahalliy kun
         et = etrf.multiply(etref24).max(0).rename('ET_24')
         daily_et.append(et.set('system:time_start', ee.Date(day).millis()))
 
