@@ -196,7 +196,7 @@ def _kc_model(image_list, roi, year, month, utc_offset=0, etr24_source='era5',
         return De_new, T, E
 
     return {'days': days, 'month_start': month_start, 'TEW': TEW, 'day_step': day_step,
-            'crop_mask': CROP_MASK if PER_CROP else None, 'n_scenes': ndvi_coll.size()}
+            'crop_mask': CROP_MASK if PER_CROP else None}
 
 
 def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
@@ -223,10 +223,15 @@ def compute_monthly_et_kc(image_list, roi, year, month, utc_offset=0,
     et_monthly = res.select('ET').max(0.0).rename('ET_MONTHLY')
     if m['crop_mask'] is not None:
         et_monthly = et_monthly.updateMask(m['crop_mask'])     # faqat ekin piksellari
+    # QC — daily_et (SEBAL_B/ID/Milliy) bilan AYNI: SHU oydagi sahnalar soni va
+    # oyning biror kunidan eng yaqin sahnagacha maks masofa (oldin butun davr sahnalari
+    # sanalardi, bo'shliq QC esa umuman yo'q edi).
+    n_in_month, max_gap = daily_et.month_scene_qc(image_list, year, month)
     return (et_monthly
             .set('year', year).set('month', month)
             .set('days_in_month', m['days'])
-            .set('n_landsat_scenes', m['n_scenes']))
+            .set('n_landsat_scenes', n_in_month)
+            .set('max_gap_days', max_gap))
 
 
 def daily_et_series_kc(image_list, roi, year, month, utc_offset=0, etr24_source='era5',

@@ -94,6 +94,8 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 89 | 2026-09-21 | Qiya yuza: overpass cosθ va C_rad lahzali qismi — per-piksel SZA/SAA bandlaridan (Duffie & Beckman azimut shakli); C_rad kunlik integrali astronomik qoladi | ✅ commit qilinmagan | sloping_terrain.py |
 | 90 | 2026-09-21 | SEBAL_ID / SEBAL_Milliy: λET_cold = 1.05·ETr faqat TO'LIQ QOPLAMALI cold pikselga (LAI ≥ 4, METRIC); topilmasa sahna TASHLANMAYDI — oldingi (cheklovsiz) kaskad + QC ogohlantirishi (zona `…-LAI<4`); QC CSV `cold_LAI` ustuni | ✅ commit qilinmagan | config.py, energy_balance.py, main.py |
 | 91 | 2026-09-21 | Sahna QC CSV: `dT_cold_neutral` (neytral rah bilan dT_cold) va `rah_cold_ratio` (yakuniy / neytral rah_cold) — past shamolda cold barqaror qatlam kuchaytirishini ko'rsatadi; qiymatlarga TEGMAYDI (SEBAL_ID oilasi) | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 92 | 2026-09-25 | Oylik eksport xatosi YUTILMAYDI (B2): `_export_monthly` xatolarni yig'ib RuntimeError qiladi; `_export_monthly_safe` oyni `failed_months` ga yozadi, run davom etadi, status QISMAN va natija lug'atida `failed_months` | ✅ commit qilinmagan | main.py |
+| 93 | 2026-09-25 | Kc_ETo oylik metadata: `n_landsat_scenes` — SHU oydagi sahnalar (oldin butun davr) va yangi `max_gap_days` (oylik bo'shliq QC) — `daily_et.month_scene_qc` bilan AYNI | ✅ commit qilinmagan | ndvi_kc.py |
 
 ---
 
@@ -1263,6 +1265,8 @@ GEE sinovi (Samarqand 20 km, `point_anchor`, rad etilgan sahnalar; `default` nat
 | 12-10 | RAD 2.86 ≤ 3.14 | ❌ to'xtadi: cimec ΔT 4.2 K → … → pysebal cold ETr topilmadi | RAD 2.68 ≤ 3.19 | ❌ to'xtadi: pysebal cold ETr topilmadi |
 
 Kaskadda topilgan ikki to'xtash (tuzatilmagan, ochiq): (1) `anchor_etr_inst` cold ETr'ni maska medianasi sifatida 100 m da oladi — pysebal cold maskasi kichik → 100 m da bo'sh → RuntimeError, butun run to'xtaydi; (2) CIMEC hot pikselida HiHydroSoil θ_WP yo'q → RuntimeError (#24 qoidasi), butun run to'xtaydi.
+
+> **YANGILANDI 2026-09-25 (kod tekshirildi): ikkalasi ham TUZATILGAN.** (1) — #27: `anchor_etr_inst` endi `_anchor_sample` orqali anchor rejimida oladi (100 m maska mediani emas). (2) — `hot_soil=True` (SEBAL_ID oilasi) hot nomzodlarni `soil_valid_mask` bilan cheklaydi va #71 da tuproq yaroqsiz bo'lsa `SceneQCError` ko'tariladi → sahna/kaskad darajasida, butun run to'xtamaydi.
 
 ---
 
@@ -2443,4 +2447,73 @@ GEE (Samarqand 20 km, production kodi):
 dT_cold qiymatlari #90 bilan aynan (o'zgarmagan). A5 diagnostikasi (c_diag) bilan mos: 06-01 ×4.4, neytral −2.42 K.
 
 Qo'shimcha dalil (Bushland 2021, 21 sahna, overpass, lizimetr stansiyasi 15-min): ERA5 havo harorati − o'lchov **+0.75 K** (−1.1…+2.4) — ERA5 Ta ishonchli, cold Ta anomaliyasi model dT'sidan; ERA5 shamoli (FAO-56 bilan 2 m) / o'lchov (2.3 m, paxta ustida) median 0.80, oraliq 0.26…1.29 (07-16: 0.5 vs 2.0 m/s) — tizimli bitta koeffitsient chiqarib bo'lmaydi.
+
+---
+
+## #92 — Oylik eksport xatosi yutilmaydi (B2)
+
+User: "B2 … buni tuzat". Tekshiruv (2026-09-25): B2 **tuzatilmagan edi** — `_export_monthly` da CU/AW bloki va har mahsulot `except Exception → print(⚠️)` bilan yutilardi, run esa "✅ Tayyor" deb tugardi. Mahsulot Drive'ga chiqmagan bo'lsa ham natija "OK" ko'rinardi.
+
+**Oldin:**
+```python
+        except Exception as e:
+            print(f"  ⚠️ CU/AW bloki: {e}")      # yutildi
+        ...
+        except Exception as e:
+            print(f"  ⚠️ {prod_name}: {e}")      # yutildi
+    return tasks, dr_end_img
+```
+
+**Keyin:**
+```python
+    errors = []                                   # eksport xatolari — YUTILMAYDI
+        except Exception as e:
+            errors.append(f"CU/AW bloki: {type(e).__name__}: {e}"); print(f"  ❌ …")
+        except Exception as e:
+            errors.append(f"{prod_name}: {type(e).__name__}: {e}"); print(f"  ❌ …")
+    if errors:                                    # qolgan mahsulotlar baribir eksport qilindi
+        raise RuntimeError(f"{month_str}{prefix} oylik eksport: " + "; ".join(errors))
+
+def _export_monthly_safe(failed, scene_images, roi, year, month, mode, *a, **kw):
+    """xato → failed ro'yxati (tayl, oy, xato), run DAVOM etadi; kutilmagan xato — traceback."""
+```
+`run()`: `failed_months = []` (4 ta chaqiruv `_export_monthly_safe` orqali), xulosada "❌ N ta OYLIK EKSPORT xato (mahsulot YO'Q)", `status = 'QISMAN' if (failed_tiles or failed_months)`, natija lug'atida `failed_months`.
+
+**Sinov** (Export.toDrive o'rniga xato beruvchi stub; GEE hisobi kerak emas):
+
+| Holat | Natija |
+|---|---|
+| `_export_monthly` da eksport xato beradi | `RuntimeError: 2023-07_P155_R33 oylik eksport: ET: …` — ko'tarildi (oldin yutilardi) |
+| `_export_monthly_safe` | `([], None)` qaytdi; `failed = [{'tile': 'P155_R33', 'oy': '2023-07', 'error': 'RuntimeError: …'}]`; print `❌ OYLIK EKSPORT P155_R33 2023-07: …` |
+| Eksport ishlaydigan holat | xato yo'q, `failed` bo'sh |
+
+⚠️ To'liq GEE run'i bilan sinov qilinmadi — Earth Engine hisob ma'lumotlari muddati tugagan (`earthengine authenticate` userning o'z terminalida kerak).
+
+---
+
+## #93 — Kc_ETo oylik QC: shu oydagi sahnalar + bo'shliq
+
+User: "Kc_ETo `n_landsat_scenes` … buni tuzat".
+
+**Oldin:** `_kc_model` `n_scenes = ndvi_coll.size()` (butun davrdagi BARCHA sahnalar) qaytarardi; `compute_monthly_et_kc` uni `n_landsat_scenes` deb yozardi. Oylik bo'shliq QC (sahnasiz uzun oraliq) umuman yo'q edi. SEBAL_B/ID/Milliy yo'lida bu #48 da tuzatilgan.
+
+**Keyin:**
+```python
+    # daily_et (SEBAL_B/ID/Milliy) bilan AYNI QC
+    n_in_month, max_gap = daily_et.month_scene_qc(image_list, year, month)
+    return (et_monthly.set('year', year).set('month', month)
+            .set('days_in_month', m['days'])
+            .set('n_landsat_scenes', n_in_month)
+            .set('max_gap_days', max_gap))
+```
+`_kc_model` dan `n_scenes` olib tashlandi. `month_scene_qc` bo'shliq `cfg.DAILY_ET['max_scene_gap_days']` dan katta bo'lsa OGOHLANTIRISH chop etadi → Kc yo'lida ham bo'shliq QC paydo bo'ldi. ET hisobi O'ZGARMAGAN (faqat metadata/QC).
+
+**GEE sinovi** (Samarqand 20 km, may–avgust 14 sahna bilan Kc_ETo oylik):
+
+| Oy | n_landsat_scenes | Haqiqiy shu oydagi sahnalar | max_gap_days | ET (ekinzor) |
+|---|---|---|---|---|
+| 2023-07 | 4 | 4 (07-03, 11, 19, 27) | 3.7 | 82.16 mm |
+| 2023-05 | 3 | 3 (05-08, 16, 24) | 7.3 | 86.85 mm |
+
+Oldingi kod ikkala oyda ham 14 deb yozardi.
 

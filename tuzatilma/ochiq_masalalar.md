@@ -1,13 +1,12 @@
 # Ochiq masalalar (hali qilinmagan) — esdan chiqmasligi uchun
 
-Bajarilgan ishlar — `tuzatishlar.md`. Bu faylda faqat **qolgan / keyinga qoldirilgan** masalalar. Yangilangan: 2026-09-21.
+Bajarilgan ishlar — `tuzatishlar.md`. Bu faylda faqat **qolgan / keyinga qoldirilgan** masalalar. Yangilangan: 2026-09-25 (hamma band KOD bo'yicha qayta tekshirildi).
 
 ## Keyinga qoldirilgan (user: "keyin")
 
 | # | Masala | Joy | Izoh |
 |---|---|---|---|
 | B1 | AW: sukut `dr_init_frac=0.0` → Dr = 0 dan boshlanadi; hujjat va `main` izohida "RAW dan" deyilgan | `root_zone_water.compute_awnet`, `main._export_monthly` | AW oylik rejimda umuman yaroqsiz deb topilgan (xotira: aw-monthly-invalid) |
-| B2 | Oylik eksportda xatolar yutiladi (`except → print`): CUirr/AW bloki va har mahsulot; run "OK" deb tugaydi | `main._export_monthly` | tayllar uchun #54 da tuzatilgan, bu yerda qolgan |
 | B3 | CUirr ildiz-zona Dr har oy qayta boshlanadi (`dr_init_frac`) — P8 bilan bir xil turdagi | `consumptive_use.effective_precip_monthly` | |
 | **B4** | **VIIRS lambda oylik ET standart SEBAL_Milliy'dan +15 % yuqori** (iyul 2023 Samarqand: VIIRS lambda 185.9, kc 168.5, standart 161.7 mm). VIIRS rejimdan qat'i nazar Λ×Rn24 bilan ishlaydi | `viirs_downscaling.build_tile_monthly_et_viirs` | sabab o'rganilmagan |
 | **B5** | **S30 yo'li boshidan oxirigacha hech qachon ishga tushirilmagan** (#66 dagi Number−Image xatosi tuzatilgan, lekin to'liq sinov yo'q) | `hls_s30_etrf.build_tile_monthly_etrf_s30` | to'liq runtime sinovi kerak |
@@ -52,6 +51,11 @@ Zanjir: radiatsiya normal → 1.05·ETr > Rn−G (H < 0) → past shamolda barqa
 
 Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 — AYNI balandliklar) offline sinovi: 7 sahnaning HAMMASIDA |dT| KATTAROQ (06-01 −10.76 → −17.48; 07-27 −8.09 → −10.61; 06-09 −2.84 → −3.40) — CB05 koeffitsientlari BD'dan katta, joriy −5 clamp esa CB05 dan qattiqroq. Chegarasiz chiziqli: 06-01 −17.26 K (hozir faqat −5 clamp cheklaydi). **CB05 olinmaydi.**
 
+## Bu fayldan yopilganlar
+
+- **Kc_ETo `n_landsat_scenes` butun davr edi + bo'shliq QC yo'q → TUZATILDI (#93, 2026-09-25):** `ndvi_kc` endi `daily_et.month_scene_qc` (shu oydagi sahnalar + `max_gap_days`).
+- **B2 — oylik eksportda xatolar yutilardi → TUZATILDI (#92, 2026-09-25):** `_export_monthly` RuntimeError ko'taradi, `_export_monthly_safe` oyni `failed_months` ga yozadi, run status QISMAN bo'ladi.
+
 ## Qarorlar (yopilgan savollar)
 
 - **A4 — cold anchor tanlash qoidasi: P0 (hozirgi) qoladi** — user qarori 2026-09-21 (test natijalari yuqorida).
@@ -59,13 +63,13 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 
 - **RO (hot piksel suv balansi) = 0** — user qarori 2026-09-21 ("56 RO = 0"). Kodda: `water_balance.hot_pixel_etrf._run`.
 
-## Past ustuvorlik / izchillik (qaror kerak bo'lsa)
+## Past ustuvorlik / izchillik — 2026-09-25 da kod bo'yicha tekshirildi, HAMMASI HALI OCHIQ
 
-- Tuproq uch xil manbadan: hot balans — HiHydroSoil (VG θ33 + WCpF4.2) + FAO REW jadvali; CUirr/AW/Kc_ETo — SoilGrids + Saxton, REW = 0.15·loy + 2; Appendix I (etrf_water_balance) — FAO jadvali (OpenLandMap tekstura).
-- Kun tartibi: Kc modelida yomg'ir avval (De2 = De − P, keyin Kr), hot balansda kitob tartibi (Kr ← De(i−1)).
-- CUirr, Kc_ETo, AW kunlik balanslarida yog'in CHIRPS UTC kuni, ET/ETo mahalliy kun (O'zbekistonda 5 soat). Hot balansda #74 da tuzatilgan.
-- Kc_ETo: `n_landsat_scenes` butun davr sahnalari (oy emas), oylik bo'shliq QC yo'q.
-- Global holat: albedo usuli, `COLD_ETRF`, `CROP_TYPE`, `CROP_ASSETS` faqat `run()` da o'rnatiladi va chaqiruvlar orasida qoladi (`run_polygons` o'rnatmaydi).
-- Kunlik raster eksportda SEBAL_ID/Milliy uchun ETRF_INST, ETR24, SOLAR_FRAC bandlari yo'q.
-- HLS (`satellite='HLS'`): LST = HLS B10 (TOA yorqinlik harorati, LST emas); SEBAL_Milliy SMW `ST_TRAD` talab qiladi — HLS bilan ishlamaydi.
+
+- **[tekshirildi]** Tuproq uch xil manbadan: hot balans — HiHydroSoil (VG θ33 + WCpF4.2) + FAO REW jadvali; CUirr/AW/Kc_ETo — SoilGrids + Saxton, REW = 0.15·loy + 2; Appendix I (etrf_water_balance) — FAO jadvali (OpenLandMap tekstura).
+- **[tekshirildi]** Kun tartibi: `ndvi_kc` da `De2 = De − P` keyin Kr (yomg'ir avval), hot balansda kitob tartibi; Kc modelida yomg'ir avval (De2 = De − P, keyin Kr), hot balansda kitob tartibi (Kr ← De(i−1)).
+- **[tekshirildi]** `consumptive_use._step`: P — CHIRPS kalendar (UTC) kuni, ET/ETr — mahalliy kun (utc_offset). CUirr, Kc_ETo, AW kunlik balanslarida yog'in CHIRPS UTC kuni, ET/ETo mahalliy kun (O'zbekistonda 5 soat). Hot balansda #74 da tuzatilgan.
+- **[tekshirildi]** Global holat (`run_polygons` da `surface_props.ALBEDO_METHOD` / `energy_balance.COLD_ETRF` / `CROP_TYPE` / `cfg.CROP_ASSETS` o'rnatilmaydi — faqat `run()` da): albedo usuli, `COLD_ETRF`, `CROP_TYPE`, `CROP_ASSETS` faqat `run()` da o'rnatiladi va chaqiruvlar orasida qoladi (`run_polygons` o'rnatmaydi).
+- **[tekshirildi]** Kunlik raster eksportda SEBAL_ID/Milliy uchun ETRF_INST, ETR24, SOLAR_FRAC bandlari yo'q (`DAILY_BANDS_SEBAL_B` = ET_24, LAMBDA_E, H, RN, G0, EVAP_FRAC, NDVI, LST, LAI).
+- **[tekshirildi]** HLS (`satellite='HLS'`): LST = HLS B10 (TOA yorqinlik harorati, LST emas); SEBAL_Milliy SMW `ST_TRAD` talab qiladi — HLS bilan ishlamaydi.
 - Instant K↓ ochiq osmon formulasi (ETr esa haqiqiy SSRD) — keyingi modelga qoldirilgan.

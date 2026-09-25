@@ -774,6 +774,7 @@ def _export_monthly(scene_images, roi, year, month, mode,
     from . import monthly_analytics
     tasks = []
     dr_end_img = None
+    errors = []        # eksport xatolari — YUTILMAYDI, oxirida RuntimeError
 
     prefix = f'_{tile_label}' if tile_label else ''
     month_str = f'{year}-{month:02d}'
@@ -851,7 +852,8 @@ def _export_monthly(scene_images, roi, year, month, mode,
             print(f"  ⚡ ET+CU/AW birlashgan → {cu_name} @ {scale}m | bandlar: {out_bands}")
             products = [p for p in products if p[1] != 'ET_MONTHLY']
         except Exception as e:
-            print(f"  ⚠️ CU/AW bloki: {e}")
+            errors.append(f"CU/AW bloki: {type(e).__name__}: {e}")
+            print(f"  ❌ CU/AW bloki: {e}")
 
     print(f"  📐 Export region: {roi.bounds().coordinates().getInfo()}")
     
@@ -885,9 +887,34 @@ def _export_monthly(scene_images, roi, year, month, mode,
             print(f"  ✅ {prod_name} export boshlandi")
 
         except Exception as e:
-            print(f"  ⚠️ {prod_name}: {e}")
+            errors.append(f"{prod_name}: {type(e).__name__}: {e}")
+            print(f"  ❌ {prod_name}: {e}")
+
+    # Xato YUTILMAYDI: qolgan produktlar baribir eksport qilindi, lekin oy
+    # "OK" deb hisoblanmaydi — chaqiruvchi (_export_monthly_safe) qayd etadi.
+    if errors:
+        raise RuntimeError(f"{month_str}{prefix} oylik eksport: " + "; ".join(errors))
 
     return tasks, dr_end_img
+
+
+def _export_monthly_safe(failed, scene_images, roi, year, month, mode, *a, **kw):
+    """
+    `_export_monthly` + xato YUTILMAYDI: oy `failed` ro'yxatiga yoziladi (run
+    status = 'QISMAN', xulosada va natija lug'atida chiqadi), run esa keyingi
+    oy/tayl bilan davom etadi. Kutilmagan xato turlari — to'liq traceback bilan.
+    """
+    tile_label = a[3] if len(a) > 3 else kw.get('tile_label', '')
+    try:
+        return _export_monthly(scene_images, roi, year, month, mode, *a, **kw)
+    except Exception as e:
+        import traceback
+        err = f"{type(e).__name__}: {e}"
+        failed.append({'tile': tile_label or 'ROI', 'oy': f'{year}-{month:02d}', 'error': err})
+        print(f"  ❌ OYLIK EKSPORT {tile_label or 'ROI'} {year}-{month:02d}: {err}")
+        if not isinstance(e, RuntimeError):
+            print(traceback.format_exc())
+        return [], None
 
 
 # ==============================================================
@@ -1342,6 +1369,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 
     all_tasks = []
     failed_tiles = []     # [{'tile', 'error'}] — xato bilan TASHLAB KETILGAN taylar
+    failed_months = []    # [{'tile', 'oy', 'error'}] — oylik eksport xatolari (yutilmaydi)
     empty_tiles = []      # yaroqli sahnasi bo'lmagan taylar (xato emas)
     tile_warnings = []    # masalan tayl geometriyasi topilmadi → ROI
 
@@ -1474,7 +1502,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             current_month, month_key, folder, scale, crs,
                             tile_label, s30_model, s30_qa, s30_fill,
                             cloud_max, tasks, s30_cropland_only, s30_validate)
-                        month_tasks, dr_carry = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly_safe(
+                            failed_months,
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             False, save_biomass, save_etref, save_tact, save_eact,
@@ -1489,7 +1518,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             current_month, month_key, folder, scale, crs,
                             tile_label, viirs_mode, viirs_model, viirs_qa,
                             viirs_fill, tasks)
-                        month_tasks, dr_carry = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly_safe(
+                            failed_months,
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             False,  # save_et=False → VIIRS ET ishlatiladi
@@ -1500,7 +1530,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             save_niwr=save_niwr, save_aw=save_aw,
                             dr_init_img=dr_carry)
                     else:
-                        month_tasks, dr_carry = _export_monthly(
+                        month_tasks, dr_carry = _export_monthly_safe(
+                            failed_months,
                             scenes, tile_roi, current_year, current_month,
                             mode, folder, scale, crs, tile_label,
                             save_et, save_biomass, save_etref,
@@ -1562,7 +1593,8 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                             current_month += 1
                         continue
 
-                    month_tasks, dr_carry = _export_monthly(
+                    month_tasks, dr_carry = _export_monthly_safe(
+                        failed_months,
                         scenes,
                         roi,
                         current_year,
@@ -1647,17 +1679,22 @@ def run(roi_type='gaul', date_start=None, date_end=None,
         print(f"  ❌ {len(failed_tiles)} ta tayl XATO bilan tashlab ketildi (natija YO'Q):")
         for ft in failed_tiles:
             print(f"     • {ft['tile']}: {ft['error']}")
+    if failed_months:
+        print(f"  ❌ {len(failed_months)} ta OYLIK EKSPORT xato (mahsulot YO'Q):")
+        for fm in failed_months:
+            print(f"     • {fm['tile']} {fm['oy']}: {fm['error']}")
     if empty_tiles:
         print(f"  ⏭️  Yaroqli sahnasiz taylar: {empty_tiles}")
     for tw in tile_warnings:
         print(f"  ⚠️ {tw['tile']}: {tw['warning']}")
-    status = 'QISMAN' if failed_tiles else 'OK'
+    status = 'QISMAN' if (failed_tiles or failed_months) else 'OK'
     print(f"  {'✅' if status == 'OK' else '⚠️'} {'Tayyor' if status == 'OK' else 'QISMAN tayyor'}! "
           f"{len(all_tasks)} ta export task")
     print(f"  📁 Drive → {folder}/")
     print("  🔗 https://code.earthengine.google.com/tasks")
     print(f"{'='*60}")
     return {'tasks': all_tasks, 'status': status, 'failed_tiles': failed_tiles,
+            'failed_months': failed_months,
             'empty_tiles': empty_tiles, 'tile_warnings': tile_warnings}
 
 
