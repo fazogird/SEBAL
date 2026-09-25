@@ -1,0 +1,43 @@
+SEBAL_ID oilasida cold pikseldagi H ikkita hadning ayirmasidan chiqadi, va bu ikki had har xil manbadagi quyosh radiatsiyasidan hisoblanadi:
+
+H_cold = (Rn − G₀)_cold  −  1.05 · ETr · λ
+            ↑                       ↑
+   K↓ = ochiq osmon modeli     Rs = ERA5 SSRD
+   (bulut/tuman yo'q deb olinadi)  (ERA5 bulut/tuman bilan)
+
+Ikki manba mos bo'lsa, muammo yo'q. Mos bo'lmasa, H_cold noto'g'ri chiqadi.
+
+10-07, SEBAL_ID cold piksel:
+
+Rn uchun: K↓ = 699 W/m², ya'ni osmon toza deb olingan. Natija: Rn−G₀ = 499 W/m².
+ETr uchun: SSRD = 454 W/m², ya'ni 35% kam quyosh, ERA5 shu joyda bulut yoki tuman ko'rgan. ETr = 0.294 mm/soat, bundan λET_cold ≈ 210 W/m².
+Natija: H_cold ≈ 283 W/m². Bu hot pikseldagi H dan ham katta (227), holbuki cold piksel 20 K sovuqroq. Fizik jihatdan bunday bo'lishi mumkin emas.
+
+Bu nimaga olib keladi:
+
+Katta H_cold → katta dT_cold → dT_hot ≤ dT_cold → sahna rad etiladi (10-07 shu sababli tushdi).
+Rad etilmasa ham xato qoladi. Butun sahnaning ET'si cold anchor orqali ETr'ga bog'langan, shuning uchun ETr past bo'lsa, 
+butun sahna ET'si ham past chiqadi.
+
+Qaysi biri to'g'ri — noma'lum:
+
+Landsat pikseli toza bo'lib, ERA5 bulutni noto'g'ri joyga qo'ygan bo'lishi mumkin. Unda ETr past. Bu ehtimolga dalil: 
+bir kunning o'zida qo'shni cold piksellarda SSRD 418, 454, 505 W/m² — ERA5 bulut maydoni notekis.
+Yoki haqiqatan tuman/chang bo'lgan. Unda τsw faqat balandlikdan hisoblangani uchun K↓ ni oshirib yuborgan va Rn baland chiqqan.
+
+Qaysi holat bo'lmasin, bitta hisobda ikki xil quyosh ishlatilyapti.
+
+Aniqlik kiritaman: bu muammo faqat 10-07 ni tushuntiradi. 03-21 va 12-10 da K↓ va SSRD bir-biriga mos:
+
+Sahna	K↓ (W/m²)	SSRD (W/m²)
+03-21	746	742
+12-10	447	411
+
+Ularning rad etilishi boshqa sababdan: salqin mavsumda hot va cold orasidagi farq kichik. Demak ID ham, Milliy ham martni bu yo'l bilan qutqarmaydi. 
+Oktyabr esa 10-15 sahnasi hisobiga bor.
+
+Tuzatish variantlari (qaror sizda):
+
+(a) Ikkala hisobda bitta Rs ishlatish.
+(b) Sahna QC'si: overpass paytida SSRD/K↓ nisbati 1 dan sezilarli farq qilsa (masalan, ±15%), sahnani "ERA5 bulutli, Landsat toza" deb belgilash 
+yoki rad etish. METRIC amaliyotida ham ob-havo stansiyasidagi Rs/Rso shu maqsadda tekshiriladi.

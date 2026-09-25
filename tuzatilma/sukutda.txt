@@ -1,0 +1,44 @@
+Verguldan keyin 2 xona (#09)
+Configga ikki sozlama qo'shildi: EXPORT_DECIMALS = 2 va EXPORT_DECIMALS_BY_BAND = {}. Ikkinchisi bilan alohida band uchun boshqa xona sonini berish mumkin.
+main.py dagi 6 ta raster export nuqtasi endi _round_export() orqali o'tadi. Faqat eksport qilinadigan nusxa yumaloqlanadi, oraliq hisob to'liq aniqlikda qoladi. CSV exportlarga tegmadim.
+Sinov: LST 306.70059 → 306.70, NDVI 0.266 → 0.27. Band nomlari o'zgarmadi, tur float32.
+
+⚠️ Kichik qiymatli bandlarda ma'lumot yo'qoladi (5 km hududda noyob qiymatlar soni):
+
+Band	Asl	2 xonadan keyin
+EMISSIVITY	57 640	5 (0.95…0.99)
+Z0M	22 636	11 (0.005 → 0.01, 2 baravar xato)
+ALBEDO	72 141	67
+
+Bu faqat eksport qilingan rasterlarga tegishli, ET hisobiga ta'sir qilmaydi. 
+Istasangiz config'da EXPORT_DECIMALS_BY_BAND = {'EMISSIVITY': 4, 'Z0M': 4} qo'yish kifoya, sinab ko'rdim, ishlaydi. 
+Hozircha bo'sh qoldirdim, qaror sizda.
+
+===========
+Chatda ochiq qolganlar:
+
+HLS L30 B10: bu yer yuzasi harorati emas, atmosfera tepasidagi yorqinlik harorati. C2 ST dan 3.5–7.3 K sovuq chiqadi.
+HLS S30: filterBounds begona tile'larni qo'shib yuboradi, except: keep esa ularni filtrdan o'tkazib yuboradi
+
+
+
+-------
+
+Cold ETrF erta bahorda kamaytiriladi (1.25·NDVI, masalan 0.86). Bizda doim 1.05.
+Ularning 8 ta sahnasida ETrF_hot 0.1–0.34 oralig'ida bo'lgan.
+
+
+-------------------------
+Shubhali holat: Milliy 07-11 da cold Ta = 318.5 K, ERA5 esa 308.3 K, ya'ni +10 K. 
+Bu yerda rah_cold = 228 s/m (juda barqaror qatlam), dT_cold = −10.2 K; bu fizik jihatdan ishonchsiz. 
+Taklif: cold anchorda |Ta − Ta_ERA5| belgilangan chegaradan (masalan, 5 K) oshsa, ogohlantirish chiqarish. 
+Chegarani siz belgilaysiz.
+
+--------------------------
+Tekshirilmagan:
+
+VIIRS yo'li: faqat kompilyatsiya qilindi, standart holatda o'chiq.
+validate: OpenET faqat AQSh uchun mavjud, shuning uchun Samarqandda ishga tushirib bo'lmadi.
+
+Hali sinalmagan: VIIRS'ning to'liq oylik yo'li GEE'da ishga tushirilmadi, faqat shu Rs24 funksiyasi sinaldi.
+Eski ma._get_daily_rs24 endi hech qayerda chaqirilmaydi. Uni o'chirmadim, qaror sizda.
