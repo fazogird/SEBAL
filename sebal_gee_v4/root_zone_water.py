@@ -147,15 +147,15 @@ def compute_awnet(image_list, roi, year, month, utc_offset=0,
         P = ee.Image(p_img)
 
         # Ke — topsoil De balansi
-        De2 = De.subtract(P).max(0.0)
-        # Asos — De2 (Landsat grid/mask), ee.Image(1.0) EMAS (u WGS84 1° va maskasiz)
-        Kr = (De2.multiply(0).add(1.0).where(De2.gt(REW),
-              TEW.subtract(De2).divide(TEW.subtract(REW))).clamp(0.0, 1.0))
+        # FAO-56 Eq 74/77 tartibi (#97): Kr kun BOSHIDAGI De(i−1) dan, yog'in — De yangilanishida
+        # Asos — De (Landsat grid/mask), ee.Image(1.0) EMAS (u WGS84 1° va maskasiz)
+        Kr = (De.multiply(0).add(1.0).where(De.gt(REW),
+              TEW.subtract(De).divide(TEW.subtract(REW))).clamp(0.0, 1.0))
         ke = (Kr.multiply(ee.Image(KCMAX).subtract(kcb))
               .min(few.multiply(KCMAX)).max(0.0).multiply(KE_SCALE))
         E = ke.multiply(eto); T = kcb.multiply(eto)
         eta_day = T.add(E)
-        De_new = De2.add(E).min(TEW).rename('De')
+        De_new = De.subtract(P).max(0.0).add(E).min(TEW).rename('De')   # FAO-56 Eq 77
 
         # ROOT-ZONA balans (skalyar bilan AYNAN bir xil)
         RO = (P.subtract(Ia).max(0.0).pow(2)

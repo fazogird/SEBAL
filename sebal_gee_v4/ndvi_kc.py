@@ -11,6 +11,7 @@ bog'liq EMAS — shu sabab barqaror):
       few  = 1 − fc                                  — ochiq/ho'l tuproq ulushi
       Ke   = clamp(Kr·(Kcmax−Kcb), 0, few·Kcmax)·ke_scale
       Kr   = 1 (De≤REW) yoki (TEW−De)/(TEW−REW)      — tuproq quruqlik omili
+             (De — kun BOSHIDAGI depletion, FAO-56 Eq 74; yog'in De yangilanishida)
     De — kunlik topsoil depletion (CHIRPS yog'in bilan ho'llanadi).
 
 Kalibratsiya (Bushland lizimetr 2021 oylik, proto_ndvi_kc.py): R²=0.85, MBE≈0,
@@ -165,18 +166,21 @@ def _kc_model(image_list, roi, year, month, utc_offset=0, etr24_source='era5',
         # borligi tekshirilgan; soxta 0 va unmask(0) YO'Q).
         P = ee.Image(p_img)
 
-        # topsoil ho'llash (infiltratsiya) → depletion kamayadi
-        De2 = De.subtract(P).max(0.0)
-        # Kr: De2≤REW → 1;  aks holda (TEW−De2)/(TEW−REW)   [TEW/REW per-piksel]
-        # Asos — De2 (Landsat grid/mask), ee.Image(1.0) EMAS (u WGS84 1° va maskasiz)
-        Kr = (De2.multiply(0).add(1.0).where(De2.gt(REW),
-              TEW.subtract(De2).divide(TEW.subtract(REW))).clamp(0.0, 1.0))
+        # FAO-56 (Eq 74 va 77) TARTIBI — hot piksel balansi bilan AYNI (#97):
+        #   Kr kun BOSHIDAGI depletion De(i−1) dan; yog'in esa depletion
+        #   yangilanishida (De_new) hisobga olinadi, Kr da EMAS.
+        #   (Oldin De2 = De − P dan Kr olinardi → yomg'irli kunning o'zida Kr = 1.)
+        # Kr: De≤REW → 1;  aks holda (TEW−De)/(TEW−REW)   [TEW/REW per-piksel]
+        # Asos — De (Landsat grid/mask), ee.Image(1.0) EMAS (u WGS84 1° va maskasiz)
+        Kr = (De.multiply(0).add(1.0).where(De.gt(REW),
+              TEW.subtract(De).divide(TEW.subtract(REW))).clamp(0.0, 1.0))
         ke = (Kr.multiply(ee.Image(KCMAX).subtract(kcb))
               .min(few.multiply(KCMAX)).max(0.0).multiply(KE_SCALE))
 
         E = ke.multiply(eto)                 # tuproq bug'lanishi (mm)
         T = kcb.multiply(eto)                # transpiratsiya (mm)
-        De_new = De2.add(E).min(TEW).rename('De')
+        # De_i = max(De(i−1) − P, 0) + E,  0…TEW   (FAO-56 Eq 77; RO = 0, DPe → TEW clamp)
+        De_new = De.subtract(P).max(0.0).add(E).min(TEW).rename('De')
         return De_new, T, E
 
     return {'days': days, 'month_start': month_start, 'TEW': TEW, 'day_step': day_step,

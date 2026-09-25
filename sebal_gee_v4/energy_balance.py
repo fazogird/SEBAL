@@ -1131,6 +1131,8 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
         ustar_cold = max(k * u200_c / ln_zb_z0m_cold, 0.02)
         rah_cold = max(ln_z2_z1 / (k * ustar_cold), 1.0)
         rah_cold_neutral = rah_cold                  # QC: barqarorlik kuchaytirishi uchun
+        psi_clip_cold = False                        # QC: ψ loyiha chegarasiga (±5) urildimi
+        zeta_cold = None                             # QC: ζ = z2/L (barqarorlik darajasi)
         prev_psi_m_cold = prev_psi_h_cold = prev_ustar_cold = None
 
     c4_list, c5_list, dta_list, dtac_list, rahc_list = [], [], [], [], []
@@ -1208,6 +1210,12 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
             L_c = -rho_c * cp * ustar_cold ** 3 * clst / (k * g * hc_safe)
             L_c = max(min(L_c, 1e6), -1e6)
             psi_m_cc, psi_h_cc = _stability_scalar(L_c, z_blend, z1, z2)
+            # QC (qiymatga TEGMAYDI): ψ ±5 chegarasi — Allen 2007 formulasida YO'Q,
+            # loyihada qo'shilgan himoya. Unga urilish = kuchli barqaror holat
+            # (formula o'z amal doirasidan chiqqan: ζ = z2/L > 1).
+            zeta_cold = z2 / L_c if L_c != 0 else None
+            if abs(psi_m_cc) >= 5.0 or abs(psi_h_cc) >= 5.0:
+                psi_clip_cold = True
             if prev_psi_m_cold is not None:
                 psi_m_cold = 0.5 * (prev_psi_m_cold + psi_m_cc)
                 psi_h_cold = 0.5 * (prev_psi_h_cold + psi_h_cc)
@@ -1235,7 +1243,9 @@ def compute_sensible_heat_flux(image, anchors, roi, mode='SEBAL_B',
             # QC (qiymatga TEGMAYDI): cold barqaror qatlam kuchaytirishi — past shamol + H_cold < 0
             # da rah_cold neytraldan bir necha barobar oshadi (2023-06-01: ×4.4, dT −2.4 → −10.8 K)
             qc.update({'dT_cold_neutral': H_cold * rah_cold_neutral / (rho_c * cp),
-                       'rah_cold_ratio': rahc_list[N_A - 1] / rah_cold_neutral})
+                       'rah_cold_ratio': rahc_list[N_A - 1] / rah_cold_neutral,
+                       'psi_clip_hit': int(psi_clip_cold),
+                       'zeta_2': zeta_cold})
     fails = []
     if not H_hot > 0:
         fails.append(f"H_hot = {H_hot:.1f} W/m² ≤ 0")

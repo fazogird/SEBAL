@@ -12,7 +12,7 @@ Bajarilgan ishlar — `tuzatishlar.md`. Bu faylda faqat **qolgan / keyinga qoldi
 | **B5** | **S30 yo'li boshidan oxirigacha hech qachon ishga tushirilmagan** (#66 dagi Number−Image xatosi tuzatilgan, lekin to'liq sinov yo'q) | `hls_s30_etrf.build_tile_monthly_etrf_s30` | to'liq runtime sinovi kerak |
 | P8 | Kc_ETo modelida topsoil De har oy TEW dan qayta boshlanadi | `ndvi_kc._kc_model`, `root_zone_water` | user: "alohida bosamiz" |
 | A4 | Cold anchor sezgirligi: cold LST ~0.1 K siljisa point_anchor boshqa pikselni tanlaydi → sahna ET ±20 % (#70); cold Ta − ERA5 +8…+15 K | `energy_balance` (point_anchor) | **2026-09-21 user qarori: P0 (hozirgi) QOLADI.** Test natijalari pastda (A4 test). Asl sabab — cold fizikasi (A5) |
-| A5 | Cold anchor dT_cold −10…−20 K (Ta +14…+16 K): H_cold manfiy × past shamolda barqaror qatlam rah kuchaytirishi | `energy_balance.compute_sensible_heat_flux` (cold iteratsiya) | qisman qoplama qismi TUZATILDI (#90, LAI ≥ 4). Ochiq: to'liq qoplama + past shamol (06-01: dT −10.8 K, Ta +14 K, kuchaytirish hissasi ET +13 %) — manbali yechim yo'q; QC ustunlari `dT_cold_neutral`, `rah_cold_ratio` (#91). Keyingi: V2 — past shamolli sahnalarni ground-truth saytlarda (AmeriFlux) tekshirish. Diagnostika pastda (A5) |
+| A5 | Cold anchor dT_cold −10…−20 K (Ta +14…+16 K): H_cold manfiy × past shamolda barqaror qatlam rah kuchaytirishi | `energy_balance.compute_sensible_heat_flux` (cold iteratsiya) | qisman qoplama qismi TUZATILDI (#90, LAI ≥ 4). Ochiq: to'liq qoplama + past shamol (06-01: dT −10.8 K, Ta +14 K, kuchaytirish hissasi ET +13 %) — manbali yechim yo'q; QC ustunlari `dT_cold_neutral`, `rah_cold_ratio` (#91) + `psi_clip_hit`, `zeta_2` (#96; 06-01: clip=1, ζ=1.43). Reja (GPT tahlili bilan kelishilgan): 1) Rn ni Bushland o'lchovi bilan yopish, 2) stansiya shamolidan u200/u*/rah, 3) shundan keyin 06-01 ni qayta hisoblash, 4) kerak bo'lsa AmeriFlux H/LE bilan chegara. Sahnani rad etish — sukut yechim EMAS (bitta sahnali oy yo'qoladi). Keyingi: V2 — past shamolli sahnalarni ground-truth saytlarda (AmeriFlux) tekshirish. Diagnostika pastda (A5) |
 
 ### A4 test (2026-09-21) — cold anchor point variantlari (production kodi o'zgarmagan, monkeypatch)
 Variantlar (hammasi haqiqiy BITTA piksel, hot o'zgarmagan): P0 hozirgi (CIMEC NDVI ≥ p80, LST p5…p40 → eng sovuq); P1c hozirgi nomzodlar → o'rtacha Ts'ga eng yaqin; P1 Allen 2013 nomzodlari (top 5 % NDVI → eng sovuq 20 %) → o'rtacha Ts'ga eng yaqin; P2 P1 + Allen albedo sharti; P3 Allen nomzodlari → min dT (Dhungel & Barber 2018); P4 Allen nomzodlari → dT medianasiga eng yaqin.
@@ -53,6 +53,7 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 
 ## Bu fayldan yopilganlar
 
+- **Kc/AW va hot balansda kun tartibi har xil edi → TUZATILDI (#97, 2026-09-25):** Kc_ETo va AW endi FAO-56 Eq 74/77 tartibida (Kr ← De(i−1)), hot balans bilan AYNI. A/B: standart ET aynan teng, Kc_ETo −0.36 % (yog'inli oy), yog'insiz oyda 0.
 - **Tuproq uch xil manbadan edi → TUZATILDI (#95, 2026-09-25):** FC/WP — HiHydroSoil v2 (`water_balance.soil_fc_wp_rew`), REW — FAO-56 Table 5.1; Saxton va `0.15·loy+2` olib tashlandi. A/B: standart ET aynan teng, Kc_ETo +1.4 % (yog'inli oy), AW −5…−24 %.
 - **`run_polygons` global sozlamalarni o'rnatmasdi → TUZATILDI (#94, 2026-09-25):** `albedo_method`, `cold_etrf`, `crop_type`, `crop_assets` parametrlari qo'shildi, log'da chiqadi.
 - **Kc_ETo `n_landsat_scenes` butun davr edi + bo'shliq QC yo'q → TUZATILDI (#93, 2026-09-25):** `ndvi_kc` endi `daily_et.month_scene_qc` (shu oydagi sahnalar + `max_gap_days`).
@@ -68,7 +69,6 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 ## Past ustuvorlik / izchillik — 2026-09-25 da kod bo'yicha tekshirildi, HAMMASI HALI OCHIQ
 
 
-- **[tekshirildi]** Kun tartibi: `ndvi_kc` da `De2 = De − P` keyin Kr (yomg'ir avval), hot balansda kitob tartibi; Kc modelida yomg'ir avval (De2 = De − P, keyin Kr), hot balansda kitob tartibi (Kr ← De(i−1)).
 - **[tekshirildi]** `consumptive_use._step`: P — CHIRPS kalendar (UTC) kuni, ET/ETr — mahalliy kun (utc_offset). CUirr, Kc_ETo, AW kunlik balanslarida yog'in CHIRPS UTC kuni, ET/ETo mahalliy kun (O'zbekistonda 5 soat). Hot balansda #74 da tuzatilgan.
 - **[tekshirildi]** Kunlik raster eksportda SEBAL_ID/Milliy uchun ETRF_INST, ETR24, SOLAR_FRAC bandlari yo'q (`DAILY_BANDS_SEBAL_B` = ET_24, LAMBDA_E, H, RN, G0, EVAP_FRAC, NDVI, LST, LAI).
 - **[tekshirildi]** HLS (`satellite='HLS'`): LST = HLS B10 (TOA yorqinlik harorati, LST emas); SEBAL_Milliy SMW `ST_TRAD` talab qiladi — HLS bilan ishlamaydi.

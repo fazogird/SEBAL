@@ -98,6 +98,8 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 93 | 2026-09-25 | Kc_ETo oylik metadata: `n_landsat_scenes` — SHU oydagi sahnalar (oldin butun davr) va yangi `max_gap_days` (oylik bo'shliq QC) — `daily_et.month_scene_qc` bilan AYNI | ✅ commit qilinmagan | ndvi_kc.py |
 | 94 | 2026-09-25 | `run_polygons` global sozlamalarni O'ZI o'rnatadi (`albedo_method`, `cold_etrf`, `crop_type`, `crop_assets`) va logda chop etadi — oldin oldingi `run()` dan qolgan qiymat jimgina ishlatilardi | ✅ commit qilinmagan | main.py |
 | 95 | 2026-09-25 | YAGONA tuproq manbai: FC/WP — HiHydroSoil v2 (`water_balance.soil_fc_wp_rew`), REW — FAO-56 Table 5.1 (tekstura). CUirr / AW / Kc_ETo / Appendix I dagi SoilGrids+Saxton va `REW = 0.15·loy+2` olib tashlandi (`_saxton_fc_wp_raster` o'chirildi) | ✅ commit qilinmagan | water_balance.py, ndvi_kc.py, root_zone_water.py, consumptive_use.py, etrf_water_balance.py |
+| 96 | 2026-09-25 | Sahna QC CSV: `psi_clip_hit` (cold ψ loyiha chegarasiga ±5 urildimi — Allen 2007 da bunday cap YO'Q) va `zeta_2` = z2/L (barqarorlik darajasi; ζ > 1 → chiziqli formula amal doirasidan tashqarida). Qiymatlarga TEGMAYDI | ✅ commit qilinmagan | energy_balance.py, main.py |
+| 97 | 2026-09-25 | Kc_ETo va AW kunlik topsoil balansi FAO-56 tartibiga keltirildi: Kr kun BOSHIDAGI `De(i−1)` dan (Eq 74), yog'in esa depletion yangilanishida (Eq 77) — hot piksel balansi bilan AYNI. Oldin `De2 = De − P` dan Kr olinardi (yomg'irli kunning o'zida Kr = 1) | ✅ commit qilinmagan | ndvi_kc.py, root_zone_water.py |
 
 ---
 
@@ -2596,4 +2598,74 @@ Manbalar farqi (ekinzor, 250 m):
 | Yaroqli piksellar | 6825 → 6829 (+4) | 6825 → 6829 (+4) |
 
 Izoh: standart ET'ga tuproq kirmaydi — aynan teng chiqdi (yon ta'sir yo'q). Kc_ETo farqi FAQAT yog'inli oyda ko'rinadi (REW +29 % → Kr uzoqroq 1 da qoladi → Ke ko'proq): iyulda −0.03 %, mayda +1.37 %. Eng katta siljish ildiz-zona AW mahsulotida (TAW kattaroq → sug'orish talabi kichikroq); AW oylik rejimda allaqachon "yaroqsiz" deb belgilangan (ochiq masalalar B1). HiHydroSoil qamrovi SoilGrids'dan yomon emas (+4 piksel).
+
+---
+
+## #96 — QC: cold barqarorlik chegarasi va ζ (A5 diagnostikasi, V1 davomi)
+
+User: "1-qadam (arzon, hozir): QC ni to'ldirish — psi_clip_hit … zeta_2 … shuni qil".
+
+**Sabab:** A5 da kuchli barqaror holat rah_cold'ni ×4.4 ga oshiradi. Bizdagi `_stability_scalar`
+barqaror shoxda Allen (2007) formulasini ishlatadi (ψm = −5·2/L, ψh = −5·(z2−z1)/L), lekin
+ustiga loyihada **±5 chegarasi** qo'shilgan — manbada bunday cap yo'q. Sahna shu chegaraga
+urilgan bo'lsa, bu "yechim modelning o'z himoyasi bilan ushlab turilgan" degani.
+
+**Keyin** (`compute_sensible_heat_flux`, SEBAL_ID oilasi — cold iteratsiyasi):
+```python
+            psi_m_cc, psi_h_cc = _stability_scalar(L_c, z_blend, z1, z2)
+            zeta_cold = z2 / L_c if L_c != 0 else None     # ζ = 2/L
+            if abs(psi_m_cc) >= 5.0 or abs(psi_h_cc) >= 5.0:
+                psi_clip_cold = True
+        …
+            qc.update({… 'psi_clip_hit': int(psi_clip_cold), 'zeta_2': zeta_cold})
+```
+`main._scene_qc_report` ustunlari: `… dT_cold_neutral, rah_cold_ratio, psi_clip_hit, zeta_2 …`.
+
+**GEE sinovi** (Samarqand 20 km, production kodi):
+
+| Sahna | Rejim | dT_cold | rah_cold_ratio | psi_clip_hit | zeta_2 |
+|---|---|---|---|---|---|
+| 2023-06-01 | SEBAL_Milliy | −10.76 | 4.44 | **1** | **1.427** |
+| 2023-07-27 | SEBAL_Milliy | −1.33 | 1.33 | 0 | 0.137 |
+| 2023-08-20 | SEBAL_Milliy | −4.16 | 1.13 | 0 | 0.058 |
+| 2023-06-01 | SEBAL_B | 0 | — | — (bo'sh) | — |
+
+ζ > 1 (06-01) — Businger–Dyer chiziqli barqaror shakli odatda ζ ≲ 1 gacha qo'llanadi; bu sahnada
+model o'z amal doirasidan chiqqan va chegara ushlab turgan. dT_cold qiymatlari #90/#91 bilan AYNI
+(fizika o'zgarmagan).
+
+---
+
+## #97 — Kc_ETo / AW: FAO-56 kun tartibi (Kr ← De(i−1))
+
+User: "Kc va AW modelini FAO-56 tartibiga keltirish — Kr De(i−1) dan, yomg'ir esa depletion yangilanishida — buni ham qil".
+
+**Oldin** (`ndvi_kc._kc_model.day_step`, `root_zone_water`):
+```python
+        De2 = De.subtract(P).max(0.0)            # avval yomg'ir
+        Kr  = 1 (De2 ≤ REW) | (TEW−De2)/(TEW−REW)   # Kr — YOMG'IRDAN KEYINGI holatdan
+        E   = Ke·ETo ;  De_new = De2 + E
+```
+Yomg'irli kunning O'ZIDA yuza "ho'l" deb olinardi (Kr = 1) → tuproq bug'lanishi ortiqcha.
+Hot piksel suv balansi esa kitob tartibida (Kr ← De(i−1)) ishlardi — ikki modelda ikki xil tartib.
+
+**Keyin** (FAO-56 Eq 74 va 77):
+```python
+        Kr  = 1 (De ≤ REW) | (TEW−De)/(TEW−REW)     # De — KUN BOSHIDAGI depletion
+        E   = Ke·ETo
+        De_new = max(De − P, 0) + E,  0…TEW          # yog'in shu yerda (Eq 77; RO = 0)
+```
+
+### GEE A/B (Samarqand 20 km, ekinzor o'rtachasi; eski kod nusxasi vs yangi)
+
+| Kattalik | May 2023 (yog'inli) | Iyul 2023 (yog'insiz) |
+|---|---|---|
+| **Standart SEBAL_Milliy ET** | 124.33850835 → 124.33850835 (aynan) | 150.33552290 → 150.33552290 (aynan) |
+| Kc_ETo oylik ET | 86.615 → **86.304 (−0.36 %)** | 93.710 → 93.710 (0.00 %) |
+| CUirr / Prz / NIWR | o'zgarmadi (< 0.005 %) | o'zgarmadi |
+| AW (sug'orish talabi) | 13.677 → 13.403 (−2.0 %) | o'zgarmadi |
+| AVAILABLE_WATER | 123.108 → 123.031 (−0.06 %) | o'zgarmadi |
+| DP_MONTHLY | 0.803 → 0.916 mm (+14 %, mutlaq farq 0.11 mm) | 0 |
+
+Kutilganidek: yog'inli oyda tuproq bug'lanishi biroz kamaydi (Kr endi kun boshidagi quruqroq holatdan), yog'insiz oyda umuman o'zgarish yo'q. Standart SEBAL ET'ga aloqasi yo'q — bitgacha teng.
 
