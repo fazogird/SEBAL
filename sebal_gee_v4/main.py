@@ -1728,7 +1728,9 @@ def run_polygons(polygon_asset,
                  crs='EPSG:32610', months=(4, 5, 6, 7, 8),
                  year=2024, export_rasters=False,
                  etrf_water_balance=False, ref_type='alfalfa', utc_offset=None,
-                 etr24_source='era5', sloping_terrain=False):
+                 etr24_source='era5', sloping_terrain=False,
+                 albedo_method='olmedo_brdf', cold_etrf=1.05,
+                 crop_type=None, crop_assets=None):
     """
     Polygon(lar) bo'yicha SEBAL ET — zonal (mean).
 
@@ -1741,6 +1743,11 @@ def run_polygons(polygon_asset,
     ----------
     polygon_asset : str | ee.FeatureCollection | ee.Geometry
         Polygon asset ID yoki FC/Geometry.
+    albedo_method, cold_etrf, crop_type, crop_assets : run() dagi bilan AYNI.
+        OLDIN run_polygons ularni O'RNATMASDI — bitta sessiyada oldingi `run()`
+        dan qolgan global qiymat jimgina ishlatilardi (albedo usuli, cold ETrF,
+        z0m ekin turi, per-crop Kc). Endi har chaqiruv o'z qiymatini o'rnatadi
+        va logda chop etadi.
     calib_buffer_m : int
         Kalibratsiya ROI = polygon bounds + shu bufer (~cold+hot anchor uchun).
     inner_buffer_m : int
@@ -1762,6 +1769,17 @@ def run_polygons(polygon_asset,
     print(f"{'='*60}")
 
     poly_geom = fc.geometry()
+
+    # 1b. GLOBAL SOZLAMALAR — `run()` bilan AYNI. OLDIN run_polygons ularni
+    #     o'rnatmasdi: bitta sessiyada avvalgi `run()` dan qolgan qiymat (albedo
+    #     usuli, cold ETrF, z0m ekin turi, per-crop Kc) jimgina ishlatilardi.
+    cfg.CROP_ASSETS = crop_assets
+    energy_balance.COLD_ETRF = cold_etrf
+    surface_props.ALBEDO_METHOD = albedo_method
+    surface_props.CROP_TYPE = crop_type
+    print(f"  🎨 albedo usuli = '{albedo_method}' | 🧊 cold anchor ETrF = {cold_etrf}"
+          + (f" | 🌱 z0m crop_type = '{crop_type}'" if crop_type else '')
+          + (f" | 🌾 per-crop Kc: {len(crop_assets)} ta asset" if crop_assets else ''))
 
     # 2. Kalibratsiya ROI — polygon atrofida bufer (cold+hot anchor uchun kengroq)
     roi_calib = poly_geom.bounds().buffer(calib_buffer_m).bounds()

@@ -84,33 +84,17 @@ def _kc_model(image_list, roi, year, month, utc_offset=0, etr24_source='era5',
     ndvi_coll = ee.ImageCollection(image_list).select('NDVI')
     dem = ee.Image(image_list[0]).select('DEM')
 
-    # TEW/REW — PER-PIKSEL (bitta universal qiymat EMAS): SoilGrids 2.0 qum/gil
-    # (global, O'zbekiston ham) → Saxton-Rawls FC/WP → topsoil bug'lanish qatlami.
+    # TEW/REW — PER-PIKSEL, loyiha bo'yicha YAGONA tuproq manbaidan
+    # (wb.soil_fc_wp_rew: HiHydroSoil v2 FC/WP + FAO-56 Table 5.1 REW; #95):
     #   TEW = 1000·(FC − 0.5·WP)·Ze  (FAO-56 Eq.7.1, Ze=0.10 m)
-    #   REW = 0.15·loy% + 2 (2…11 mm; gil ko'p → REW yuqori).
-    from . import consumptive_use as _cu
+    #   REW — tekstura klassi jadvalidan (oldin 0.15·loy+2 — manbasiz evristika edi)
     _ze = 0.10
-    # Tuproq: SoilGrids 2.0 (ISRIC, 2020, 250m, global — O'zbekiston ham).
-    # OpenLandMap(2018)dan yangi/aniqroq. Topsoil 0-10sm ≈ (0-5 + 5-15)/2. g/kg → % (/10).
-    _sgS = ee.Image('projects/soilgrids-isric/sand_mean')
-    _sgC = ee.Image('projects/soilgrids-isric/clay_mean')
-    _sand = (_sgS.select('sand_0-5cm_mean').add(_sgS.select('sand_5-15cm_mean'))
-             .multiply(0.05))                    # (a+b)/2/10 = *0.05  → %
-    _clay = (_sgC.select('clay_0-5cm_mean').add(_sgC.select('clay_5-15cm_mean'))
-             .multiply(0.05))
-    _fc, _wp = _cu._saxton_fc_wp_raster(_sand, _clay)
-    # ─────────────────────────────────────────────────────────────────────────
-    # 🔖 KELAJAK OPTIMIZATSIYA (eslatma — hozir ishlatilmaydi, aniqlik uchun keyin):
-    #   1) SHO'RLANISH: O'zbekiston (Orol bo'yi) sho'r tuproqda osmotik stress ET'ni
-    #      pasaytiradi. Dataset: "Global Soil Salinity Maps (1986-2016)". Keyin Kcb/ET
-    #      ga sho'rlanish-stress omili qo'shsak — sho'r hududlarда aniqlik oshadi.
-    #   2) HiHydroSoil v2.0 (250m, 2020, global): FC/WP/Ksat ni TO'G'RIDAN-TO'G'RI
-    #      beradi (Saxton pedotransfersiz). Agar AW (applied water) yoki ildiz-zona
-    #      suv balansi uchun aniq FC/WP kerak bo'lsa — SoilGrids+Saxton o'rniga/bilan
-    #      shu yerdan olamiz. Manba: gee-community-catalog → HiHydroSoil v2.0.
-    # ─────────────────────────────────────────────────────────────────────────
+    _fc, _wp, _rew = wb.soil_fc_wp_rew()
+    # 🔖 KELAJAK: SHO'RLANISH — O'zbekiston (Orol bo'yi) sho'r tuproqda osmotik stress
+    #    ET'ni pasaytiradi. Dataset: "Global Soil Salinity Maps (1986-2016)"; Kcb/ET ga
+    #    sho'rlanish-stress omili qo'shilsa sho'r hududlarda aniqlik oshadi.
     TEW = _fc.subtract(_wp.multiply(0.5)).multiply(1000.0 * _ze).max(1.0)   # ee.Image, mm
-    REW = _clay.multiply(0.15).add(2.0).clamp(2.0, 11.0).min(TEW)           # ee.Image, mm
+    REW = _rew.min(TEW)                                                     # ee.Image, mm
     KCMAX = float(kc['kc_max']); KE_SCALE = float(kc['ke_scale'])
     A = float(kc['kcb_a']); B = float(kc['kcb_b']); KCB_MAX = float(kc['kcb_max'])
     NB = float(kc['ndvi_bare']); NF = float(kc['ndvi_full'])

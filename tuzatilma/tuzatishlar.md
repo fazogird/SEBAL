@@ -96,6 +96,8 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 91 | 2026-09-21 | Sahna QC CSV: `dT_cold_neutral` (neytral rah bilan dT_cold) va `rah_cold_ratio` (yakuniy / neytral rah_cold) — past shamolda cold barqaror qatlam kuchaytirishini ko'rsatadi; qiymatlarga TEGMAYDI (SEBAL_ID oilasi) | ✅ commit qilinmagan | energy_balance.py, main.py |
 | 92 | 2026-09-25 | Oylik eksport xatosi YUTILMAYDI (B2): `_export_monthly` xatolarni yig'ib RuntimeError qiladi; `_export_monthly_safe` oyni `failed_months` ga yozadi, run davom etadi, status QISMAN va natija lug'atida `failed_months` | ✅ commit qilinmagan | main.py |
 | 93 | 2026-09-25 | Kc_ETo oylik metadata: `n_landsat_scenes` — SHU oydagi sahnalar (oldin butun davr) va yangi `max_gap_days` (oylik bo'shliq QC) — `daily_et.month_scene_qc` bilan AYNI | ✅ commit qilinmagan | ndvi_kc.py |
+| 94 | 2026-09-25 | `run_polygons` global sozlamalarni O'ZI o'rnatadi (`albedo_method`, `cold_etrf`, `crop_type`, `crop_assets`) va logda chop etadi — oldin oldingi `run()` dan qolgan qiymat jimgina ishlatilardi | ✅ commit qilinmagan | main.py |
+| 95 | 2026-09-25 | YAGONA tuproq manbai: FC/WP — HiHydroSoil v2 (`water_balance.soil_fc_wp_rew`), REW — FAO-56 Table 5.1 (tekstura). CUirr / AW / Kc_ETo / Appendix I dagi SoilGrids+Saxton va `REW = 0.15·loy+2` olib tashlandi (`_saxton_fc_wp_raster` o'chirildi) | ✅ commit qilinmagan | water_balance.py, ndvi_kc.py, root_zone_water.py, consumptive_use.py, etrf_water_balance.py |
 
 ---
 
@@ -2516,4 +2518,82 @@ User: "Kc_ETo `n_landsat_scenes` … buni tuzat".
 | 2023-05 | 3 | 3 (05-08, 16, 24) | 7.3 | 86.85 mm |
 
 Oldingi kod ikkala oyda ham 14 deb yozardi.
+
+---
+
+## #94 — run_polygons global sozlamalari
+
+User: "(a) parametrlarni qo'shib, u ham o'rnatsin va logda chiqarsin".
+
+**Oldin:** `run()` foydalanuvchi parametrlarini modul global o'zgaruvchilariga yozardi
+(`surface_props.ALBEDO_METHOD`, `energy_balance.COLD_ETRF`, `surface_props.CROP_TYPE`,
+`cfg.CROP_ASSETS`), `run_polygons()` da esa bu parametrlar YO'Q edi va u hech narsa
+o'rnatmasdi. Bitta Python sessiyasida `run(albedo_method='liang', cold_etrf=0.85)` dan keyin
+`run_polygons(...)` chaqirilsa — polygon hisobida ham 'liang' va 0.85 ishlatilardi, logda
+ko'rinmasdi.
+
+**Keyin:** `run_polygons(..., albedo_method='olmedo_brdf', cold_etrf=1.05, crop_type=None, crop_assets=None)`
+va tanaviy blok (polygon geometriyasidan keyin, tile qidiruvidan oldin):
+```python
+    cfg.CROP_ASSETS = crop_assets
+    energy_balance.COLD_ETRF = cold_etrf
+    surface_props.ALBEDO_METHOD = albedo_method
+    surface_props.CROP_TYPE = crop_type
+    print(f"  🎨 albedo usuli = '{albedo_method}' | 🧊 cold anchor ETrF = {cold_etrf}" …)
+```
+(`run()` da `crop_type` FAQAT CSV rejimida qo'llanadi — polygon rejimida esa dala ekini
+ma'lum bo'lgani uchun berilgan qiymat to'g'ridan-to'g'ri o'rnatiladi.)
+
+**Sinov** (globallar ataylab "eski" qiymatga qo'yildi, `detect_wrs_tiles` bo'sh qaytaradi):
+
+| | ALBEDO_METHOD | COLD_ETRF | CROP_TYPE | CROP_ASSETS |
+|---|---|---|---|---|
+| Oldin (qolgan holat) | liang | 0.85 | wheat | ['eski'] |
+| `run_polygons(albedo_method='olmedo_brdf', cold_etrf=1.05, crop_type='cotton')` dan keyin | olmedo_brdf | 1.05 | cotton | None |
+
+Log: `🎨 albedo usuli = 'olmedo_brdf' | 🧊 cold anchor ETrF = 1.05 | 🌱 z0m crop_type = 'cotton'`.
+
+---
+
+## #95 — Tuproq: bitta piksel uchun BITTA FC/WP, REW faqat FAO jadvalidan
+
+User: "FC/WP faqat HiHydroSoil, REW faqat FAO jadvali … ha shunday qil" (avval A/B test).
+
+**Oldin — uch xil tuproq:**
+
+| Yo'l | FC / WP | REW |
+|---|---|---|
+| Hot piksel suv balansi | HiHydroSoil v2 (VG θ33, WCpF4.2) | FAO-56 Table 5.1 (tekstura) |
+| CUirr / AW / Kc_ETo | SoilGrids 2.0 → Saxton-Rawls | 0.15·loy % + 2 (manbasiz evristika) |
+| Appendix I (etrf_water_balance) | FAO Table 5.1 (klass o'rtachasi) | FAO Table 5.1 |
+
+Ya'ni AYNI piksel hot balansda θ_WP = 0.142, CUirr'da 0.184 edi.
+
+**Keyin — yagona manba** (`water_balance.soil_fc_wp_rew()`): FC/WP HiHydroSoil v2, REW FAO-56 Table 5.1 (OpenLandMap USDA tekstura). Barcha yo'llar shuni chaqiradi; `consumptive_use._saxton_fc_wp_raster` O'CHIRILDI (qum/gil faqat CN gidrologik guruhi uchun qoldi). Ma'lumot yo'q piksel maskalanadi (soxta qiymat yo'q).
+
+Manbalar farqi (ekinzor, 250 m):
+
+| | Samarqand | Bushland |
+|---|---|---|
+| FC: HiHydroSoil → Saxton | 0.315 → 0.343 (+9 %) | 0.313 → 0.358 (+14 %) |
+| WP | 0.142 → 0.184 (+30 %) | 0.152 → 0.205 (+34 %) |
+| TEW | 24.4 → 25.1 (+3 %) | 23.7 → 25.5 (+8 %) |
+| REW: FAO jadval → 0.15·loy+2 | 9.0 → 6.4 (−29 %) | 9.4 → 7.0 (−26 %) |
+
+### GEE A/B (Samarqand 20 km, ekinzor o'rtachasi; eski kod nusxasi vs yangi)
+
+| Kattalik | Iyul 2023 eski → yangi | May 2023 eski → yangi |
+|---|---|---|
+| **Standart SEBAL_Milliy ET** | 150.3355 → 150.3355 (**aynan**) | 124.3385 → 124.3385 (**aynan**) |
+| Kc_ETo oylik ET | 93.74 → 93.71 (−0.03 %) | 85.44 → **86.62 (+1.37 %)** |
+| CUirr | 150.39 → 150.32 (−0.05 %) | 100.69 → 100.69 (0.00 %) |
+| Prz (samarali yog'in) | 0 (yog'insiz oy) | 23.69 → 23.69 (−0.01 %) |
+| NIWR | 322.59 → 322.62 (+0.01 %) | 185.10 → 185.12 (+0.01 %) |
+| TAW (ildiz zona) | 159.18 → 173.16 (+8.8 %) | 159.18 → 173.16 (+8.8 %) |
+| AVAILABLE_WATER | 120.96 → 131.95 (+9.1 %) | 114.66 → 123.11 (+7.4 %) |
+| AW (sug'orish talabi) | 55.53 → 52.51 (−5.4 %) | 18.08 → **13.68 (−24.3 %)** |
+| DP_MONTHLY | 0 | 0.839 → 0.803 (−4.3 %) |
+| Yaroqli piksellar | 6825 → 6829 (+4) | 6825 → 6829 (+4) |
+
+Izoh: standart ET'ga tuproq kirmaydi — aynan teng chiqdi (yon ta'sir yo'q). Kc_ETo farqi FAQAT yog'inli oyda ko'rinadi (REW +29 % → Kr uzoqroq 1 da qoladi → Ke ko'proq): iyulda −0.03 %, mayda +1.37 %. Eng katta siljish ildiz-zona AW mahsulotida (TAW kattaroq → sug'orish talabi kichikroq); AW oylik rejimda allaqachon "yaroqsiz" deb belgilangan (ochiq masalalar B1). HiHydroSoil qamrovi SoilGrids'dan yomon emas (+4 piksel).
 

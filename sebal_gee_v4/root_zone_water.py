@@ -53,15 +53,11 @@ def compute_awnet(image_list, roi, year, month, utc_offset=0,
     dem = ee.Image(image_list[0]).select('DEM')
     eff = float(cfg.CONSUMPTIVE_USE['irrigation_efficiency'])
 
-    # --- Topsoil TEW/REW (Ke uchun) — SoilGrids 2.0 + Saxton ---
+    # --- Topsoil TEW/REW (Ke uchun) — YAGONA manba (#95): HiHydroSoil + FAO jadvali ---
     ze = 0.10
-    sgS = ee.Image('projects/soilgrids-isric/sand_mean')
-    sgC = ee.Image('projects/soilgrids-isric/clay_mean')
-    sand = sgS.select('sand_0-5cm_mean').add(sgS.select('sand_5-15cm_mean')).multiply(0.05)
-    clay = sgC.select('clay_0-5cm_mean').add(sgC.select('clay_5-15cm_mean')).multiply(0.05)
-    fc, wp = cu._saxton_fc_wp_raster(sand, clay)
+    fc, wp, rew = wb.soil_fc_wp_rew()
     TEW = fc.subtract(wp.multiply(0.5)).multiply(1000.0 * ze).max(1.0)
-    REW = clay.multiply(0.15).add(2.0).clamp(2.0, 11.0).min(TEW)
+    REW = rew.min(TEW)
 
     # --- Root-zona TAW (per-crop Zr) + CN (RO uchun) ---
     TAW, CN = cu.soil_water_params(roi)

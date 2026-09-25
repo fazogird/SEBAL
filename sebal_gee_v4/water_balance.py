@@ -131,6 +131,24 @@ def _soil_stack():
             .addBands(ee.Image(TEXTURE).select('b0').rename('tex')))
 
 
+def soil_fc_wp_rew():
+    """
+    LOYIHA BO'YICHA YAGONA tuproq manbai (2026-09-25, user qarori):
+      fc, wp — HiHydroSoil v2 (van Genuchten θ(33 kPa) va WCpF4.2; 0–5 va 5–15 sm
+               o'rtachasi) — hot piksel balansi bilan AYNI;
+      rew    — FAO-56 Table 5.1 (USDA tekstura klassi, OpenLandMap) — REW ni na
+               Saxton, na HiHydroSoil beradi, jadval yagona manba.
+    Oldin CUirr / AW / Kc_ETo SoilGrids+Saxton FC/WP va REW = 0.15·loy+2 (manbasiz)
+    ishlatardi — bitta piksel uchun ikki xil tuproq edi.
+    Ma'lumot yo'q piksel MASKALANADI (soxta qiymat YO'Q).
+    """
+    st = _soil_stack()
+    classes = sorted(_SOIL)
+    rew = st.select('tex').remap(classes, [_SOIL[c][2] for c in classes],
+                                 _SOIL_DEFAULT[2]).toFloat().rename('REW')
+    return st.select('fc'), st.select('wp'), rew
+
+
 def soil_valid_mask():
     """
     1 — θ_FC, θ_WP va tekstura (FAO-56 Table 5.1 dagi klass) BOR hamda fizik izchil

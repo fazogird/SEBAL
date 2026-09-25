@@ -40,12 +40,13 @@ BASAL_PCTL = 5           # pastki o'ram uchun persentil
 # ==============================================================
 
 def _soil_rasters(ze=0.10):
-    """OpenLandMap USDA tekstura → per-piksel FC, WP, REW, TEW (Table 5.1)."""
-    tex = ee.Image(TEXTURE).select('b0')
-    classes = list(range(1, 13))
-    fc = tex.remap(classes, [_SOIL[c][0] for c in classes], _SOIL_DEFAULT[0]).toFloat()
-    wp = tex.remap(classes, [_SOIL[c][1] for c in classes], _SOIL_DEFAULT[1]).toFloat()
-    rew = tex.remap(classes, [_SOIL[c][2] for c in classes], _SOIL_DEFAULT[2]).toFloat()
+    """
+    Per-piksel REW va TEW — YAGONA manba (#95): FC/WP HiHydroSoil v2,
+    REW FAO-56 Table 5.1 (USDA tekstura, OpenLandMap). Oldin FC/WP ham jadvaldan
+    olinardi (tekstura klassining o'rtacha qiymati).
+    """
+    from .water_balance import soil_fc_wp_rew
+    fc, wp, rew = soil_fc_wp_rew()
     tew = fc.subtract(wp.multiply(0.5)).multiply(1000.0 * ze)
     tew = tew.max(rew.add(1.0))     # TEW > REW kafolati
     return rew.rename('REW'), tew.rename('TEW')

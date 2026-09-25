@@ -53,6 +53,8 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 
 ## Bu fayldan yopilganlar
 
+- **Tuproq uch xil manbadan edi → TUZATILDI (#95, 2026-09-25):** FC/WP — HiHydroSoil v2 (`water_balance.soil_fc_wp_rew`), REW — FAO-56 Table 5.1; Saxton va `0.15·loy+2` olib tashlandi. A/B: standart ET aynan teng, Kc_ETo +1.4 % (yog'inli oy), AW −5…−24 %.
+- **`run_polygons` global sozlamalarni o'rnatmasdi → TUZATILDI (#94, 2026-09-25):** `albedo_method`, `cold_etrf`, `crop_type`, `crop_assets` parametrlari qo'shildi, log'da chiqadi.
 - **Kc_ETo `n_landsat_scenes` butun davr edi + bo'shliq QC yo'q → TUZATILDI (#93, 2026-09-25):** `ndvi_kc` endi `daily_et.month_scene_qc` (shu oydagi sahnalar + `max_gap_days`).
 - **B2 — oylik eksportda xatolar yutilardi → TUZATILDI (#92, 2026-09-25):** `_export_monthly` RuntimeError ko'taradi, `_export_monthly_safe` oyni `failed_months` ga yozadi, run status QISMAN bo'ladi.
 
@@ -66,10 +68,8 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 ## Past ustuvorlik / izchillik — 2026-09-25 da kod bo'yicha tekshirildi, HAMMASI HALI OCHIQ
 
 
-- **[tekshirildi]** Tuproq uch xil manbadan: hot balans — HiHydroSoil (VG θ33 + WCpF4.2) + FAO REW jadvali; CUirr/AW/Kc_ETo — SoilGrids + Saxton, REW = 0.15·loy + 2; Appendix I (etrf_water_balance) — FAO jadvali (OpenLandMap tekstura).
 - **[tekshirildi]** Kun tartibi: `ndvi_kc` da `De2 = De − P` keyin Kr (yomg'ir avval), hot balansda kitob tartibi; Kc modelida yomg'ir avval (De2 = De − P, keyin Kr), hot balansda kitob tartibi (Kr ← De(i−1)).
 - **[tekshirildi]** `consumptive_use._step`: P — CHIRPS kalendar (UTC) kuni, ET/ETr — mahalliy kun (utc_offset). CUirr, Kc_ETo, AW kunlik balanslarida yog'in CHIRPS UTC kuni, ET/ETo mahalliy kun (O'zbekistonda 5 soat). Hot balansda #74 da tuzatilgan.
-- **[tekshirildi]** Global holat (`run_polygons` da `surface_props.ALBEDO_METHOD` / `energy_balance.COLD_ETRF` / `CROP_TYPE` / `cfg.CROP_ASSETS` o'rnatilmaydi — faqat `run()` da): albedo usuli, `COLD_ETRF`, `CROP_TYPE`, `CROP_ASSETS` faqat `run()` da o'rnatiladi va chaqiruvlar orasida qoladi (`run_polygons` o'rnatmaydi).
 - **[tekshirildi]** Kunlik raster eksportda SEBAL_ID/Milliy uchun ETRF_INST, ETR24, SOLAR_FRAC bandlari yo'q (`DAILY_BANDS_SEBAL_B` = ET_24, LAMBDA_E, H, RN, G0, EVAP_FRAC, NDVI, LST, LAI).
 - **[tekshirildi]** HLS (`satellite='HLS'`): LST = HLS B10 (TOA yorqinlik harorati, LST emas); SEBAL_Milliy SMW `ST_TRAD` talab qiladi — HLS bilan ishlamaydi.
 - Instant K↓ ochiq osmon formulasi (ETr esa haqiqiy SSRD) — keyingi modelga qoldirilgan.

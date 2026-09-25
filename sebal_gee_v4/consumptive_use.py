@@ -33,30 +33,10 @@ from . import daily_et
 # 1. TUPROQ SUV PARAMETRLARI (RASTER)
 # ==============================================================
 
-def _saxton_fc_wp_raster(sand, clay, om=2.0):
-    """
-    θ_FC (33 kPa) va θ_WP (1500 kPa) — Saxton & Rawls (2006) pedotransfer, RASTER.
-
-    Kirish: sand, clay — OG'IRLIK % (ee.Image, SoilGrids 2.0), om — organik modda %.
-    Chiqish: (FC, WP) hajmiy nam [m³/m³] ee.Image (CUirr, AW, Kc_ETo TEW uchun).
-    """
-    S = sand.divide(100.0)
-    C = clay.divide(100.0)
-    OM = float(om)
-    # θ1500 (WP)
-    t15 = (S.multiply(-0.024).add(C.multiply(0.487)).add(0.006 * OM)
-           .add(S.multiply(0.005 * OM)).subtract(C.multiply(0.013 * OM))
-           .add(S.multiply(C).multiply(0.068)).add(0.031))
-    wp = t15.add(t15.multiply(0.14).subtract(0.02))
-    # θ33 (FC)
-    t33 = (S.multiply(-0.251).add(C.multiply(0.195)).add(0.011 * OM)
-           .add(S.multiply(0.006 * OM)).subtract(C.multiply(0.027 * OM))
-           .add(S.multiply(C).multiply(0.452)).add(0.299))
-    fc = t33.add(t33.pow(2).multiply(1.283).subtract(t33.multiply(0.374)).subtract(0.015))
-    # fizik chegara (nofizik pedotransfer chiqishidan himoya) + WP < FC
-    fc = fc.clamp(0.10, 0.50)
-    wp = wp.clamp(0.02, 0.35).min(fc.subtract(0.03))
-    return fc, wp
+# _saxton_fc_wp_raster (Saxton-Rawls 2006 pedotransfer) OLIB TASHLANDI (#95):
+# FC/WP endi water_balance.soil_fc_wp_rew() — HiHydroSoil v2 (loyiha bo'yicha yagona
+# tuproq manbai). Saxton AQSh tuproqlarida kalibrlangan va HiHydroSoil bilan farqi
+# katta edi (WP +30 %, FC +9…+14 %).
 
 
 def soil_water_params(roi):
@@ -64,18 +44,21 @@ def soil_water_params(roi):
     TAW (ildiz-zona jami mavjud suv, mm) va CN (Curve Number) RASTERlari.
 
     TAW = 1000·(FC − WP)·Zr.
-      • FC/WP — SoilGrids 2.0 (ndvi_kc bilan IZCHIL) qum/gil → Saxton.
+      • FC/WP — YAGONA manba (#95): HiHydroSoil v2 (water_balance.soil_fc_wp_rew),
+        hot piksel balansi va Kc_ETo/AW bilan AYNI. Qum/gil (SoilGrids) faqat CN
+        gidrologik guruhi uchun qoladi (tuproq gidravlikasi uchun emas).
       • Zr — cfg.CROP_ASSETS berilgan bo'lsa PER-CROP (crop_kc_table zr_max, FAO
         Table 22); aks holda cu['root_depth'] konstanta. (Oldin har doim 1.0 KONSTANTA
         edi → TAW noto'g'ri; endi ekin ildiz chuqurligiga qarab.)
     CN gidrologik guruh: sand>50%→A, clay>40%→C, else B.
     """
-    # SoilGrids 2.0 (izchil ndvi_kc bilan). g/kg → % ; 0-10sm ≈ (0-5+5-15)/2.
+    # CN gidrologik guruhi uchun qum/gil (SoilGrids 2.0; g/kg → %, 0-10sm ≈ (0-5+5-15)/2)
     sgS = ee.Image('projects/soilgrids-isric/sand_mean')
     sgC = ee.Image('projects/soilgrids-isric/clay_mean')
     sand = sgS.select('sand_0-5cm_mean').add(sgS.select('sand_5-15cm_mean')).multiply(0.05)
     clay = sgC.select('clay_0-5cm_mean').add(sgC.select('clay_5-15cm_mean')).multiply(0.05)
-    fc, wp = _saxton_fc_wp_raster(sand, clay)
+    from . import water_balance as _wb
+    fc, wp, _ = _wb.soil_fc_wp_rew()          # #95: FC/WP — HiHydroSoil (yagona manba)
     cu = cfg.CONSUMPTIVE_USE
 
     # PER-CROP ildiz chuqurligi Zr (crop asset) yoki konstanta fallback
