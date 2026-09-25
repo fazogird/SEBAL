@@ -1,0 +1,129 @@
+REMOTE SENSING
+──────────────
+SR_B2
+SR_B3
+SR_B4
+SR_B5
+SR_B6
+SR_B7
+LST
+WATER_MASK
+
+TERRAIN
+───────
+DEM
+SLOPE
+
+METEOROLOGY
+───────────
+WIND_SPEED_10M    [m/s]
+AIR_TEMP          [K]
+PRESSURE          [Pa]
+DEWPOINT          [K]
+SSRD              [J/m²]
+STRD              [J/m²]
+
+DERIVED METEO
+─────────────
+RHO_AIR           [kg/m³]   ← YANGI
+
+K_DOWN       [W/m²]
+L_DOWN       [W/m²]
+L_UP         [W/m²]
+
+RN           [W/m²]
+RN_QA_FLAG   [0/1]
+
+G_RATIO      [–]
+G0           [W/m²]
+
+RN_G0        [W/m²]
+
+1.  NDVI
+2.  SAVI
+
+3.  ALBEDO
+4.  ALB_OLMEDO
+5.  ALB_LIANG
+6.  ALB_KE
+7.  ALB_TASUMI
+8.  ALB_AVG3
+
+9.  LAI
+
+10. EMISSIVITY
+
+11. Z0M
+12. Z0H
+13. Z0M_WIND
+
+14. TAU_SW
+
+******************
+Katta ro‘yxat:
+
+Original/preprocess
+SR_B2–SR_B7
+LST
+DEM
+SLOPE
+WATER_MASK
+
+WIND_SPEED_10M
+AIR_TEMP
+PRESSURE
+DEWPOINT
+SSRD
+STRD
+RHO_AIR
+Surface
+NDVI
+SAVI
+LAI
+ALBEDO
+ALB_OLMEDO
+ALB_LIANG
+ALB_KE
+ALB_TASUMI
+ALB_AVG3
+
+EMISSIVITY
+Z0M
+Z0H
+Z0M_WIND
+TAU_SW
+Radiation
+K_DOWN
+L_DOWN
+L_UP
+RN
+RN_QA_FLAG
+G0
+G_RATIO
+RN_G0
+Energy balance
+U_200
+USTAR
+RAH
+DTA
+H
+L_MO
+LAMBDA_E
+EVAP_FRAC
+ETR_INST
+Daily current Milliy
+RS24
+RN24
+ET_INST_MM_HR
+ETRF_INST
+ETR24
+SOLAR_FRAC
+ET_24
+Diagnostic reference
+ETREF_24
+KC
+
+Current slope=False sabab:
+
+RA24_RATIO ❌
+C_RAD ❌

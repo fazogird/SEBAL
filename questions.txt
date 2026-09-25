@@ -1,0 +1,1169 @@
+hozirgi loyih aholatidan kelib chiqib hisoblash zonasini qanday qilsam bo'ladi , 
+roi bor tile bor agar point hisoblansa ular uchun boshqacha bo'ladi! 
+qanday qilinsa optimallashadi yoki hozir normal holatdami 
+
+-------------------------------------------+
+
+
+G ni hisoblashda is_water = ndvi.lt(0)   yani 0 dan kichik ndvi suv deb olinyapti bu to'g'rimi ?
+landsatni o'zini water maskini ishlatish qanchalik to'g'ri hls yolki satelite water mask ?
+G manfiy chiqishi mumkinmi ?
+
+
+------------------------------------+
+select_anchor_default energy_balance.py 
+_zone_base  px.gt(20) > bu to'g'rimi 20 dan ko'p or kichik 
+
+
+--------+
+
+radiation.py da soil heta flux  configdan chaqirilmagan lekin configda bor  yoki configdagi qiymatlar bir xil emasmi
+
+------+
+hot_LST-cold_LST >_= 1K   bu holatdni optimal qilish kerak sababi
+305-304 >_ 1 bunaqa holat bo'lishi mumkin  valid bo'lib qoladi hozir shunday bo'lsa 
+
+-----+
+anchor valid cold_rn_g0 bu nima qiladi hozir bu to'g'ri qilinganmi hot ham bilan birxilmi  ? check qil 
+
+----+
+anchor tanlash metodlari ni tekshir nomuvofiqlik bormi men ko'zom tushgani 
+alb<0.2 va LAI>3  yoki NDVI yashil o'simlik berilb qo'yilgan joylar buni ko'R
+---+
+hot - cold >_ 1K bu ni tuzatdingmi boshqa yerda foydalanmaydimi bunaqadan 
+
+------+
+water_balance.py hot_pixel_etrf  hozir nechchi bu oldin 30 ekan men 100 qilgandim Hozir?
+
+---------------------+
+
+daily_et.py  get_solar_radiation   da muammo bor.format('YYYY-MM-DD')  yo'q bu yerda ham 
+
+yana
+
+173 qator da edi men ko'rganda   273.0  qo'llanilgan 273.15 lekin shundaymi bun ham check qil ?
+
+-----------------------+
+_export_zonal_csv  main.py 625 qatorda edi men ko'rgan vaqt
+
+SCENE_GROUPS  bu hard code  
+run() --> csv_bands  ni _export_zonal_csv ga beradi lekin harcode qo'ymaydi  bu qismni check qil !
+
+-------------+
+daily_et.py _interpolate_lambda()   nimaga albedo lst... kabi bandlar midpoint qilinyapti  sebal boyicha faqat ETrF yoki
+Evaporative fraction bo'lishi kerak emasmi  
+shu interpolyatsiya qismini , instantenuously dan hourly daily oylikka o'tishlanri ko'r boshqa modellar bo'yicha ham
+check it?
+
+-----------+
+csv branch ichida monthly ET baribir hisoblanadi export_monthly=False 
+run_flux_validation.py  shu yerni ko'rchi muammo nima ekan?
+
+-----------------------------------+
+
+run_sebal.py 
+parcels_from_points()
+[150x150] markaziy zona buni ham tekshir muammo bormi bu yerda
+
+-----------------------+
+
+select_anchor_range  clamp yo'q  final DTA nazariy oldingi +-20 deganda chqiishi mumkinbuni ham check qil muammo bormi?
+
+-------+
+
+vaqt bug RS24 --> overpass +6g  ETr24 --> data --> 00:00--> +6h 
+codda overpass_shifted 24h window 
+bui tekshir shunaqa qismlarni ham vaqt ni barini tekshirib muammolar bormi tekshir keyin hal qilamiz
+---------------------+
+
+ETrF24 = ETrFinst*Crad dan keyin clamp yo'q slope to'g'irlangandan keyin keyin re-clamp yo'q 
+
+shunaqa tashlab ketilgan qismlar bormi yana buni ham check qil
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=========================== ++++++
+
+Bu topilma muhim va qarorni endi ancha aniq qilish mumkin: 
+**hozirgi algoritmni o‘zgartirish kerak, 
+lekin TCWV’ni o‘zboshimchalik bilan bilinear qilish yoki A/B/C’ni klasslar orasida yangi formula bilan interpolyatsiya qilish shart emas.**
+
+Ermida’ning original ochiq kodini tekshirdim. U yerda 0.6 cm TPW klasslari saqlanadi, 
+lekin `TPWpos`dan tanlangan **A, B, C coefficient rastrlari `resample('bilinear')` qilinadi**, keyin LST hisoblanadi. 
+Ya’ni original implementationning o‘zi klass chegarasidagi qattiq spatial pog‘onani yumshatishga harakat qiladi. 
+Maqolada esa A/B/C koeffitsientlari 0–6 cm oralig‘idagi 10 ta TCWV klass uchun, har 0.6 cm da alohida regressiya bilan kalibrlangani tasdiqlanadi. ([MDPI][1])
+
+Shuning uchun sizning current koddagi:
+
+```text
+TCWV
+ ↓
+TPW bin
+ ↓
+A/B/C discrete
+ ↓
+nearest-neighbour
+ ↓
+LST
+```
+
+yo‘li **Ermida original implementationidan farq qiladi**.
+
+Men qiladigan to‘g‘ri yo‘l:
+
+```text
+ERA5 TCWV
+   ↓
+scene vaqtiga temporal interpolation
+   ↓
+TPW class / TPWpos
+   ↓
+A/B/C lookup
+   ↓
+A/B/C .resample('bilinear')
+   ↓
+Landsat 30 m grid
+   ↓
+LST = A·Tb/ε + B/ε + C
+```
+
+Bu yerda ikkita yaxshi narsa saqlanadi:
+
+1. **Ermida’ning 10 ta discrete TPW klassi buzilmaydi.**
+2. Coarse atmosferik grid chegarasida `A/B/C` birdan sakrab qolmaydi.
+
+### 06-09 misoli
+
+Sizda:
+
+$$
+TCWV=1.70-2.00\ cm
+$$
+
+Bu chegaradan o‘tadi:
+
+$$
+1.8\ cm
+$$
+
+Shuning uchun hozir:
+
+```text
+1.79 → TPW class 2
+1.81 → TPW class 3
+```
+
+va A/B/C birdan almashtiriladi.
+
+Current nearest usul:
+
+```text
+class 2 | class 3
+   A2   |   A3
+   B2   |   B3
+   C2   |   C3
+```
+
+↓
+
+LST’da sun’iy ~1 K+ boundary.
+
+Ermida-style bilinear coefficient resampling esa chegarada taxminan:
+
+```text
+A2 → 0.75A2+0.25A3 → 0.5A2+0.5A3 → ... → A3
+```
+
+kabi spatial transition beradi.
+
+Bu **TCWV fizik jihatdan silliq o‘zgarayotgan bo‘lsa ancha mantiqli**.
+
+### Muhim: bu “klasslar orasidagi yangi regression interpolation” emas
+
+Buni ajratib olaylik.
+
+Men hozir:
+
+$$
+A(TPW)
+$$
+
+uchun yangi continuous matematik model qurishni tavsiya qilmayapman.
+
+Ya’ni:
+
+```text
+TPW=1.75 → A2.916...
+```
+
+kabi TPW-value asosida yangi coefficient interpolation qilmaymiz.
+
+Biz faqat **original Ermida kodidagi spatial bilinear resampling**ni qaytaramiz.
+
+Bu metodologik jihatdan ancha himoyalangan qaror.
+
+---
+
+## TCWV’ning o‘zini bilinear qilaylikmi?
+
+Hozircha **yo‘q**.
+
+Sababi agar TCWV’ni avval bilinear qilsak, keyin baribir:
+
+$$
+floor(TPW/0.6)
+$$
+
+qilamiz.
+
+Demak `1.799` va `1.801` orasida klass baribir sakraydi. Faqat boundary geografik shakli o‘zgaradi.
+
+Original Ermida esa boshqacha qiladi: TPW klassni aniqlaydi, keyin **coefficient images’ni bilinear resample** qiladi.
+
+Men shu originalga yaqin variantni tanlayman.
+
+---
+
+## Sizdagi 10/21 sahna nimani anglatadi?
+
+Bu endi “kamdan-kam edge case” emas.
+
+$$
+\frac{10}{21}\approx48\%
+$$
+
+ya’ni deyarli yarim accepted scene’da 20 km ROI ichida multiple TPW classes bor.
+
+Demak bu correction:
+
+$$
+\boxed{\text{production fix}}
+$$
+
+bo‘lishi kerak, faqat warning emas.
+
+Ayniqsa whole tile’da frequency yanada oshishi ehtimoli yuqori.
+
+---
+
+## Men commitga nima qo‘shardim
+
+Birinchi navbatda:
+
+```python
+a_img = pos.remap(...).resample('bilinear')
+b_img = pos.remap(...).resample('bilinear')
+c_img = pos.remap(...).resample('bilinear')
+```
+
+va ularni Landsat/Tb projectionda hisoblatamiz.
+
+Bunga oldingi projection fix ham birga kiradi:
+
+```text
+Tb grid = Landsat UTM 30 m
+LAI      = Landsat grid
+EMISSIVITY = Landsat grid
+A/B/C      = bilinear resampled
+LST        = Landsat grid
+```
+
+### QCni ham qoldiramiz
+
+Har scene:
+
+```text
+TPW_min
+TPW_max
+TPW_classes
+n_TPW_classes
+TPW_BOUNDARY_WARNING
+```
+
+chiqsin.
+
+Lekin endi warningning ma’nosi:
+
+> “Bu scene’da coefficient transition bor; original Ermida-style bilinear smoothing ishlatildi.”
+
+bo‘ladi.
+
+---
+
+## Fixdan keyin albatta qayta tekshiriladigan 4 narsa
+
+Aynan siz topgan muammoli scenelarda, masalan `06-09` va `10-15`:
+
+* TPW boundary oldidan/keyin LST difference;
+* cold/hot anchor koordinatalari o‘zgardimi;
+* \(T_{hot}-T_{cold}\);
+* `dT_hot`, `H_hot`, final ET.
+
+Agar hozirgi ~1.4 K straight-line pog‘ona yo‘qolsa, fix ishlagan bo‘ladi.
+
+### Yakuniy qaror
+
+$$
+\boxed{\text{A/B/C coefficient rastrlarini bilinear resample qilamiz}}
+$$
+
+Bu hozirgi uch variant ichida eng to‘g‘ri yo‘l, chunki **original Ermida GEE implementationining o‘zi aynan shuni qiladi**. 
+TCWV’ni alohida bilinear qilishni yoki A/B/C’ni TPW qiymati bo‘yicha yangi continuous interpolation qilishni hozircha qilmaymiz.
+
+Siz topgan `10/21` holat sabab bu endi faqat QC emas — **SMW implementatsiyasidagi real production tuzatish**. ([MDPI][1])
+
+[1]: https://www.mdpi.com/2072-4292/12/9/1471?utm_source=chatgpt.com 
+"Google Earth Engine Open-Source Code for Land Surface Temperature Estimation from the Landsat Series"
+
+
+
+
+
+===========-============\\\\\\\\\\\\\\\\\\======///////////////////////////////======================
+
+
+
+
+Topilgan muammolar:
+
+
++a) Rn24 da ochiq osmon τsw. TAU_SW = 0.75 + 2·10⁻⁵·z vaqtga bog'liq emas, uni interpolyatsiya qilish ma'nosiz. 
+Rn24 formulasi esa kunlik o'tkazuvchanlikni (Rs24/Ra24) talab qiladi. 
+Bulutli kunlarda Rn24 110·(τochiq − τkun) ga, ya'ni ~40 W/m² gacha kam hisoblanadi. 
+SEBAL_B'ning kunlik va oylik ET'siga ta'sir qiladi.
+
++b) Midpoint pog'onasi. Sahnadan keyingi kundanoq EF (EF₁+EF₂)/2 ga sakraydi. 
+Bu vaqt bo'yicha chiziqli interpolyatsiya emas.
+
++c) Bulut bo'shlig'i mavsum o'rtachasi bilan to'ldiriladi. Eng yaqin sahnada piksel bulutli bo'lsa,
+ _nearest_scene va _interpolate_lambda uni vaqt bo'yicha eng yaqin boshqa sahnadan emas, 
+ butun davrdagi barcha sahnalar o'rtachasidan oladi (collection.mean()). Uchala modelga ta'sir qiladi.
+
++d) Metadata xatosi: n_landsat_scenes shu oydagi emas, butun davrdagi sahnalar sonini ko'rsatadi.
+
++e) Kc modeli: De har oy boshida TEW ga, ya'ni "quruq" holatga qaytariladi. 
+
+Oy oxiridagi yomg'ir keyingi oyga o'tmaydi.
+3. CSV rejimida oylik ET export_monthly=False bo'lsa ham hisoblanadi
+Rost. export_monthly faqat raster eksportni boshqaradi, CSV shoxi oylik ET'ni doim hisoblaydi.
+Lekin flux validatsiyasi bu CSV'ga tayanadi: flux_compare_full.py *MONTHLY_ET*.csv fayllarini o'qiydi. 
+Shuni o'chirib qo'ysak, oylik validatsiya yo'qoladi.
+Asl muammo — nomuvofiqlik va narx. Flag nomi chalg'itadi, har oyda 30 kunlik ERA5 hisobi esa 568 daqiqalik run'ning katta qismini oladi.
+run_flux_validation.py dagi jiddiyroq muammo. run() ichidagi tile sikli except Exception bilan har qanday xatoni ushlab, "tayl o'tkazib yuborildi" deydi. 
+Oqibatlari:
+
+Avgust logida 72 run'ning hammasi "muvaffaqiyatli, 0 xato" deb yozilgan. 
+Aslida P43_R33/34, P29_R31, P29_R29, P25_R30, P23_R36 va boshqa taylar xato bilan tashlab ketilgan ("Number.multiply: 
+Parameter 'left' … null", "NoneType"). Minnesota, Arkansas va boshqalarda validatsiya bo'shliqlari shundan.
+Biz shu sessiyada qo'shgan "ma'lumot yo'q → to'xtash" xatolari ham (yog'in, tuproq, ETr, oy bo'yicha to'xtash) run() orqali ishga tushirilganda shu except da yutilib ketadi. 
+Ular faqat process_tile ni to'g'ridan-to'g'ri chaqirganda ishlaydi.
+Takliflar ("bos" desangiz qilaman)
+P1. CSV bandlari csv_bands dan olinadi. SCENE_GROUPS faqat fayllarni turkumlaydi: INST, DAILY va qolgan bandlar komponent fayliga.
+P2. CSV oylik uchun alohida csv_monthly=True flagi. run_flux_validation uni aniq beradi, mavjud xatti-harakat saqlanadi.
+P3. run() tile siklida RuntimeError yutilmasin. Tavsiyam: tashlab ketilgan taylar va sababi run oxirida ro'yxat bo'lib chiqsin, run_flux_validation esa ularni "muvaffaqiyatli" deb sanamasin. Taylni tashlab o'tish yoki butun run'ni to'xtatish — qaror sizda.
+P4. SEBAL_B Rn24 da kunlik τ24 = Rs24/Ra24 (ERA5) ishlatiladi.
+P5. SEBAL_B'da EF vaqt bo'yicha chiziqli interpolyatsiya qilinadi; λ doimiy yoki kunlik olinadi; TAU_SW va LST interpolyatsiyadan chiqariladi. Metodologik qaror, sizda.
+P6. Bulutli piksel butun davr o'rtachasi bilan emas, har piksel uchun vaqt bo'yicha eng yaqin yaroqli sahna bilan to'ldiriladi (uchala model).
+P7. n_landsat_scenes — faqat shu oydagi sahnalar soni.
+P8. Kc modelida De oylar orasida uzatiladi (Dr kabi)
+P8: Kc modelida tuproq namligi (De) har oy boshida qaytadan boshlanadi.
+
+
+
+-----------------------------------------==========================*****************************
+
+hOT PIKSEL   WATER BALANCE  ++++++
+
+T4	Hot piksel suv balansi ETr'ni UTC kuni va kunlik-qadam formulasi bilan oladi	—	
+Siz alohida ko'raman degan guruhga kiradi
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+=================[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]\\\\\\\\\\\\\\\\\\\\\\\\\\\==============
+
+Hal qilinmagan muammolar
+A. Hot/cold anchor va suv balansi guruhi ("alohida bosamiz" degansiz)+++++++
+#	Muammo	Dalil
+A1	T4: hot piksel suv balansidagi ETr UTC kuni va kunlik-qadam formulasi bilan olinadi (water_balance.py:174). 
+Boshqa joylarda mahalliy kun va soatlik yig'indi ishlatiladi	Bushland'da kunlik farq −20 % gacha borgan
+A2	P8: Kc modelida (ndvi_kc/root_zone_water) tuproq namligi De har oy boshida qayta boshlanadi	"Hozircha tegilmasin" degansiz
+A3	Cold anchor havo harorati ERA5'dan +8…+15 K yuqori — cold kalibratsiya shubhali, ildiz sababi hali o'rganilmagan	
+06-01: +14.4 K (98 % piksel >15 K); 07-11: +15.1 K; Zarafshon iyulining 4 sahnasi: +8…+15 K; 07-11'da cold uchi 15 iteratsiyada yaqinlashmagan
+
+B. Boshqa muammolar
+#	Muammo	Muhimligi
+B1	VIIRS lambda natijasi standart Milliy'dan 15 % yuqori (185.9 vs 161.7 mm). VIIRS rejimdan qat'i nazar Λ×Rn24 bilan hisoblaydi, 
+Milliy esa quyosh masshtablash bilan. Sabab tekshirilmagan	yuqori, agar VIIRS ishlatilsa
+B2	S30 oylik yo'li hech qachon boshidan oxirigacha ishga tushirilmagan. #66 da xatosi tuzatildi, lekin to'liq sinov kerak	S30 ishlatilsa
+B3	SMW LST: sahnalarning taxminan yarmida ROI ichida 2 ta TPW klassi bor, bu ERA5 katak chegarasida ~1.4 K LST sakrashi beradi. 
+Ermida'ning asl kodida A/B/C koeffitsientlari bilinear silliqlanadi (questions.txt dagi GPT tahlili ham shu haqida)	o'rta
+B4	Instant K↓ ochiq osmon uchun, ETr esa haqiqiy SSRD bilan hisoblanadi. Buni keyingi modelda tuzatishga qoldirgansiz	keyingi model
+B5	validate (OpenET) yo'li GEE'da sinalmagan — faqat AQSh uchun ishlaydi	past
+B6	RAH, USTAR va L_MO bandlari H/DTA dan bir iteratsiya oldinda (faqat diagnostik bandlar, o'rtacha farq 0.5 %)	past, oson
+B7	parcels_from_points dalani 215 m, markaziy zonani 153 m qiladi (210/150 emas)	past, oson
+B8	VIIRS, S30 va Kc_ETo oylik yo'llarida qiyalik tuzatishi yo'q (logda ogohlantirish chiqadi)	tog'li hududda
+
+C. Faqat qayd — tuzatish shart emas yoki mavzu yopilgan
+Parcel markazi dala chetidan 28 m ichkarida, termal piksel esa 100 m — qo'shni dala LST'si aralashadi. LST footprint mavzusini yopgansiz.
+Flux minoralari uchun parcel minora atrofidagi 200 m kvadrat, holbuki haqiqiy footprint shamol tomonga cho'ziladi. Bu metodologiya soddalashtirishi.
+Mahalliy sana UTC sanasidan olinadi. Bu faqat UTC+10…+14 zonalarda xato beradi; O'zbekiston va AQSh uchun to'g'ri.
+Model darajasidagi tadqiqot masalalari (xotiradan): bahor va kuzda ET'ni oshirib yuborish, 
+siyrak qoplamada LAI'ga bog'liq tarqoqlik, yalang'och issiq tuproqli sahnalar.
+
+
+[]]]]]]]]]][[[[[[[[[[[]]]]]]]]]]]]]]]]]]
+
+Qo'shimcha kuzatuv (tekshirilmagan): satellite='HLS' tanlansa LST HLS B10 bandidan olinadi. 
+SMW esa ST_TRAD bandini talab qiladi, u HLS'da yo'q. Demak SEBAL_Milliy + HLS birikmasi ishlamasligi mumkin. 
+Hozir HLS ishlatmayotgan bo'lsangiz, ta'siri yo'q.
+
+
+]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]
+In this study the hot pixel was always an agricultural bare soil where the prediction of G was more dependable.
+
+
+]]]]]]]]]]]]]
+HiHydroSoil'dan TEW ≈ 24 mm chiqyapti, FAO jadvalida loam uchun 16–22 mm. Ya'ni tuproq modelda biroz sekinroq quriydi.
+
+
+
+
+B. O'rta
+#	Muammo	Joy
+B1	AW: sukut bo'yicha dr_init_frac=0.0, ya'ni Dr = 0 dan boshlanadi. 
+Hujjat va main dagi izohda esa "RAW dan boshlanadi" deyilgan	root_zone_water.compute_awnet
+B2	Oylik eksportda xatolar yutiladi: CUirr/AW bloki va har bir mahsulot except → print. 
+Eksport chiqmasa ham run "OK" deb tugaydi (tayllar uchun #54 da tuzatilgan edi, bu yerda qolgan)	main._export_monthly
+B3	CUirr ildiz zonasidagi Dr har oy qayta boshlanadi (dr_init_frac) — P8 bilan bir xil turdagi masala	consumptive_use
+B4	VIIRS lambda natijasi standart Milliy'dan +15 % yuqori, sababi o'rganilmagan (ochiq)	viirs_downscaling
+B5	S30 yo'li boshidan oxirigacha hali ishga tushirilmagan (#66 dagi xato tuzatilgan)	hls_s30_etrf
+B6	Suv balansi va RO: RO bo'yicha A/B/C qarori hali qilinmagan; P8 (Kc De har oy qayta boshlanishi) ochiq
+
+***]]]] Qolganlar {{}]]]]}
+B1	AW: dr_init_frac=0.0, hujjatda "RAW dan" deyilgan (nomuvofiqlik)	keyinga qoldirilgan
+B3	CUirr ildiz-zona Dr har oy qayta boshlanadi	keyinga qoldirilgan
+B4	VIIRS lambda oylik ET standart Milliy'dan +15 % yuqori, sababi o'rganilmagan	ochiq
+B5	S30 (Sentinel-2 HLS) yo'li hech qachon to'liq ishga tushirilmagan	ochiq
+P8	Kc_ETo'da topsoil De har oy TEW dan qayta boshlanadi	"alohida bosamiz"
+CHIRPS UTC / ET mahalliy kun	consumptive_use._step: P kalendar (UTC) kunidan, ET va ETr mahalliy kundan
+Kunlik rasterda ETRF_INST/ETR24/SOLAR_FRAC	DAILY_BANDS_SEBAL_B da yo'q  qaysi mode qaysi bandlar berishi ko'rib chiqamiz 
+HLS LST	Hali B10 + 273.15, ya'ni TOA harorati
+
+Boshqa ochiq masalalar: B1, B3, B4 (VIIRS +15 %), B5 (S30 sinalmagan), 
+P8, A5/V2 (past shamol), va tashqi ro'yxatdagilar — buzuq sahnalar (instant ET ≈ 0),
+ oylik interpolyatsiya, validatsiya eksport bo'shliqlari.
+
+2. A5/V2 bo'yicha taklifim
+
+GPT ning tartibini olamiz, lekin oxirgi qadamni o'zgartiramiz.
+
+1-qadam (arzon, hozir): QC ni to'ldirish — psi_clip_hit (cold tomon ψ chegarasiga urildimi) va zeta_2 = 2/L. 
+Shunda "model o'z himoya chegarasiga urilgan" sahnalar CSV'da ko'rinadi. Natijaga ta'siri yo'q.+++++++++++++++++++++++++++++++++
+
+2-qadam (asosiy): Rn ni Bushland o'lchovi bilan yopish. Lizimetr faylida Rn, Rs kiruvchi, Rs qaytgan (albedo) va yuza harorati bor. 
+2021 yil 22 sahnada K↓, albedo, L↑, L↓, Rn, G ni bitta jadvalda o'lchov bilan solishtiramiz — bu #87–#91 dan keyingi holat, ya'ni yangi L1 burchaklari bilan.
+ Agar Milliy Rn hali ham past bo'lsa, H_cold ning qancha qismi shundan ekani chiqadi.
+
+3-qadam: Shamol — stansiya soatlik shamolidan METRIC uslubida u200 hisoblab, model u*, L, rah bilan sahnama-sahna solishtirish.
+
+4-qadam: 2 va 3 dan keyin 06-01 ni qayta hisoblaymiz. Agar H_cold −60 dan −20 ga tushsa va dT normallashsa — muammo barqarorlikda emas, Rn da edi.
+
+5-qadam: Agar Rn va shamol tuzatilgandan keyin ham psi_clip_hit + rah×4 qolsa, AmeriFlux minoralarida overpass paytidagi H va LE bilan tekshiramiz. 
+Faqat shundan keyin qaror: chegara qo'yishmi, sahnani rad etishmi yoki tegmaslikmi. Rad etishni sukut yechim deb qabul qilmaymiz — yuqoridagi sababga ko'ra.
+
+
+
+
+
+
+
+
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Ha, mana endi ancha narsani **aniq tiklash mumkin**. Men yuklagan IDC hujjatingizni va Hydrosatning Madera County metodologiyasini solishtirdim. 
+Eng muhim topilma: **Hydrosat IDC’ni stock holatda to‘liq ishlatmaydi; 
+uni SEBAL bilan birlashtirib, ayniqsa ETni rainfall va applied-water qismlariga ajratish uchun moslashtirgan.**
+
+IDC — **IWFM Demand Calculator**, California DWR’ning root-zone soil-moisture routing va irrigation demand modeli. 
+'Siz yuklagan hujjat 2025 Revision 243; Hydrosat esa o‘z hujjatida aynan **IDC 2015.0.77** versiyasiga havola qiladi.
+ DWR arxivida bu versiya 2019-yil 20-martda chiqarilgani ko‘rsatilgan. ([Water Resources][1]) 
+ Siz yuklagan yangi IDC hujjati ham root-zone routing, runoff, percolation, ET, applied water, ETaw va effective precipitationni alohida bo‘limlarda beradi. 
+
+Eng muhim joy: **Hydrosatdagi IDC vazifasi AW bilan ETAWni ajratib tushunish**.
+
+$$
+AW=\text{dalaga berilgan sug‘orish suvi}
+$$
+
+ammo
+
+$$
+ETAW=\text{ETning aynan sug‘orish suvidan kelgan qismi}
+$$
+
+bir xil narsa emas.
+
+Hydrosatning texnik Annexida aniq yozilgan:
+
+$$
+\boxed{ET_{aw}=ET-ET_{pr}}
+$$
+
+va:
+
+$$
+\boxed{ET_{pr}=\alpha ET}
+$$
+
+$$
+\boxed{\alpha=\frac{S_{pr}}{S}}
+$$
+
+Bu yerda:
+
+* \(S\) = real root-zone storage, unda **rain + irrigation ikkalasi** bor;
+* \(S_{pr}\) = faqat **precipitation** bo‘lgan parallel root-zone storage;
+* \(\alpha\) = root zonedagi suvning qanchasi rainfall bilan bog‘liq ekanining indikatori;
+* \(ET_{pr}\) = rainfall hisobiga bo‘lgan ET;
+* \(ET_{aw}\) = irrigation hisobiga bo‘lgan ET. 
+
+Feynmancha, Hydrosat har 10 m pixel uchun **ikki parallel chelak** yuritadi:
+
+```text
+REAL BUCKET
+P + irrigation
+      ↓
+      S
+
+RAIN-ONLY BUCKET
+faqat P
+      ↓
+     Spr
+```
+
+Keyin:
+
+$$
+\alpha=\frac{S_{pr}}{S}
+$$
+
+Masalan:
+
+$$
+S=100\,mm
+$$
+
+$$
+S_{pr}=30\,mm
+$$
+
+bo‘lsa:
+
+$$
+\alpha=0.30
+$$
+
+Agar actual SEBAL ET:
+
+$$
+ET=6\,mm/day
+$$
+
+bo‘lsa:
+
+$$
+ET_{pr}=0.30\times6=1.8
+$$
+
+$$
+ET_{aw}=6-1.8=4.2\,mm/day
+$$
+
+Demak **4.2 mm ET sug‘orish suvi hisobidan** deb ajratiladi.
+
+Hydrosat o‘z hujjatida aynan “2 parallel soil moisture buckets for every pixel” deb yozgan. 
+
+### IDC o‘zi bucketni qanday yuritadi?
+
+IDC root-zone state sifatida:
+
+$$
+\theta
+$$
+
+ya’ni volumetric soil moisture va:
+
+$$
+Z
+$$
+
+root depthni yuritadi. Asosiy mass-balance ichida precipitation, runoff, applied water, return flow, percolation va ET bor. Hujjat hatto soil moisture’ni manbasiga qarab alohida saqlaydi:
+
+$$
+\theta_P
+$$
+
+— precipitationdan kelgan moisture,
+
+$$
+\theta_{Aw}
+$$
+
+— irrigationdan kelgan moisture,
+
+$$
+\theta_G
+$$
+
+— boshqa manbadan kelgan moisture.
+
+IDC buning sababini aynan **ETning qaysi qismi applied waterdan kelganini kuzatish** deb tushuntiradi. 
+
+Mana bu Hydrosat arxitekturasi bilan juda kuchli mos tushadi.
+
+### Runoffni qanday qiladi?
+
+IDC oddiy fixed CN emas. Modified SCS-CN ishlatadi:
+
+$$
+R_P=
+\frac{1}{\Delta t}
+\frac{(P\Delta t-0.2S)^2}
+{P\Delta t+0.8S}
+$$
+
+agar yog‘in thresholdni oshsa.
+
+Lekin bu yerdagi retention:
+
+$$
+S
+$$
+
+soil moisturega bog‘liq.
+
+IDC:
+
+$$
+S=S_{max}
+$$
+
+quruq holatda, lekin root-zone moisture field capacityning yarmidan oshgach \(S\) kamayadi. Shuning uchun:
+
+```text
+soil dry
+→ retention katta
+→ infiltration ko‘p
+→ runoff kam
+
+soil wet
+→ retention kichik
+→ runoff ko‘p
+```
+
+Hujjat aynan moisture field capacityning yarmidan oshgach runoff ortishini aytadi. 
+
+Hydrosatning:
+
+> “surface runoff following a soil moisture deficit and presence of roots; modified SCS”
+
+degani aynan mana shu IDC konsepsiyasiga juda yaqin. 
+
+### Perkolatsiya ham endi aniq
+
+IDC:
+
+$$
+P_C=K(\theta)\frac{dh}{dz}
+$$
+
+deb boshlaydi.
+
+Vertical gradientni 1 deb oladi va **van Genuchten-Mualem** hydraulic conductivityni ishlatadi. Siz yuklagan PDFda:
+
+$$
+\boxed{
+P_C=
+P_{Crdc}
++
+K_s
+\left(\frac{\theta}{\theta_T}\right)^{1/2}
+\left[
+1-
+\left(
+1-
+\left(\frac{\theta}{\theta_T}\right)^{1/m}
+\right)^m
+\right]^2
+}
+$$
+
+va:
+
+$$
+\boxed{
+m=\frac{\lambda}{\lambda+1}
+}
+$$
+
+Bu yerda:
+
+* \(K_s\) = saturated hydraulic conductivity;
+* \(\theta_T\) = total porosity;
+* \(\theta\) = current soil moisture;
+* \(\lambda\) = pore-size distribution index.
+
+Demak biz oldin “Hydrosat nonlinear Darcian percolation” deganda aynan nimaga o‘xshashini qidirayotgan edik — **IDC hujjatidan formula topildi**. IDC unsaturated vertical percolationni van Genuchten-Mualem orqali qiladi. 
+
+### IDC ETni qanday qiladi?
+
+Stock IDC’da ET satellite’dan kelmaydi.
+
+U:
+
+$$
+ET_{pot}
+$$
+
+dan boshlaydi va root-zone moisturega qarab stress beradi.
+
+Agar:
+
+$$
+\theta>
+\frac{\theta_f+\theta_{wp}}{2}
+$$
+
+bo‘lsa:
+
+$$
+ET=ET_{pot}
+$$
+
+Agar moisture FC va WP orasining past yarmiga tushsa:
+
+$$
+ET=
+2
+\frac{\theta-\theta_{wp}}
+{\theta_f-\theta_{wp}}
+ET_{pot}
+$$
+
+va:
+
+$$
+\theta<\theta_{wp}
+\Rightarrow ET=0
+$$
+
+IDC hujjati buni aniq beradi. 
+
+**Lekin Hydrosat aynan shu joyni o‘zgartirgan.**
+
+Hydrosatda:
+
+```text
+stock IDC:
+θ → stress → ET
+
+Hydrosat:
+SEBAL → actual ET
+         ↓
+    water balance
+```
+
+Hydrosat o‘z hujjatida SEBAL surface-energy balance va soil-water balance integratsiyalanganini, **actual ET ikkala balans uchun common denominator** ekanini yozadi. 
+
+Shuning uchun Hydrosatni “IDCni oddiy ishga tushirgan” deb bo‘lmaydi.
+
+Ular ko‘proq:
+
+$$
+\boxed{\text{SEBAL actual ET + IDC root-zone physics}}
+$$
+
+qilgan.
+
+### Eng qiziq joy — stock IDC’da ham ETaw xuddi source tracking orqali
+
+IDC o‘zi irrigationdan kelgan moisture’ni alohida yuritadi va:
+
+$$
+\boxed{
+ET_{aw}=\alpha_{Aw}ET
+}
+$$
+
+qiladi.
+
+\(\alpha_{Aw}\) faqat bugungi irrigation emas; **oldin irrigatsiya orqali tuproqda saqlanib qolgan suv + hozir infiltratsiya qilayotgan irrigation** ulushini ham hisoblaydi. IDC hujjati bu fraction instant contribution va oldingi kunlardan qolgan long-term storage contributionni birgalikda ifodalashini aytadi. 
+
+Precipitation uchun ham parallel:
+
+$$
+ET_p=\alpha_P ET
+$$
+
+qilinadi. 
+
+Mana Hydrosatning 2 bucket fikri **qayerdan kelgani endi tushunarli**.
+
+---
+
+## Hydrosat aslida nima qilganini hozir shunday tiklay olamiz
+
+```text
+THERMAL SATELLITES
+       ↓
+    SEBAL 4.0
+       ↓
+ DAILY ACTUAL ET
+       │
+       ▼
+REAL ROOT-ZONE MODEL
+P + irrigation + soil + roots
+       ↓
+       S
+       │
+       ├───────────────┐
+       │               │
+RAIN-ONLY IDC          │
+P only                 │
+↓                      │
+Spr                    │
+       │               │
+       └──────┬────────┘
+              ↓
+        α = Spr / S
+              ↓
+      ETpr = α × ET
+              ↓
+      ETaw = ET − ETpr
+```
+
+Parallel ravishda actual water balance:
+
+$$
+\boxed{
+AW=ET+R(\theta)+q(\theta)+\Delta S-P
+}
+$$
+
+ham yuradi. Hydrosat aynan shu formulani beradi. 
+
+Demak **AW va ETAW ikki turli output**:
+
+$$
+AW
+$$
+
+= dalaga qancha suv berilgan,
+
+$$
+ETAW
+$$
+
+= o‘sha berilgan suvning qancha qismi ET bo‘lib atmosferaga ketgan.
+
+Shundan irrigation efficiency:
+
+$$
+\boxed{
+IE=\frac{ETAW}{AW}
+}
+$$
+
+chiqadi.
+
+---
+
+## Lekin bitta juda muhim nomuvofiqlik topdim
+
+Hydrosatning batafsil *Measurement Method* hujjati:
+
+$$
+\boxed{ET_{pr}=\alpha ET}
+$$
+
+$$
+\boxed{\alpha=S_{pr}/S}
+$$
+
+deydi. 
+
+Ammo alohida Grower Q&A hujjatida:
+
+$$
+ETPR=\alpha P
+$$
+
+deb yozilgan. ([Madera County Water Resources][2])
+
+Bu ikkalasi **bir xil formula emas**.
+
+Men buni yashirmayman: public Hydrosat hujjatlarining o‘zida shu joyda inconsistency bor.
+
+Texnik Annex esa ikki bucketni, \(S_{pr}/S\)ni va \(ET_{pr}=\alpha ET\)ni batafsil izohlagani uchun **metodologiyani rekonstruksiya qilishda hozir shu batafsil variantni asosiy deb olish mantiqli**, lekin Hydrosatdan final clarification olish yaxshi bo‘ladi.
+
+### Biz uchun eng katta yangilik
+
+Oldin biz:
+
+> “root-zone \(\theta\)ni satellite’dan qanday topamiz?”
+
+deb qidirayotgan edik.
+
+IDC yondashuvida bunga javob boshqacha:
+
+$$
+\boxed{\theta\text{ni har kuni satellite’dan bevosita invert qilish shart emas}}
+$$
+
+U **state variable** sifatida suv balansida yuritiladi:
+
+```text
+θt
++ P
++ AW
+- runoff
+- ET
+- percolation
+        ↓
+θt+1
+```
+
+Satellite SEBAL esa juda kuchli observation beradi:
+
+$$
+\boxed{actual\ ET}
+$$
+
+Shuning uchun Hydrosat konsepsiyasi **EF→θ empirical formula’dan kuchliroq process-based yo‘l**.
+
+Yana muhim: IDC initial moisture source partitionga juda sezgir bo‘lishi mumkinligi sabab hujjat hatto bir necha yillik **spin-up** tavsiya qiladi.  Hydrosat esa har yili previous water years yordamida soil moisture va root depthni initialize qilishini alohida aytadi. 
+
+Shuning uchun, jigar, **ha — bu IDC hujjati biz qidirayotgan metodologiyaning katta qismini ochib berdi**. Endi Hydrosat usulini deyarli formulama-formula qurishimiz mumkin: `θ routing → moisture-dependent SCS runoff → van Genuchten percolation → S/Spr parallel buckets → ETpr → ETaw → AW`. Faqat Hydrosatning proprietary SEBAL4.0 bilan `actual S`ni aynan qanday constrain/initialize qilishi va ayrim custom IDC o‘zgarishlari to‘liq public emas.
+
+[1]: https://water.ca.gov/Library/Modeling-and-Analysis/Modeling-Platforms/Integrated-Water-Flow-Model-Demand-Calculator?utm_source=chatgpt.com "IDC: Integrated Water Flow Model Demand Calculator"
+[2]: https://www.maderacountywater.com/wp-content/uploads/2025/07/Responses-to-Grower-Questions-from-Hydrosat.pdf "2026 Proposal - Questions for RFP Responders (TBC)"
+
+
+Ha — **bu javob juda muhim**, chunki u Hydrosat arxitekturasini yanada aniq qiladi.
+
+Siz keltirgan gapdan chiqadigan ma’no:
+
+> **Clear thermal day:** ET energy-balance/SEBAL’dan olinadi.
+> **Cloudy day:** SEBAL ishlamaydi, ET root-zone water-balance modelidan prognoz qilinadi.
+
+Demak Hydrosat water balance’ni faqat `AW` yoki `ΔS` hisoblash uchun emas, **har kuni uzluksiz ishlaydigan model** sifatida yuritadi.
+
+### Eng mantiqli arxitektura
+
+```text
+HAR KUN
+  ↓
+P + meteorology + crop + soil
+  ↓
+ROOT-ZONE WATER BALANCE
+  ↓
+θ(t), S(t), runoff, percolation
+  │
+  ├── CLEAR DAY
+  │      ↓
+  │   Satellite thermal
+  │      ↓
+  │    SEBAL ET
+  │      ↓
+  │   actual ET bilan state yangilanadi
+  │
+  └── CLOUDY DAY
+         ↓
+      θ(t) + ETpot
+         ↓
+      crop/water-stress model
+         ↓
+      modeled ET
+```
+
+Bu IDC bilan ham juda yaxshi mos tushadi. IDC root-zone moisture’ni vaqt bo‘yicha conservation equation bilan yuritadi va ETni soil moisture holatiga bog‘laydi. 
+
+IDC’ning cloudy-day uchun juda mos bo‘ladigan ET formulasi:
+
+$$
+ET =
+\begin{cases}
+ET_{pot}, &
+\theta>\frac{\theta_f+\theta_{wp}}{2}
+\\[6pt]
+2ET_{pot}
+\frac{\theta-\theta_{wp}}
+{\theta_f-\theta_{wp}}, &
+\theta_{wp}\le\theta\le
+\frac{\theta_f+\theta_{wp}}{2}
+\\[8pt]
+0, & \theta<\theta_{wp}
+\end{cases}
+$$
+
+Ya’ni:
+
+```text
+soil wet enough
+→ ET = ETpot
+
+soil drying
+→ ET reduced
+
+below wilting point
+→ ET = 0
+```
+
+IDC aynan shu moisture-stress mantiqni beradi. 
+
+Lekin muhim ehtiyot: **Hydrosat aynan IDC Eq.17 ni verbatim ishlatadi**, deb hozir ayta olmaymiz. Ularning production SEBAL4.0/water-balance integratsiyasi proprietary. Ammo siz bergan “cloudy days → water balance ET” javobi va IDC metodologiyasi birga qaralganda, ular shunga o‘xshash **prognostic root-zone state model** yuritishi juda kuchli ko‘rinadi.
+
+### Bu bizning modelimiz uchun nimani o‘zgartiradi?
+
+Oldin biz:
+
+$$
+\theta \leftarrow satellite
+$$
+
+deb o‘ylayotgan edik.
+
+Endi yaxshiroq sxema:
+
+$$
+\boxed{\theta_t \text{ — model state}}
+$$
+
+Har kuni:
+
+$$
+\boxed{
+S_{t+1}
+=
+S_t
++
+P_t
++
+AW_t
+-
+R_t
+-
+q_t
+-
+ET_t
+}
+$$
+
+Clear day:
+
+$$
+\boxed{ET_t=ET_{SEBAL}}
+$$
+
+Cloudy day:
+
+$$
+\boxed{ET_t=ET_{WB}(\theta_t,ET_{pot},crop)}
+$$
+
+bo‘ladi.
+
+Keyin:
+
+$$
+\theta_t \rightarrow R(\theta_t)
+$$
+
+modified SCS orqali, va:
+
+$$
+\theta_t \rightarrow q(\theta_t)
+$$
+
+van Genuchten–Mualem orqali hisoblanadi. IDC runoffni moisture-dependent qiladi va percolationni unsaturated hydraulic conductivity orqali hisoblaydi.  
+
+### Eng muhim natija
+
+Hydrosatning “process-based gap filling” degani endi aniqroq:
+
+```text
+Landsat/thermal bor
+→ SEBAL ET
+
+thermal yo‘q/bulut
+→ water-balance ET
+
+yana thermal paydo bo‘ldi
+→ SEBAL ET bilan model yana real kuzatuvga bog‘lanadi
+```
+
+Bu oddiy linear interpolation emas.
+
+Masalan:
+
+```text
+10-iyun  SEBAL ET = 5.2
+11-iyun  cloudy → WB ET = 5.0
+12-iyun  cloudy → WB ET = 4.7
+13-iyun  rain   → θ oshadi
+14-iyun  cloudy → WB ET = 5.4
+15-iyun  SEBAL ET = 5.1
+```
+
+Bu yerda cloudy ETlar **oldingi va keyingi scene orasidagi chiziq emas**; har kunlik precipitation, soil moisture va meteorological demand bilan fizik hisoblanadi.
+
+Shuning uchun bizning yakuniy model ham shunday bo‘lishi kerak:
+
+$$
+\boxed{
+\text{SEBAL = observation layer}
+}
+$$
+
+$$
+\boxed{
+\text{IDC-like water balance = continuous daily engine}
+}
+$$
+
+Bu, menimcha, Hydrosat metodologiyasini tushunishdagi eng katta burilish: **water balance yordamchi modul emas — u SEBAL scenelar orasidagi asosiy vaqt motoridir.**

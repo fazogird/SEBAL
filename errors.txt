@@ -1,0 +1,59 @@
+QADAM 26 dagi muhim auditlar
+WorldCover v200 = 2021 map, lekin barcha validatsiya yillarida bir xil ishlatiladi.
+40 = Cropland, lekin bu “irrigated cropland” degani emas.
+
+Hot zona:
+
+$$ 60\ (Bare/sparse)+20\ (Shrubland) $$
+
+va grassland 30 kiritilmagan. Rasmiy klass kodlari mos.
+
+min_pixel_count=20 check 100 m computation scale’da bajariladi, native 10 m WorldCover pixel count emas.
+selfMask() dan keyin 0 piksellar 0 sifatida emas, masked holatga o‘tadi.
+cold_mask/hot_mask=None — xato emas; bu keyinchalik ROI fallback uchun signal.
+Returned masks explicit clip(tile_roi) qilinmagan.
+Bu masklar final anchor emas, faqat anchor search zones.
+
+
+Anchor qismining eng muhim 10 ta auditi
+#	Topilma
+1	Current ANCHOR_SCALE 100 m, 30 m emas
+2	Current B run: cascade + median_anchor
+3	ID/Milliy: point_anchor majburiy
+4	Cascade: LC → ROI → default fallback
+5	Cascade final acceptance: hot-cold ≥ 1 K
+6	Default method ΔT ≥1Kni tekshirmaydi
+7	min_candidates=50 config active kodda ishlamaydi
+8	ANCHOR_USE_CROPLAND=True active kodda ishlamaydi
+9	valid mask barcha image bandlar valid bo‘lishini talab qiladi
+10	Median anchor LST va RN-G0 ni bir xil fizik pixeldan olishga kafolat bermaydi; point anchor beradi
+
+
+=================================================
+Current run’da export_monthly=False, lekin CSV branch ichida monthly ET baribir hisoblanadi.
+SEBAL_B monthly “interpolation” aslida linear emas, 50/50 midpoint step function.
+ID — eng yaqin scene.
+Milliy — eng yaqin SOLAR_FRAC.
+Kc_ETo — haqiqiy linear NDVI interpolation.
+Kc model topsoil De ni har oy qaytadan TEW ga reset qiladi.
+Kc modelda root-zone water-stress Ks yo‘q; De faqat Keni boshqaradi.
+Standard monthly metadata n_landsat_scenes — shu oy emas, butun season valid scene count.
+_export_zonal_csv() ga berilgan csv_bands active per-scene selectionda ishlamayapti.
+CSV monthly call sloping_terrain/ref_type/etr24_source parametrlarini uzatmaydi; 
+current run’da defaults mos, boshqa konfiguratsiyada nomuvofiqlik tug‘ilishi mumkin
+
+=========================
+QADAM 41 — eng muhim auditlar
+.toDrive() faqat task yaratadi; .start() taskni submit qiladi.
+Current SEBAL_B validationda har successful tile uchun 5 real CSV task start qilinadi.
+Lekin all_tasks ga faqat 4 tasi qo‘shiladi.
+LST-diag task started, lekin untracked.
+Shuning uchun ✅ Tayyor! N ta export task real GEE task sonini kam ko‘rsatadi.
+main.run() task objectlarini qaytaradi.
+run_combo() ham shu dictni qaytaradi.
+main_run() returnni saqlamaydi.
+ok += 1 faqat Python orchestration exception bermaganini bildiradi.
+GEE task keyinchalik FAILED bo‘lsa driver buni ko‘rmaydi.
+Driver task completionni poll qilmaydi.
+72 combo ketma-ket tasklarni submit qilib boradi.
+
