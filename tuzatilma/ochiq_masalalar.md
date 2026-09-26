@@ -73,3 +73,26 @@ Cheng–Brutsaert 2005 (a 6.1, b 2.5, c 5.3, d 1.1; ψm z = 2 m, ψh z2−z1 —
 - **[tekshirildi]** Kunlik raster eksportda SEBAL_ID/Milliy uchun ETRF_INST, ETR24, SOLAR_FRAC bandlari yo'q (`DAILY_BANDS_SEBAL_B` = ET_24, LAMBDA_E, H, RN, G0, EVAP_FRAC, NDVI, LST, LAI).
 - **[tekshirildi]** HLS (`satellite='HLS'`): LST = HLS B10 (TOA yorqinlik harorati, LST emas); SEBAL_Milliy SMW `ST_TRAD` talab qiladi — HLS bilan ishlamaydi.
 - Instant K↓ ochiq osmon formulasi (ETr esa haqiqiy SSRD) — keyingi modelga qoldirilgan.
+
+## Post-ET suv hisobi (ET → ETPR → ETAW → AW) — qarorlar va keyinga qoldirilganlar (2026-09-26)
+
+Kodga hali hech narsa yozilmagan — bu dizayn qarorlari.
+
+| Qadam | User qarori |
+|---|---|
+| 1. Sahnasiz kun ET | T1 — hozirgi usul (`daily_et.py`: eng yaqin yaroqli sahna ulushi × kunlik qiymat) |
+| 2. ETPR | T3 — ikki ssenariy parallel: faqat-yomg'ir balansi va IDC (sug'orish qoidasi bilan). "Noaniqlik konverti" deb ataladi, haqiqiy min/max emas |
+| 3.1 Yog'in P | T1 — faqat CHIRPS |
+| 3.2 Ildiz chuqurligi Z | T1 — Z = Zmax (dala ekini bo'yicha, yil davomida o'zgarmas) |
+| 3.3 Oqim R | T2 — IDC namlikka bog'liq SCS-CN |
+| 3.4 Perkolatsiya q (DP) | T2 — van Genuchten–Mualem (IDC Eq 13); T1 (FC dan oshgan suv) QA sifatida |
+| 3.5 Boshlang'ich holat | T2 — ikki chegara (θ₀ = WP va θ₀ = FC); konvergensiya chegaralari sezgirlik bilan tanlanadi |
+| 4. ETGW (sizot) | T1 — hozircha 0 va bayroq |
+| 5. AW | Hydrosat formulasi: AW = ET + R + q + ΔS − P (CR = 0, 4-qadam T1 bilan mos) |
+
+Keyinga qoldirilgan (esdan chiqmasin):
+- **Z:** user ekin turi xaritasini beradi → ekin bosqichlari bo'yicha ildiz chuqurligi Z(t). Ogohlantirish: yil bo'yi Zmax yomg'irli mavsumda zaxirani oshirib, ETPR'ni yuqori baholashi mumkin → Z(t) sezgirlik testi.
+- **ETGW:** user quduq ma'lumotlarini topadi → T2 (quduq chuqurligi + kapillyar formula), T3 (SEBAL bilan sug'orilmaydigan joy/paytni aniqlash).
+- **q (DP):** T1 va T2 farqi katta chiqsa — Ksat va tuproq parametrlari sezgirligi tekshiriladi.
+- **Konvergensiya chegaralari** (masalan, 1 mm va 0.01) — standart qilib qotirilmaydi, sezgirlik bilan tanlanadi.
+- **θ manbai — user qarori (2026-09-26):** IDC suv balansi + termal tuzatish + Sentinel-1/SWIR hodisasi + zaxira qoida. Batafsil, ish tartibi va ochiq savollar: `post_et_yol_xaritasi.md`.
