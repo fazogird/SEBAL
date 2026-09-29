@@ -608,6 +608,12 @@ def _anchor_sample(image, anchors, roi, bands, sides=('cold', 'hot')):
                      f"('point_anchor' yoki 'median_anchor').")
 
 
+# Anchor kaskadi izi — DIAGNOSTIKA (qiymatlarga tegmaydi): har urinish (metod, zona, natija,
+# sabab) shu ro'yxatga yoziladi; main.process_scene har sahna boshida tozalaydi va QC'ga
+# ('_urinishlar') ko'chiradi (notebook: hot/cold qaysi tartibda topilgani).
+ANCHOR_TRACE = []
+
+
 def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
                      anchor_mode='median_anchor', need_rn=True,
                      cold_purity=None, hot_purity=None, extra=None):
@@ -649,6 +655,8 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
           and c > -900 and h > -900 and hr > -900 and cr > -900 and (h - c) >= min_dt)
 
     if ok:
+        ANCHOR_TRACE.append({'metod': method, 'zona': zone, 'topildi': True,
+                             'cold_LST': c, 'hot_LST': h, 'sabab': ''})
         if verbose:
             print(f"    ✅ Anchor topildi: metod={method}, zona={zone} | "
                   f"cold={c:.1f}K  hot={h:.1f}K  ΔT={h - c:.1f}K")
@@ -664,10 +672,12 @@ def _finalize_anchor(image, geom, cold_mask, hot_mask, method, zone, verbose,
             'note': note,                # default zaxirasi ishlatilgan bo'lsa (QC'ga)
         }
 
+    reason = ('cold/hot bo\'sh' if (c is None or h is None or c <= -900 or h <= -900)
+              else f'ΔT={h - c:.1f}K < {min_dt}K' if (h - c) < min_dt
+              else 'anchor Rn−G₀ yo\'q')
+    ANCHOR_TRACE.append({'metod': method, 'zona': zone, 'topildi': False,
+                         'cold_LST': c, 'hot_LST': h, 'sabab': reason})
     if verbose:
-        reason = ('cold/hot bo\'sh' if (c is None or h is None or c <= -900 or h <= -900)
-                  else f'ΔT={h - c:.1f}K < {min_dt}K' if (h - c) < min_dt
-                  else 'anchor Rn−G₀ yo\'q')
         print(f"    ↪ metod={method} ({zone}) → topilmadi ({reason}), keyingisi…")
     return None
 
@@ -708,7 +718,13 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
       ['cold_lai_min'] bilan cheklanadi (butun kaskad, lc → ROI). Hech biri topmasa —
       SAHNA TASHLANMAYDI: 2-o'tish cheklovsiz (oldingi) kaskad, zona nomi '…-LAI<4',
       anchors['note'] → QC ogohlantirishi (1.05·ETr qisman qoplamaga berilgan bo'lishi mumkin).
+
+    hot_zone dict ({'scheme': 'staged', …} — pipeline.anchor_zones, Esri H3) bo'lsa →
+      _select_staged (bosqichli zonalar, ROI zaxirasi yo'q). Rasm/None — quyidagi (o'zgarmagan) yo'l.
     """
+    if isinstance(hot_zone, dict) and hot_zone.get('scheme') == 'staged':
+        return _select_staged(image, roi, hot_zone, method, verbose, anchor_mode, need_rn,
+                              hot_soil, exclude, cold_full_cover)
     hot_soil_mask = None
     if hot_soil:
         from . import water_balance
@@ -782,6 +798,94 @@ def select_anchor_pixels(image, roi, cold_zone=None, hot_zone=None,
             'cold_rn_g0': None, 'hot_rn_g0': None, 'cold_mask': None, 'hot_mask': None,
             'cold_point': None, 'hot_point': None, 'anchor_mode': anchor_mode,
             'cold_zone_purity': cold_purity, 'hot_zone_purity': hot_purity,
+            'method': None, 'zone': None, 'note': None, 'fail_reason': why}
+
+
+def _select_staged(image, roi, zones, method, verbose, anchor_mode, need_rn, hot_soil,
+                   exclude, cold_full_cover):
+    """
+    Bosqichli anchor zonalari (Esri H3 — pipeline.anchor_zones; cfg.ANCHOR_H3).
+      cold — zones['cold'] ulushi (Esri 5), ulush ≥0.80 → 0.70 → 0.60 (_purity_zones);
+      hot  — zones['stages'] tartibida (H2 → H1), har birida ulush ≥0.80 → 0.70 → 0.60;
+             zones['albedo_max'][bosqich] — sahna albedosi bo'yicha qo'shimcha istisno (H1);
+      oxirgi bosqich 'aralash' — ulush > 0, AYNI sinflar (bulutli kunlar zaxirasi).
+    ROI (sinfsiz) zaxirasi YO'Q: hot hech qachon Esri 5/8 dan tashqarida tanlanmaydi.
+    Metodlar kaskadi, hot_soil, cold_full_cover, exclude, natija — select_anchor_pixels bilan bir xil.
+    """
+    hot_soil_mask = None
+    if hot_soil:
+        from . import water_balance
+        hot_soil_mask = water_balance.soil_valid_mask()
+    exclude = set(exclude or ())
+    base_flat = _base_mask(image)
+    order = _cascade_order(method)
+    alb = image.select('ALBEDO')
+    proj = analysis_proj(image)
+    cold_any, hot_any = zones['any']
+
+    stages = []
+    for name, frac in zones['stages']:
+        amax = zones.get('albedo_max', {}).get(name)
+        f = frac.multiply(alb.lte(amax)) if amax is not None else frac
+        c_base, c_pur, h_base, h_pur = _purity_zones(base_flat, zones['cold'], f, roi, proj)
+        if not c_pur:                         # cold zona yetmadi → ekin (aralash), ROI emas
+            c_base = base_flat.And(cold_any)
+        if not h_pur:
+            if verbose:
+                print(f"    ↪ hot zona {name}: ulush ≥0.60 nomzodlar yetarli emas — o'tkaziladi")
+            continue
+        stages.append((name, c_base, h_base, c_pur, h_pur))
+    stages.append(('aralash', base_flat.And(cold_any), base_flat.And(hot_any), None, None))
+    if hot_soil_mask is not None:            # hot — faqat tuproq ma'lumoti bor piksel
+        stages = [(n, c, h.And(hot_soil_mask), cp, hp) for n, c, h, cp, hp in stages]
+
+    def _cascade(cold_extra, sfx):
+        for zone, c_base, h_base, c_pur, h_pur in stages:
+            z = zone + sfx
+            for m in order:
+                if (m, z) in exclude:
+                    continue
+                dc, dh = {}, {}
+                cm, _ = _call_method(m, image, roi, c_base, dc)
+                _, hm = _call_method(m, image, roi, h_base, dh)
+                if cold_extra is not None:
+                    cm = cm.And(cold_extra)
+                if m in _UNBOUNDED_METHODS and anchor_mode == 'point_anchor':
+                    cm, hm = _trim_tails(image, roi, cm, hm)
+                extra = ({'cold_strict_n': dc['cold_strict_n'], 'hot_strict_n': dh['hot_strict_n']}
+                         if m == 'default' else None)
+                res = _finalize_anchor(image, roi, cm, hm, m, z, verbose, anchor_mode,
+                                       need_rn, c_pur, h_pur, extra=extra)
+                if res is not None:
+                    return res
+        return None
+
+    if cold_full_cover:
+        lai_min = cfg.ANCHOR['cold_lai_min']
+        res = _cascade(image.select('LAI').gte(lai_min), '')
+        if res is not None:
+            return res
+        flag = (f"cold: to'liq qoplamali (LAI ≥ {lai_min:g}) nomzod topilmadi → cheklovsiz "
+                f"cold piksel (1.05·ETr qisman qoplamaga berilgan bo'lishi mumkin)")
+        if verbose:
+            print(f"    ⚠️ {flag}")
+        res = _cascade(None, f'-LAI<{lai_min:g}')
+        if res is not None:
+            res['note'] = f"{res['note']}; {flag}" if res.get('note') else flag
+            return res
+    else:
+        res = _cascade(None, '')
+        if res is not None:
+            return res
+
+    why = (f"anchor ({zones.get('label')}): barcha metodlar ({' → '.join(order)}) "
+           f"{' / '.join(s[0] for s in stages)} zonalarida topilmadi")
+    if verbose:
+        print(f"    ❌ {why}")
+    return {'valid': ee.Number(0), 'cold_lst': ee.Number(-999), 'hot_lst': ee.Number(-999),
+            'cold_rn_g0': None, 'hot_rn_g0': None, 'cold_mask': None, 'hot_mask': None,
+            'cold_point': None, 'hot_point': None, 'anchor_mode': anchor_mode,
+            'cold_zone_purity': None, 'hot_zone_purity': None,
             'method': None, 'zone': None, 'note': None, 'fail_reason': why}
 
 

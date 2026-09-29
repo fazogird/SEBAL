@@ -1167,3 +1167,302 @@ $$
 $$
 
 Bu, menimcha, Hydrosat metodologiyasini tushunishdagi eng katta burilish: **water balance yordamchi modul emas — u SEBAL scenelar orasidagi asosiy vaqt motoridir.**
+
+
+
+
+
+++++++++++++++++++++++++++++
++++++++++++++++++++++++++++++
+++++++++++++++++++++++++++++
+
+Ha. Endi bitta aniq yo‘lni qotiramiz: **thermal bor kun — SEBAL; thermal yo‘q/bulutli kun — water-balance ET. Interpolatsiyani bu branchda ishlatmaymiz.** Bu Hydrosatning sizga bergan javobi va ularning ochiq 2025 arxitekturasiga eng yaqin takrorlash bo‘ladi. Hydrosat energiya va soil-water-balance algoritmlarini har kuni yuritishini, daily ET/ETAW berishini va soil-moisture state’ni oldingi water-yearlardan uzluksiz olib kelishini yozgan. :chatgpt-content-reference{index="0"}
+
+### Hydrosat-public replica V0
+
+1. **Har kun uchun 30 m MGRS grid tayyorlaymiz.** Landsat/VIIRS/ECOSTRESS’dan kamida bitta valid thermal bo‘lsa `THERMAL_DAY=1`; hech biri yo‘q yoki bulut bo‘lsa `THERMAL_DAY=0`.
+
+2. **Thermal bor kunda SEBAL yuradi.** Sizdagi SEBAL’dan:
+\[
+Rn,\;G,\;H,\;LE=Rn-G-H
+\]
+va:
+\[
+\boxed{EF=\frac{LE}{Rn-G}}
+\]
+olinadi. So‘ng Hydrosat sizga aytganidek EF kun davomida o‘zgarmaydi deb olinadi va **o‘sha kunning soatlik radiatsiyasi** bilan daily ET chiqariladi:
+\[
+LE_h=EF_{\rm inst}(Rn_h-G_h)
+\]
+\[
+\boxed{
+ET_{24}=
+\sum_{h=1}^{24}
+\frac{LE_h\,3600}{\lambda\rho_w}\,1000
+}
+\]
+Vegetated surface uchun daily \(G\) odatda kichik. SEBAL adabiyotida aynan instantaneous EF’ni daily available energy bilan ko‘paytirish qo‘llanadi. :chatgpt-content-reference{index="1"}
+
+3. **Shu thermal kunda root-zone state ham observation bilan yangilanadi.** Hydrosat ochiq hujjati SEBAL root-zone soil moisture/storage \(S\) berishini aytadi, lekin **SEBAL4.0 ning aniq \(EF/LST\rightarrow\theta_{RZ}\) formulasi proprietary**. :chatgpt-content-reference{index="2"} Shu yopiq blokni takrorlash uchun V0’da avvalgi IrriWatch/pySEBAL ochiq operatorini ishlatamiz:
+\[
+\boxed{
+\theta^{obs}_t
+=
+\theta_{sat}
+\exp\left(\frac{EF_t-1}{0.421}\right)
+}
+\]
+keyin:
+\[
+\boxed{S^{obs}_t=1000\,\theta^{obs}_t Z_r}
+\]
+Bu kun model state’ini:
+\[
+S_t\leftarrow S^{obs}_t
+\]
+deb **reset/assimilation** qilamiz. Bu qismni `S_SOURCE=SEBAL_EF_PROXY` deb ochiq belgilaymiz — Hydrosatning proprietary formulasi deb da’vo qilmaymiz.
+
+4. **Thermal yo‘q kunda SEBAL ishlamaydi. Water balance ET beradi.** Mana shu yerda stock IDC’ning ochiq usulidan foydalanamiz. IDC actual ET’ni root-zone soil moisture va \(ET_{pot}\) orqali hisoblaydi: soil moisture available water’ning yuqori yarmida bo‘lsa \(ET=ET_{pot}\), qurganda linear kamayadi, WP’dan pastda nol bo‘ladi. :chatgpt-content-reference{index="3"}
+
+Aniq:
+\[
+\theta_{mid}=\frac{\theta_{FC}+\theta_{WP}}2
+\]
+
+\[
+\boxed{
+ET_t=
+\begin{cases}
+ET_{pot,t}, & \theta_t>\theta_{mid}\\[4pt]
+2ET_{pot,t}\dfrac{\theta_t-\theta_{WP}}
+{\theta_{FC}-\theta_{WP}},
+& \theta_{WP}\le\theta_t\le\theta_{mid}\\[8pt]
+0,&\theta_t<\theta_{WP}
+\end{cases}}
+\]
+
+Bu bizning **cloudy-day ET** bo‘ladi:
+```text
+ET_SOURCE = WATER_BALANCE
+```
+
+\(ET_{pot}\) uchun birinchi versiyada sizda allaqachon mavjud daily:
+\[
+ET_{pot}=(K_{cb}+K_e)ETo
+\]
+branchini ishlatamiz. Hydrosatning current stomatal/crop routine’i ham proprietary; shuning uchun bu ikkinchi ochiq substitute.
+
+5. **Har kuni root-zone water balance yuradi.**
+\[
+\boxed{
+S_{t+1}
+=
+S_t+P_t+AW_t-R_t-q_t-ET_t
+}
+\]
+
+Runoff:
+\[
+S_{max}=\frac{25400}{CN}-254
+\]
+
+\[
+S_{CN,t}
+=
+S_{max}
+\left[
+1-
+\frac{\theta_t-\theta_{FC}/2}
+{\theta_{sat}-\theta_{FC}/2}
+\right]
+\]
+(\(\theta>\theta_{FC}/2\) bo‘lsa; aks holda \(S_{CN}=S_{max}\)),
+
+\[
+\boxed{
+R_t=
+\frac{(P_t-0.2S_{CN,t})^2}
+{P_t+0.8S_{CN,t}}
+}
+\]
+faqat \(P_t>0.2S_{CN,t}\).
+
+Perkolatsiya:
+\[
+S_e=\frac{\theta-\theta_r}{\theta_{sat}-\theta_r},
+\qquad
+m=1-\frac1n
+\]
+
+\[
+\boxed{
+q_t=
+K_sS_e^{1/2}
+\left[1-(1-S_e^{1/m})^m\right]^2
+}
+\]
+
+Hydrosatning ochiq texnik ilovasi runoff soil-moisture-dependent modified SCS, percolation esa saturation-dependent nonlinear Darcian function ekanini aynan yozadi. :chatgpt-content-reference{index="4"}
+
+6. **Cloudy kunlarda \(AW_t\) qayerdan keladi?** Shu joy eng muhim. Thermal observation yo‘q bo‘lsa \(S\) kuzatilmaydi, shuning uchun Hydrosatning exact irrigation-inference routine’i public emas. Public IDC’ning takrorlanadigan varianti — **irrigation scheduling**: root-zone moisture trigger’dan pastga tushsa, irrigation hisoblanib target moisture’ga ko‘tariladi. IDC daily timestep uchun aynan beginning-of-day moisture bilan shunday ishlashni tavsiya qiladi. :chatgpt-content-reference{index="5"}
+
+Trigger:
+\[
+\theta_{min}
+=
+\theta_{WP}
++
+f_{min}(\theta_{FC}-\theta_{WP})
+\]
+
+Agar:
+\[
+\theta_t<\theta_{min}
+\]
+bo‘lsa:
+\[
+AW_t^{model}
+\]
+root zone’ni target moisture’ga olib chiqadi. Default target IDC’da:
+\[
+\boxed{\theta_{target}=\theta_{FC}}
+\]
+lekin trigger fraction \(f_{min}\) **input parametr** — uni hozir havodan tanlamaymiz. IDC default target FC ekanini aniq yozadi. :chatgpt-content-reference{index="6"}
+
+7. **Keyingi thermal observation kelganda model yana real state’ga bog‘lanadi.** Masalan:
+
+```text
+10 Jun  VIIRS   → SEBAL → Sobs
+11 Jun  cloud   → WB
+12 Jun  cloud   → WB
+13 Jun  HLS only→ WB
+14 Jun  VIIRS   → SEBAL → Sobs  ← state qayta tuzatiladi
+```
+
+Demak water balance cheksiz “o‘zicha ketmaydi”; thermal observations uni muntazam qayta constrain qiladi.
+
+8. **Hydrosatning ikki bucket tizimini aynan qo‘shamiz.**
+
+Real bucket:
+\[
+S_t
+\]
+— rainfall + irrigation aralash haqiqiy state.
+
+Rain-only bucket:
+\[
+S_{pr,t}
+\]
+— xuddi shu tuproq, lekin:
+\[
+AW=0
+\]
+
+Har kuni:
+\[
+\boxed{\alpha_t=\frac{S_{pr,t}}{S_t}}
+\]
+
+\[
+\boxed{ETPR_t=\alpha_tET_t}
+\]
+
+\[
+\boxed{ETAW_t=ET_t-ETPR_t}
+\]
+
+Bu Hydrosat technical annexida to‘g‘ridan-to‘g‘ri berilgan: real-world storage \(S\), no-irrigation storage \(S_{pr}\), \(ETPR=\alpha ET\), \(\alpha=S_{pr}/S\), va har pixel uchun ikki parallel soil-moisture bucket. :chatgpt-content-reference{index="7"}
+
+9. **AW’ni Hydrosat ochiq metodidek period bo‘yicha yopamiz.** Ularning hujjatida:
+\[
+\boxed{
+AW=ET+R+q+\Delta S-P
+}
+\]
+berilgan va aynan **monthly applied water** deb ta’riflangan. :chatgpt-content-reference{index="8"}
+
+Shuning uchun final authoritative AW:
+\[
+\boxed{
+AW_m=
+\sum ET_t+
+\sum R_t+
+\sum q_t+
+(S_{end}-S_{start})
+-
+\sum P_t
+}
+\]
+
+Daily `AW_model` irrigation-scheduling state’ni yuritish uchun ishlaydi; **final AW productni hozircha monthly residual** qilamiz. Shu Hydrosat public methodology’ga yaqinroq.
+
+Natijada har kun 30 m pixel uchun quyidagilar chiqadi:
+
+```text
+ET
+ET_SOURCE        = SEBAL / WATER_BALANCE
+
+theta_RZ
+S
+S_SOURCE         = SEBAL_OBS / WB_FORECAST
+
+P
+R
+q
+
+Spr
+alpha_PR
+ETPR
+ETAW
+
+AW_model         # daily state propagation uchun
+THERMAL_SOURCE   # L8 / L9 / VIIRS / ECOSTRESS / NONE
+DAYS_SINCE_THERMAL
+QA
+```
+
+Oy oxirida:
+
+```text
+ET_month
+ETPR_month
+ETAW_month
+AW_month
+```
+
+### Pipeline bir qatorda
+
+```text
+Landsat / VIIRS / ECOSTRESS
+          │
+          ├── valid thermal ─→ SEBAL ─→ EF ─→ ET24
+          │                         │
+          │                         └→ θobs → Sobs
+          │
+          └── no thermal ─────────────→ WATER BALANCE
+                                         │
+                          ETpot + θ ─→ ET cloudy
+                                         │
+                     P → R,   θ → q,   IDC → AWmodel
+                                         │
+                                         ↓
+                                     S(t+1)
+                                         │
+          ┌──────────────────────────────┴─────────────┐
+          ↓                                            ↓
+      REAL S                                      RAIN-ONLY Spr
+          │                                            │
+          └────────── α = Spr/S ──────────────────────┘
+                            ↓
+                   ETPR = α × ET
+                   ETAW = ET − ETPR
+
+Month end:
+AW = ΣET + ΣR + Σq + ΔS − ΣP
+```
+
+**Muhim aniqlik:** bu yo‘l Hydrosatning public qismi bilan mos. Faqat ikki qora quti ochilmagan: 
+`SEBAL4.0 → θRZ` operatori va cloudy-day proprietary crop/stomatal ET routine’i. Biz ularni mos ravishda **Scott–Bastiaanssen EF→θ** va **IDC Eq.17 moisture-stress ET** bilan almashtiramiz. 
+Qolgan zanjir Hydrosat hujjatidagi structure’ni takrorlaydi.
+
+Keyin bu V0 ishlagach, aynan shu ikki substitute’ni alohida validatsiya qilib yaxshilaymiz.

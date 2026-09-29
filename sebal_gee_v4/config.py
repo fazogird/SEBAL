@@ -474,6 +474,23 @@ ANCHOR_LANDCOVER = {
     'purity_steps': (0.80, 0.70, 0.60),
     # "Yetarli" chegarasi — cfg.ANCHOR['min_candidates'] (≥, 100 m da sanaladi)
 }
+
+# ── ANCHOR ZONALARI — Esri LULC, H3 (user qarori 2026-09-28; faqat mode_process='LHLSVIIRSECO',
+#    Landsat yo'li yuqoridagi WorldCover zonalarida qoladi) ─────────────────────────────────
+# Cold — Esri 5 (Crops). Hot — avval Esri 5 ichida NDVI eng past (yalang'och / bo'sh dala;
+# CIMEC — Allen 2013, geeSEBAL — Laipelt 2021), nomzod yetmasa Esri 8 (Bare ground) istisnolar
+# bilan. Hot uchun hech qachon: 7 qurilma, 1 suv, 2 daraxt, 4 suv bosgan o'simlik, 9 qor,
+# 10 bulut, 11 yaylov. Istisno qiymatlari BOSHLANG'ICH — sinov bilan tanlanadi (user qarori).
+# Sabab (sinov 2025-07-01, T42SUJ path 154): WorldCover hot zonasi tog'da (2839 m, 12°) edi.
+ANCHOR_H3 = {
+    'crop_class': 5,
+    'bare_class': 8,
+    'crop_elev_pct': (5, 95),     # tile ekin maydonlari balandlik oralig'i (DEM persentillari)
+    'elev_margin_m': 100,         # Esri 8 hot: shu oraliqdan ±100 m dan chiqmasin (tog' emas)
+    'dist_max_km': 10,            # Esri 8 hot: eng yaqin ekin maydonidan ≤ 10 km
+    'albedo_max': 0.35,           # Esri 8 hot: albedo ≤ 0.35 (sho'rxok, yorqin sirt emas);
+                                  #   pastki chegara metodlarda (cimec/plan_b: > 0.12)
+}
 # ==============================================================
 # 10. SENSIBLE HEAT FLUX — Monin-Obukhov Iteration
 # ==============================================================

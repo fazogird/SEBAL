@@ -557,14 +557,16 @@ def add_lst_footprint_diagnostics(image, scale=30):
 # MAIN: Compute all radiation components
 # ==============================================================
 
-def compute_pre_longwave(image, mode='yangiliklar', sloping_terrain=False):
+def compute_pre_longwave(image, mode='yangiliklar', sloping_terrain=False, lst_ready=False):
     """
     1-bosqich — L↓ ga BOG'LIQ BO'LMAGAN qism (anchor tanlashdan OLDIN ham xavfsiz):
       SEBAL_Milliy → Ermida SMW LST ('LST' ustiga yoziladi); K↓.
+    lst_ready=True — sahnada LST tayyor keladi (ko'p sensorli yo'l: VIIRS / ECOSTRESS sahnasi,
+      Landsat termali yo'q) → SMW o'tkazib yuboriladi. Sukut False — Landsat yo'li o'zgarmaydi.
     """
     # SEBAL_Milliy: C2L2 ST band o'rniga Ermida SMW LST (vegetatsiya-anomaliyasidan
     # mustaqil). L↑, G₀, anchor, dT — hammasi shu tuzatilgan LST'ni ishlatadi.
-    if mode == 'SEBAL_Milliy':
+    if mode == 'SEBAL_Milliy' and not lst_ready:
         image = compute_lst_smw(image)
     return compute_incoming_shortwave(image, sloping_terrain=sloping_terrain)
 
@@ -583,7 +585,7 @@ def compute_longwave_balance(image, mode='yangiliklar', tref=None):
     return image
 
 
-def compute_all(image, mode='yangiliklar', tref=None, sloping_terrain=False):
+def compute_all(image, mode='yangiliklar', tref=None, sloping_terrain=False, lst_ready=False):
     """
     Barcha radiatsiya va tuproq issiqlik oqimi (1- + 2-bosqich birga).
 
@@ -595,5 +597,5 @@ def compute_all(image, mode='yangiliklar', tref=None, sloping_terrain=False):
     Input:  Image with surface properties
     Output: Image + K_DOWN, L_DOWN, L_UP, RN, G0, RN_G0 bands
     """
-    image = compute_pre_longwave(image, mode, sloping_terrain=sloping_terrain)
+    image = compute_pre_longwave(image, mode, sloping_terrain=sloping_terrain, lst_ready=lst_ready)
     return compute_longwave_balance(image, mode, tref)

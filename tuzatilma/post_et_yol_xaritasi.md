@@ -16,6 +16,9 @@ Yangilangan: 2026-09-26. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, 
   - Rejimlar: SEBAL_Milliy, SEBAL_ID, SEBAL_B, pysebal, Kc_ETo.
   - Sahnasiz kun: har piksel uchun eng yaqin yaroqli sahnaning ulushi (rejimga qarab SOLAR_FRAC, ETrF yoki EF) × o'sha kunning qiymati (Rs24, ETr24 yoki Rn24).
   - Oylik yig'indi — `ET_MONTHLY` (`daily_et.py`).
+- **Saqlangan holat — `sebal_v6` (2026-09-26):** git tegi `sebal_v6` (commit 66994f2) va to'liq arxiv `D:\Cloud_comp\Sebal\backups\sebal_v6_2026-09-26.zip`. v6'ni qaytarish:
+  - alohida papkaga, joriy ishga tegmasdan: `git worktree add ../sebal_v6 sebal_v6`;
+  - yoki arxivni ochish — `sebal_v6/` papkasi, ichida hamma fayllar.
 - **Hozirgi post-ET kodi soddalashtirilgan:** `consumptive_use.py` (CUIRR, PRZ, NIWR, AW = CUirr / samaradorlik) va `root_zone_water.py`. Yangi dizayn ularga tayanmaydi (user qarori).
 - **O'rganilgan manbalar** — 11-bo'limda.
 
@@ -148,6 +151,66 @@ Gridlar:
   - Bizning `viirs_downscaling.py` (VNP09GA) ham Suomi NPP'dan.
 - **375 m VIIRS LST** faqat VNP21IMG_NRT ko'rinishida bor: tezkor mahsulot, 2023-10-10 dan, swath L2, GEE'da yo'q. Liu 2026'dagi 375 m LST — mualliflarning o'z retrieval'i.
 
+### Pilot inventarizatsiya — T42SUJ, 2019–2026 (2026-09-26)
+
+- Fayllar: `inventory/` — `inventory_t42suj.py` (GEE, faqat o'qish), `inventory_summary.py`, `inventory_T42SUJ.csv` (har kuzatuv bo'yicha).
+- Tile ichida ekin maydoni (ESA WorldCover) — 20.7%.
+- Jadvaldagi raqam: aprel–sentabrda o'rtacha bitta ekin pikseli nechta bulutsiz termal kuzatuv olgani.
+- Ustunlar:
+  - ECOSTRESS — faqat kunduzgi (9–17) va ko'rish burchagi ≤25°;
+  - VIIRS — ko'rish burchagi ≤40°;
+  - birlashma — pastki chegara (har kun uchun eng katta ulush olingan).
+  - Filtr chegaralari vaqtinchalik, qaror user'da.
+
+| Yil | Landsat | L + ECOSTRESS | L + E + VIIRS | ECOSTRESS (tun ham) | VIIRS (hammasi) | HLS S30 (optik) |
+|---|---|---|---|---|---|---|
+| 2019 | 10.0 | 14.7 | 75.7 | 14.4 | 142.9 | 28.0 |
+| 2020 | 9.3 | 16.0 | 77.0 | 14.9 | 139.1 | 25.1 |
+| 2021 | 11.3 | 11.4 | 86.0 | 2.5 | 159.9 | 29.7 |
+| 2022 | 21.4 | 21.5 | 84.5 | 3.7 | 136.0 | 28.0 |
+| 2023 | 22.1 | 24.3 | 92.5 | 13.9 | 151.9 | 29.0 |
+| 2024 | 22.3 | 24.0 | 82.6 | 10.7 | 125.4 | 30.5 |
+| 2025 | 22.9 | 24.1 | 95.6 | 11.5 | 156.3 | 37.7 |
+| 2026 | 18.5 | 20.5 | 81.8 | 11.7 | 122.0 | 8.1 |
+
+- **Landsat:** 2019–2021 da faqat Landsat 8 — ~10; 2022 dan Landsat 8+9 — ~22.
+- **ECOSTRESS:** 2019–2020 da Landsat'ga +5–7 kuzatuv qo'shadi, 2021–2026 da +0–2. Aprel–sentabrdagi 211 kuzatuvning 149 tasi (~70%) 9–17 oralig'idan tashqarida.
+- **VIIRS:** asosiy chastota manbai (L+E+V 76–96 kun — mavsumning 41–52%). Lekin:
+  - ko'rish burchagi medianasi 38°, har 4 kunning birida >56°;
+  - o'tish vaqti 11:42–14:00;
+  - Suomi NPP 2026-11-01 da to'xtaydi.
+- **HLS S30 2026-yil maydan:** tasvirlar tile'ning atigi ~4% ini qoplaydi (oldin 100%). Sababi noma'lum — tekshirish kerak.
+
+**ECOSTRESS — T42SUJ ustidan qachon tasvir beradi (2018-07…2026-09, 371 tasvir):**
+- **Tekshirildi:**
+  - tasvir nomidagi vaqt `system:time_start` bilan bir xil;
+  - kun/tun LST bilan tasdiqlandi (yozda tungi ~289 K, kunduzgi ~311 K).
+- **O'tish vaqti har kuni ~25 daqiqaga erta siljiydi.** ISS orbitasi quyosh-sinxron emas, shuning uchun to'liq 24 soatlik aylanish ~58 kunni oladi.
+  - Kunduzgi (9–17) tasvirlar "deraza" bo'lib keladi: taxminan har 7 haftada (median 49 kun), har biri 1–2 hafta davom etadi.
+  - Deraza ichida vaqt tushdan keyindan (~16–17) ertalabga (~9) siljiydi.
+  - Aprel–sentabrda odatda ~4 deraza: aprel boshi, may oxiri–iyun, iyul oxiri–avgust, sentabr oxiri.
+- **Yillar bo'yicha:**
+
+  | Yil | Jami | Kunduzgi | Yaroqli |
+  |---|---|---|---|
+  | 2019 | 64 | 28 | 14 |
+  | 2020 | 61 | 29 | 14 |
+  | 2021 | 20 | 6 | 1 |
+  | 2022 | 22 | 9 | 3 |
+  | 2023 | 56 | 15 | 6 |
+  | 2024 | 50 | 11 | 4 |
+  | 2025 | 48 | 10 | 3 |
+  | 2026 (sentabrgacha) | 46 | 8 | 2 |
+
+  Yaroqli = kunduzgi, ko'rish burchagi ≤25°, ekin maydonining ≥30% bulutsiz.
+- **Nega kam:**
+  - ECOSTRESS har o'tishda tasvir olmaydi (ma'lumot hajmi va ustuvorlik tartibi);
+  - 2021-06-22 da xotira nosozligi bo'lgan (NASA ECOSTRESS FAQ);
+  - 2023 dan tungi tasvirlar ko'paygan (2026: 46 tadan 26 tasi 0–6 da) — sababi manbalarda yo'q;
+  - tasvirlarning yarmi tile'ning <30% ini qoplaydi;
+  - bulut asosiy sabab emas: kunduzgi tasvirlarda bulutli ulush medianasi 11%.
+- Grafik: `inventory/ECOSTRESS_T42SUJ_vaqt.png`; skriptlar: `inventory/eco_*.py`.
+
 Bulutsiz kuzatuv kunlari (aprel–sentabr):
 
 | Sensor | Samarqand 2023 | Kun vaqti (mahalliy quyosh) |
@@ -162,6 +225,29 @@ Bulutsiz kuzatuv kunlari (aprel–sentabr):
 - ECOSTRESS kunduzgi, Bushland: 2020 — 16, 2021 — 17. ECOSTRESS'ning Bushland'dagi foydasi O'zbekistonga ko'chmaydi.
 - Bir kunda ustma-ust (Samarqand 2023): Landsat + VIIRS — 19 Landsat kunining 14 tasida; Landsat + ECOSTRESS (kunduz) — 1 kun (29-sentabr); uchalasi — o'sha 1 kun.
 
+### Qashqadaryo tile'lari — maydon va Landsat qoplami (2026-09-28)
+
+- Skript: `inventory/qashqadaryo_tiles.py` (metadata + 100 m reduceRegion). Natijalar: `inventory/qashqadaryo_tiles.csv`, `qashqadaryo_tiles_qoplash.csv`, `qashqadaryo_hls_2025.csv`.
+- 8 ta tile ikki UTM zonada (41 va 42).
+  - Qo'shni tile'lar ~9% ustma-ust tushadi.
+  - Zona chegarasida esa: T41SQC ∩ T42STH = 77%, T41SQD ∩ T42STJ = 82% — deyarli bir xil joy.
+- Har tile'ni 2 ta Landsat path qoplaydi. Qoplam har (tile, path) juftligi uchun doimiy, tasodifiy emas (HLS L30 2025, `SPATIAL_COVERAGE` medianasi; ekin qoplami — shu path'ning eng katta granulasi bo'yicha):
+
+  | Tile | 1-path: maydon / ekin, % | 2-path: maydon / ekin, % | Qashqadaryo ichidagi ekin, km² |
+  |---|---|---|---|
+  | T41SPC | 156: 100 / 100 | 157: 40 / 27 | 457 |
+  | T41SPD | 156: 92 / 94 | 157: 61 / 31 | 1124 |
+  | T41SQC | 155: 80 / 68 | 156: 71 / 89 | 2212 |
+  | T41SQD | 155: 62 / 71 | 156: 90 / 89 | 4419 |
+  | T42STH | 155: 98 / 93 | 156: 49 / 71 | 1789 |
+  | T42STJ | 155: 79 / 87 | 156: 74 / 74 | 4304 |
+  | T42SUH | 154: 70 / 89 | 155: 81 / 41 | 126 |
+  | T42SUJ | 154: 47 / 19 | 155: 98 / 100 | 814 |
+
+  - T41SQC, T42STJ va T42SUH bitta o'tishda hech qachon ≥90% qoplanmaydi.
+- **HLS S30:** T42SUJ'da 2025 yildagi 147 granuladan 69 tasi tile'ning atigi 3–4% ini qoplaydi ("tasma"), 78 tasi ≥90% ini. Qolgan 7 tile'da bunday tasma yo'q (T41SPD'da bitta). Qoplam qoidasi bo'lmasa, tasma bulutsiz bo'lsa filtrdan o'tib ketadi.
+- **Esri 10 m LULC** GEE'da bor (sat-io community katalogi). Qashqadaryo uchun 2017–2025 yillari mavjud, yuklash shart emas.
+
 ## 7. Ish tartibi
 
 Tartib ishlarning bir-biriga bog'liqligiga qarab yozilgan; user o'zgartirishi mumkin.
@@ -173,7 +259,62 @@ Tartib ishlarning bir-biriga bog'liqligiga qarab yozilgan; user o'zgartirishi mu
 4. **Anchor strategiyasi** — keskinlashtirilgan sahnalar uchun.
 5. **Tekshiruv** — har manba qo'shilgandan keyin ET yer ma'lumoti bilan solishtiriladi.
 
-Qo'shish tartibi (taklif; 9-bo'lim, 1-savol): V1 Landsat → V2 +ECOSTRESS → V3 +VIIRS → V4 kunlik birlashtirish.
+Qo'shish tartibi — qaror: Landsat → ECOSTRESS → VIIRS, optik HLS (S30 + L30) (8-bo'lim).
+
+**Downscaling sinovi — BAJARILDI (2026-09-27, `sharpening/`, natija `sharpening/README.md`).**
+- **Qarorlar:**
+  - DMS OpenET asosida yozildi (user: "OpenET mos kelsa shu");
+  - OpenET kodidagi xato tuzatildi: lokal regressiya 30 m gridda bajarilayotgan edi.
+- **4 kun, 100 m da:**
+  - ECOSTRESS 70 m — oddiy bilinear ham Landsat bilan bir xil (RMSE 0.2 K), DMS foyda bermaydi.
+  - VIIRS 1 km — bilinear ham, DMS ham SEBAL anchorlari uchun yaroqsiz: sovuq nomzod +3.4 / −2.1 K, issiq–sovuq kontrasti 1–5.5 K ga buziladi.
+- **Ochiq savol (24):** VIIRS SEBAL'ga qanday kiradi? (9-bo'lim)
+
+**Sensorlararo sinov — BAJARILDI (2026-09-27, `sharpening/README.md`).** Landsat LST asos, o'sha kungi haqiqiy ECOSTRESS (4 juft) va VIIRS (12 kun).
+- **ECOSTRESS LST:** R² 0.71, RMSEu 2.1 K. Downscaling usullari farq qilmadi. Issiq–sovuq farqi har doim 3.4–6.1 K kichik.
+- **VIIRS LST:**
+  - 1 km da Landsat bilan yaxshi mos: R² 0.79, bitta anomal kunsiz 0.67–0.97.
+  - 30 m da eng yaxshi usul — faqat Random Forest: RMSEu 3.0 K, R² 0.68; zich ekinda R² 0.26.
+  - TsHARP ishlamaydi.
+- **SEBAL_Milliy, ECOSTRESS vs Landsat (4 kun):**
+  - fazoviy naqsh mos (3 kunda R² 0.78–0.85);
+  - o'rtacha ET darajasi beqaror: −45%..+8%;
+  - piksel xatosi ~1–1.4 mm/kun.
+- **SEBAL_Milliy, VIIRS vs Landsat (6 kun, 2026-09-27):**
+  - bilinear VIIRS: ET +13% (+1..+31%), R² 0.71; siyrak ekinda +56% — naqsh siqiladi;
+  - RF bilan keskinlashtirilgan VIIRS (6 kun, 2026-09-28): ET +16% (+0..+26%), RMSE 1.02 mm/kun, R² 0.82 (bilinearda 0.71);
+  - xulosa: RF naqshni yaxshilaydi, lekin VIIRS'dan hisoblangan SEBAL ET Landsat'nikidan doimiy yuqori (~+15%). Bu vaqtga bog'liq sistematik og'ish, uni Landsat–VIIRS juftlari (8 yilda 180 ta) bilan kalibrlash mumkin bo'lishi mumkin;
+  - takrorlanuvchanlik masalasi: cheklangan GEE rejimida anchor usuli o'zgarib ketdi (2020-08-03) — kvota tiklangach tekshirish kerak.
+- **T1 hold-out sinovi (2026-09-28, 2 juft):**
+  - hozirgi usul (eng yaqin sahna F o'zgarmas) 16 kunda −4..+55% xato beradi;
+  - VIIRS termali eskirgan optika bilan kam yordam beradi;
+  - yangi optika bilan xato keskin kamayadi: mavsum oxirida +55% → +16%, RMSE 1.45 → 0.85.
+  - Xulosa: kundalik ET uchun L30+S30 optikasi zarur; VIIRS'ning qo'shimcha foydasini P3 (faqat optika) bilan o'lchash kerak.
+- **T-A pilot (2026-09-28, 10 kun, `sharpening/README.md`):**
+  - umumiy k = 0.92 → og'ish +10.9% dan +2.1% ga tushdi (LOO); kunlik qoldiq −12.5..+12.8%;
+  - oktabr kuni (2022-10-12) +66% — kechki mavsum juftlari ko'proq kerak;
+  - NDVI'ga bog'liqlik kichik (±4%);
+  - ETrF bilan kunlikka o'tkazish og'ishni tushuntirmaydi;
+  - VIIRS optikadan tashqari foyda beradi: 1 juftda T-A RMSE 1.07, faqat optika 1.92, hozirgi usul 1.61;
+  - cheklov: Landsat kunlarida VIIRS ko'rish burchagi doim ~25°, shuning uchun burchak ta'sirini kalibrlash juftlaridan o'lchab bo'lmaydi.
+- **User taklifi (2026-09-28):** VIIRS har kuni + L30/S30 optikasi (bulut filtri bilan). Taklif qilingan qoida: piksel bo'yicha ±2 kun ichidagi eng yaqin HLS; bir xil yaqinlikda L30 (bulut niqobi yaxshiroq), S30 bo'shliqni to'ldiradi.
+- **Ochiq savol (25):** ECOSTRESS va VIIRS ET'si kunlik birlashmaga qanday kiradi? Variantlar:
+  - faqat vaqt oynasi (Landsat soatiga yaqin o'tishlar);
+  - naqsh sifatida — daraja eng yaqin Landsat sahnasiga moslanadi;
+  - ko'proq juftlik yig'ib, qayta baholash.
+
+Sinov tuzilishi (tarix uchun):
+- Sinov qadamlari:
+  1. Landsat LST'ni 70 m va 1 km ga yig'ish (ECOSTRESS va VIIRS'ni taqlid qilish).
+  2. HLS yordamida DMS bilan qayta 30 m ga keskinlashtirish.
+  3. Asl Landsat bilan solishtirish: LST xatosi va SEBAL ET farqi.
+- Solishtiriladigan anchor strategiyalari:
+  - anchor keskinlashtirilgan LST'dan;
+  - anchor asl (dag'al) LST'dan;
+  - keskinlashtirishsiz, ET downscaling.
+- Adabiyot:
+  - DMS (Gao 2012, Xue 2020): ECOSTRESS → 30 m, RMSEu 1.2–1.8 K; VIIRS 375 m → 30 m, RMSEu 1.3–1.7 K. Bizda VIIRS 1 km, shuning uchun xato kattaroq bo'lishi kutiladi.
+  - GEE-DMS (Liu 2026): mahalliy OLS (25 piksel oyna) + global Random Forest; EC box ECOSTRESS 270 m, VIIRS 780 m; kod: github.com/Open-ET/openet-landsat-lst (litsenziya hali tekshirilmagan).
 
 ### B. Suv balansi dvigateli
 1. **Dizayn hujjati** — kodsiz: tenglamalar, belgilar, kiritmalar. User tasdiqlaydi.
@@ -210,11 +351,29 @@ Qo'shish tartibi (taklif; 9-bo'lim, 1-savol): V1 Landsat → V2 +ECOSTRESS → V
 | AW | AW = ET + R + q + ΔS − P |
 | θ | 5-bo'limdagi sxema |
 | Sun'iy yo'ldosh ma'lumoti | ko'paytiriladi: ECOSTRESS, VIIRS, HLS |
+| Asos grid (2026-09-26) | HLS/MGRS, 30 m, UTM (har tile o'z zonasida). Landsat WRS-2 endi hisob hududi emas, faqat metadata |
+| Pilot (2026-09-26) | tile T42SUJ (Samarqand), 2019–2026 — avval ma'lumot inventarizatsiyasi |
+| VIIRS ko'rish burchagi (2026-09-28) | hozircha ≤40°. Keyinroq boshqa chegaralar (masalan 30°, 50°) MBE/RMSE bilan sinaladi: yaxshiroq bo'lsa almashtiriladi, bo'lmasa 40° qoladi |
+| Asosiy g'oya (2026-09-28, user) | Landsat 8+9 (BOTH) asosiy tarmoq bo'lib qoladi. Sahnalar orasidagi kunlar VIIRS tarmog'i bilan to'ldiriladi (VIIRS LST + HLS L30/S30 optika → SEBAL VIIRS vaqtida). Termal kuzatuv bo'lmagan kunlar suv balansi bilan to'ldiriladi — Hydrosat kabi |
+| Sensorlar tartibi (2026-09-26) | Landsat → ECOSTRESS → VIIRS; optik — HLS (S30 + L30). Bitta MGRS tile ichida uchala termal sensor ishlatiladi. ECOSTRESS tashlanmaydi: kam bo'lsa ham, ba'zi kunlarda foyda beradi |
+| Hisob va eksport (2026-09-28, user) | Oraliq natija asset'ga yozilmaydi. Downscaling GEE grafi ichida, LST kerak bo'lgan joyda hisoblanadi. Faqat yakuniy natija Drive'ga eksport qilinadi |
+| VIIRS bulut filtri (2026-09-28, user) | Landsat bilan bir xil qoida: WorldCover ekin maydoni ustida yomon piksellar ulushi < `CROP_CLOUD_MAX` (hozir 30%, `config.py`). Oylar bo'yicha cheklov yo'q |
+| VIIRS sahnasi optikasi (2026-09-28, user) | Downscaling qaysi HLS tasvir (L30 yoki S30) bilan qilingan bo'lsa, SEBAL'ning optik bandlari ham aynan o'sha tasvirdan olinadi |
+| VIIRS ET darajasi (2026-09-28, user) | Xom ET_V ham, tuzatilgan k·ET_V ham saqlanadi (k = 0.92 vaqtincha). Faqat koeffitsientga ko'paytirish yetarli aniqlik bermaydi |
+| Albedo sinovi (2026-09-28, user) | Olmedo BRDF tuzatishsiz va BRDF tuzatishli (`olmedo_brdf`) solishtiriladi — ET'ga ta'siri ko'riladi |
+| Tile va anchor (2026-09-28, user) | Anchor MGRS tile bo'yicha tanlanadi. Har tile o'z pikseliga ega: ustma-ust qismda piksel bitta tile'ga tegishli |
+| Ekin xaritasi (2026-09-28, user) | Esri 10 m LULC (sat-io), har yil o'z yili (2026 uchun 2025); ekin = 5 (Crops). Ekin bo'lmagan qism maskalanmaydi — SEBAL butun tile'da ishlaydi, bulut qoidasi faqat ekin ustida. Chiqishga `CROP_MASK` bandi qo'shiladi (hisobi og'ir bo'lmasa) |
+| Bulut filtri (2026-09-28, user) | Hamma sensor uchun bir xil: (1) dastlabki — sahna yoki tile buluti < 80%; (2) tasvir ko'rgan ekin ustida bulut ≤ 20%; (3) tasvir tile ekinining kamida 10% ini ko'rishi shart (S30 tasmalari chiqadi). Bulutli piksel har doim maskalanadi |
+| VIIRS sifat maskasi (2026-09-28, user) | QC 0–1-bitlar = 0 va 4–5-bitlar (bulut bayrog'i) = 0; ko'rish burchagi ≤ 40° |
+| VIIRS + HLS (2026-09-28, user) | Piksel faqat HLS'da ham, VIIRS'da ham toza bo'lsa olinadi |
+| Kunlik va oylik (2026-09-28, user) | Har piksel uchun ustuvorlik: Landsat > ECOSTRESS > VIIRS. Landsat yetib bormagan yoki bulutli ekin keyingi manbadan olinadi. Termal kuzatuvsiz kun — hozir eng yaqin sahna, keyin suv balansi. Oylik ET = kunlik ET'lar yig'indisi |
+| Landsat tarmog'i (2026-09-28, user) | Landsat Collection 2 Level-2 qoladi (HLS L30 emas). Bir kunlik qatorlar birlashtiriladi |
+| Tadqiqot tile'i (2026-09-28, user) | T42SUJ. Birinchi mahsulot — 2025 aprel–oktabr kalendari (qaysi kun SEBAL, qaysi kun suv balansi) |
 
 ## 9. Ochiq savollar (user qarori kutilmoqda)
 
 **Ma'lumot (A):**
-1. Qo'shish tartibi V1 → V2 → V3 → V4 shundaymi?
+1. ~~Qo'shish tartibi~~ — **qaror: Landsat → ECOSTRESS → VIIRS, optik HLS (S30 + L30)** (8-bo'lim).
 2. Chiqish grid'i 30 m bo'ladimi?
 3. ECOSTRESS uchun vaqt filtri — qaysi soatlar oralig'i (masalan, 10:00–15:00)?
 4. VIIRS: GEE'dagi 1 km VNP21A1D'mi yoki 375 m LST'ni o'zimiz ishlab chiqaramizmi?
@@ -234,8 +393,8 @@ Qo'shish tartibi (taklif; 9-bo'lim, 1-savol): V1 Landsat → V2 +ECOSTRESS → V
 
 **Grid va kunlik birlashtirish (V4 uchun; 2026-09-26 qo'shildi):**
 
-15. Asos grid: HLS/MGRS (UTM, 30 m, 109.8 km tile), Landsat grid'i yoki bitta milliy grid?
-16. SEBAL kalibratsiya (anchor) hududi qanday bo'ladi? Uch variant:
+15. ~~Asos grid~~ — **qaror: HLS/MGRS 30 m** (8-bo'lim).
+16. ~~SEBAL kalibratsiya (anchor) hududi qanday bo'ladi?~~ — **qaror: MGRS tile bo'yicha; chok chiqsa qayta ko'riladi** (8- va 10-bo'lim). Uch variant edi:
     - har MGRS tile alohida;
     - qat'iy kalibratsiya zonalari (bir nechta tile bloki yoki iqlim/relyef zonalari);
     - tile bo'yicha kalibratsiya + qo'shni tile'lar bilan silliqlash.
@@ -246,11 +405,41 @@ Qo'shish tartibi (taklif; 9-bo'lim, 1-savol): V1 Landsat → V2 +ECOSTRESS → V
     - Long va boshq. 2011 (JGR): SEBAL anchor tanlashga va hudud o'lchamiga juda sezgir.
     - Chok kattaligini MGRS tile'larning ustma-ust tasmasida (9.8 km) o'lchash mumkin.
     - Kuzatuv tile'ning kamida qancha qismini qoplashi kerak — shu savolning bir qismi.
-17. Bir kunda bir nechta termal kuzatuv bo'lsa: ustuvorlik (Landsat > ECOSTRESS > VIIRS), oddiy o'rtacha (Liu 2026) yoki xatoga qarab og'irlikli o'rtacha? Birlashtirish kunlik ET darajasida bo'ladi, LST darajasida emas.
-18. Landsat kunlarida optik kirish: C2 L2 SR (hozirgi, Bushland'da tekshirilgan) yoki HLS L30 (hamma kun bir xil seriya)? HLS allaqachon BRDF bo'yicha normallashtirilgan, `olmedo_brdf` albedo ham BRDF tuzatadi — ikki marta tuzatish bo'lmasligi kerak.
-19. Birlashtirilgan kirish ma'lumotini GEE'da asset sifatida saqlaymizmi yoki har safar kod bilan hisoblaymizmi?
+17. ~~Bir kunda bir nechta termal kuzatuv bo'lsa~~ — **qaror: piksel bo'yicha ustuvorlik Landsat > ECOSTRESS > VIIRS, kunlik ET darajasida** (8-bo'lim).
+18. ~~Landsat kunlarida optik kirish: C2 L2 SR yoki HLS L30?~~ — **qaror: C2 L2 qoladi** (8-bo'lim).
+19. ~~Birlashtirilgan kirish ma'lumotini GEE'da asset sifatida saqlaymizmi yoki har safar kod bilan hisoblaymizmi?~~ — **qaror: asset yo'q, har safar kod bilan (GEE lazy); faqat yakuniy natija Drive'ga** (8-bo'lim).
 20. Suomi NPP'dan keyin VIIRS uchun manba: NOAA-20/21 LST'ni (VJ121A1D, VJ221A1D) GEE'ga o'zimiz yuklaymizmi yoki boshqa yo'l tanlaymizmi? Bu savol `viirs_downscaling.py` (VNP09GA) ga ham tegishli.
-21. Inventarizatsiya uchun pilot MGRS tile qaysi bo'ladi va qaysi yillar olinadi?
+21. ~~Pilot tile~~ — **qaror: T42SUJ, 2019–2026** (8-bo'lim).
+22. **Tungi ET qanday hisobga olinadi?** (2026-09-26)
+    - Bushland 2021 lizimetri (15 daqiqalik, NE/SE, quruq kunlar): tungi (Rn < 0) ET kunlik ET'ning 4–12% ini tashkil qiladi — iyul ~4%, avgust 5–7%, sentabr 9–12%; bir kechada 0.2–0.6 mm.
+    - SEBAL_Milliy kunlik ET = `SOLAR_FRAC × Rs24`. Tunda Rs = 0, shuning uchun tungi ET avtomatik 0 bo'lib qoladi.
+    - SEBAL_ID esa `ETrF × ETr24` bilan hisoblaydi; ETr24 soatlik yig'indi bo'lgani uchun tungi soatlarni ham qamraydi.
+    - Tungi ET SEBAL'ning o'zidan (tungi LST bilan) topilmaydi: kechasi energiya balansi qoldig'i ishonchsiz va anchorlar ishlamaydi.
+    - Skript: `inventory/bushland_tungi_et.py`.
+24. **VIIRS SEBAL'ga qanday kiradi?** (2026-09-27, downscaling sinovidan keyin)
+    - 30 m ga keltirilgan VIIRS LST anchorlar uchun yaroqsiz chiqdi.
+    - Variantlar:
+      - VIIRS'ni faqat vaqt signali sifatida ishlatish: 1 km da EF/ETrF o'zgarishini hisoblab, Landsat 30 m naqshiga o'tkazish (sinov kerak);
+      - hozirgi yo'l — VIIRS'dan faqat vegetatsiya indekslari (`viirs_downscaling.py`), termal yo'q;
+      - DMS'ni 1 km uchun yaxshilashga urinish.
+    - ECOSTRESS uchun asosiy savol endi rezolyutsiya emas: o'tish vaqti, geolokatsiya va kalibrovka — haqiqiy 2023-09-29 sinovi kerak.
+23. **Tungi LST'ni namlik (θ) indikatori sifatida ishlatamizmi?** Kunduz–tun LST farqi termal inersiyani ko'rsatadi.
+    - ECOSTRESS'da kunduz–tun juftlari kam.
+    - VIIRS'da har kuni ikki kuzatuv bor (~13:30 va ~01:30; VNP21A1N GEE'da mavjud), lekin aniqligi 1 km va Suomi NPP 2026-11-01 da to'xtaydi.
+26. **VIIRS ET darajasini qanday moslaymiz?** (2026-09-28)
+    - T1 nisbat usuli 30 m naqshni eski Landsat sahnasida qotirib qo'yadi; user uni asosiy yo'l sifatida qabul qilmadi.
+    - Variantlar:
+      - (a) mustaqil VIIRS-SEBAL + bir kunlik Landsat–VIIRS juftlaridan kalibrlash (k = median(ET_L/ET_V), keyin qoldiq tahlili);
+      - T1 — faqat QA va zaxira sifatida;
+      - VIIRS termalisiz: Landsat + HLS optika + suv balansi.
+    - SEBAL'da sensorlar orasida umumiy daraja asosi yo'q (DisALEXI'da ALEXI bor), shuning uchun kalibrlash zarur.
+    - Hisob hajmi: hamma juftlar (113–180) × 2 SEBAL + RF kvotaga sig'maydi → stratifikatsiyalangan tanlama kerak.
+27. ~~**Tile qoplami qoidasi**~~ — **qaror: tasvir tile ekinining ≥ 10% ini ko'rsin, ko'rgan ekin ustida bulut ≤ 20%** (8-bo'lim). Savol edi (2026-09-28):
+    - Hozirgi bulut foizi faqat tasvir qoplagan qismdan hisoblanadi. Tile ekin maydonining qancha qismi qoplangani alohida tekshirilmaydi.
+    - Savol: eng kam qoplam qancha bo'ladi (masalan, 30%)? Yoki chegara qo'yilmaydi va kichik qoplamdagi anchor sifati sinov bilan tekshiriladi?
+28. ~~**Ustma-ust tile'larda piksel kimniki**~~ — **qaror: har tile o'z pikseliga ega** (8-bo'lim). Savol edi (2026-09-28):
+    - Viloyat mahsulotida bitta piksel ikki tile'dan ikki xil ET oladi; UTM zona chegarasida ustma-ust tushish 77–82%.
+    - Taklif (MGRS qoidasi): piksel o'z UTM zonasidagi va o'z 100 km kvadratidagi tile'ga tegishli. Anchor hisobi esa butun tile bo'yicha qoladi.
 
 ## 10. Keyinga qoldirilganlar (esdan chiqmasin)
 
@@ -260,6 +449,15 @@ Qo'shish tartibi (taklif; 9-bo'lim, 1-savol): V1 Landsat → V2 +ECOSTRESS → V
   - SEBAL bilan sug'orilmaydigan joy va paytni aniqlash.
 - **q:** oddiy chelak va van Genuchten natijalari keskin farq qilsa — Ksat va tuproq parametrlarining sezgirligi tekshiriladi.
 - **Yaqinlashish chegaralari** (masalan, 1 mm va 0.01) — qat'iy belgilanmaydi, sezgirlik testi bilan tanlanadi.
+- **Anchor — MGRS tile bo'yicha** (user qarori, 2026-09-28). Bitta Landsat o'tishi bir nechta tile'da har xil anchor bilan hisoblanadi. Agar natijada tile chetlarida ET choki chiqsa, masala qayta ko'tariladi.
+- **Anchor sinflari — Esri LULC bo'yicha** (user qarori, 2026-09-28). Hali boshlanmagan — anchor qismiga kelganda shu asosda ishlanadi.
+  - Cold — Esri 5 (Crops).
+  - Hot — H3:
+    - avval Esri 5 ichida NDVI eng past (yalang'och, bo'sh qoldirilgan) dalalar — CIMEC (Allen 2013) va geeSEBAL (Laipelt 2021) usuli;
+    - nomzod yetmasa, Esri 8 (Bare ground) istisnolar bilan: qiyalik (tog' va tog' etagi), albedo oralig'i (sho'rxok, tosh), dalaga yaqinlik, balandlik farqi.
+  - Hot uchun hech qachon olinmaydigan sinflar: 7, 1, 2, 4, 9, 10, 11.
+  - Sinov: T42SUJ'da hozirgi zona, H1 va H2 solishtiriladi; ixtiyoriy — Bushland lizimetri.
+- **Piksel darajasida ishlash — keyin** (2026-09-28). Hozir asosiy arxitektura tile bo'yicha: har tile o'z pikseliga ega, ustma-ustlikdan iloji boricha qochiladi. Keyinchalik tile emas, piksel darajasida yurganda pikselning qaysi tile'ga tegishliligi yo'qoladi — shuni hisobga olish kerak.
 
 ## 11. Manbalar
 

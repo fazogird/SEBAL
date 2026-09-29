@@ -107,12 +107,21 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
                  anchor_mode='median_anchor',
                  cloud_roi=None, cloud_use_cropland=True,
                  ref_type='alfalfa', utc_offset=None, etr24_source='era5',
-                 sloping_terrain=False):
+                 sloping_terrain=False, mode_process='landsat', region=None, region_label=''):
     """
     Bitta ROI/tile uchun SEBAL pipeline.
+    mode_process:
+      'landsat'      — hozirgi yo'l (Landsat 8/9 C2 L2, o'zgarmagan);
+      'LHLSVIIRSECO' — ko'p sensorli yo'l (Landsat + HLS + VIIRS + ECOSTRESS, MGRS tile;
+                       sebal_gee_v4/pipeline). roi — butun MGRS tile (kalibratsiya hududi),
+                       tile_label — MGRS nomi ('T42SUJ'); satellite / cloud_max ishlatilmaydi;
+                       region — foydalanuvchi hududi (viloyat): kalendar qoidalari tile ∩ region
+                       ekini bo'yicha (None → butun tile). 'landsat' yo'lida ishlatilmaydi.
     Returns:
     tuple: (list of processed ee.Image objects, info dict)
     """
+    if mode_process not in ('landsat', 'LHLSVIIRSECO'):
+        raise ValueError(f"mode_process: 'landsat' yoki 'LHLSVIIRSECO' (berildi: {mode_process!r})")
     prefix = f"  [{tile_label}]" if tile_label else "  "
 
     # SEBAL_Milliy_Kc: sahna bosqichi AYNAN SEBAL_Milliy kabi (NDVI + barcha band
@@ -154,6 +163,17 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
         dem_ref = ee.Image(cfg.DEM['collection']).select(cfg.DEM['band'])
         z_ws = slt.mean_elevation(dem_ref, roi)
         print(f"{prefix} ⛰️ sloping_terrain=True | z_ws (ROI o'rtacha) = {z_ws:.0f} m")
+
+    # KO'P SENSORLI YO'L — kirish bosqichi, sahna yig'uvchi va kunlik birlashma pipeline'da;
+    # har sahna AYNI process_scene orqali (quyida). Hozirgi Landsat yo'li — pastda, o'zgarmagan.
+    if mode_process == 'LHLSVIIRSECO':
+        from .pipeline import multisensor
+        return multisensor.process_tile(
+            roi, date_start, date_end, mode, tile_label,
+            anchor_method=anchor_method, anchor_mode=anchor_mode, ref_type=ref_type,
+            utc_offset=utc_offset, etr24_source=etr24_source,
+            sloping_terrain=sloping_terrain, z_ws=z_ws, prefix=prefix,
+            region=region, region_label=region_label)
     # Tile label bo'lsa: P156_R032 kabi qiymatdan path/row ajratamiz
     if tile_label:
         is_hls = satellite == 'HLS'
@@ -235,155 +255,22 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     scene_dates = []   # FAQAT saqlangan sahnalar sanasi (scene_images bilan indeksma-indeks)
     qc_rows = []       # sahna sifat hisoboti (OK / OGOHLANTIRISH / RAD ETILDI + sabab)
 
-    def _reject(date, why, qc_, extra=None):
-        qc_.update(extra or {})
-        qc_.update({'status': 'RAD ETILDI', 'sabab': why})
-        print(f"{prefix} ❌ Sahna {date}: {why} — O'TKAZIB YUBORILADI")
-
+    ctx = dict(prefix=prefix, cold_zone=cold_zone, hot_zone=hot_zone,
+               anchor_method=anchor_method, anchor_mode=anchor_mode,
+               ldown_empirical=ldown_empirical, sloping_terrain=sloping_terrain, z_ws=z_ws,
+               ref_type=ref_type, utc_offset=utc_offset, etr24_source=etr24_source)
     for i in range(n):
         print(f"{prefix} Sahna {i + 1}/{n}...")
 
         img = ee.Image(image_list.get(i))
         qc = {'sana': info['dates'][i], 'quyosh_geom': info['solar_src'][i]}
         qc_rows.append(qc)
-
-        # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
-        # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
-        # munosabati LST_DEM bilan qurilgani uchun (energy_balance.compute_all
-        # ichida). Aks holda cold/hot skalyarlari asl LST da, raster dT esa
-        # LST_DEM da bo'lib, c5 (kesma) 0.0065·z ga siljib ketadi.
-        def _anchor_view(im):
-            if sloping_terrain:
-                from . import sloping_terrain as _slt
-                return im.addBands(_slt.lst_dem(im), overwrite=True)
-            return im
-
-        # Anchor → energiya balansi. Anchor topilib, FIZIK QC'dan o'tmasa (SceneQCError)
-        # — o'sha (metod, zona) chetlanadi va kaskad KEYINGI metoddan davom etadi
-        # (user qarori 2026-09-19). Har urinish L↓/energiya balansidan OLDINGI toza
-        # tasvirdan boshlanadi; muvaffaqiyatsiz urinishlar QC'ga yoziladi.
-        img_pre = img
-        tried = []                      # [(metod, zona, fizik QC sababi)]
-        img_ok = None
-        while True:
-            att = {}                    # shu urinishning QC maydonlari
-            img = img_pre
-            img_anchor = _anchor_view(img)
-            # Empirik L↓: Rn−G₀ hali yo'q → anchor zona/LST tanlanadi (need_rn=False).
-            anchors = energy_balance.select_anchor_pixels(
-                img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
-                method=anchor_method, anchor_mode=anchor_mode,
-                need_rn=not ldown_empirical,
-                hot_soil=cfg.is_id_mode(mode),   # SEBAL_ID oilasi: hot — faqat tuproq piksel
-                cold_full_cover=cfg.is_id_mode(mode),   # 1.05·ETr — to'liq qoplama (LAI ≥ 4)
-                exclude={(m_, z_) for m_, z_, _ in tried})
-
-            # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
-            # keyingi barcha bosqichlar AYNI qiymat va AYNI pikselni ishlatadi.
-            extra = {}
-            if ldown_empirical:
-                extra['tref'] = energy_balance.cold_anchor_surface_temp(
-                    img, img_anchor, anchors, roi, anchor_mode)
-            anchors, chk = energy_balance.materialize_anchors(anchors, extra)
-            chk['cold_lst_1'] = chk.get('cold_lst')
-            c_, h_ = chk.get('cold_lst'), chk.get('hot_lst')
-            if c_ is not None and h_ is not None and c_ > 200 and h_ > 200:
-                att.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
-            qc_tried = ("; fizik QC'dan o'tmagan anchor: " + "; ".join(
-                f"{m_}/{z_} ({r_})" for m_, z_, r_ in tried)) if tried else ''
-
-            if not chk['valid']:
-                rn_bad = [sd for sd in ('cold', 'hot')
-                          if f'{sd}_rn_g0' in chk and (chk[f'{sd}_rn_g0'] is None
-                                                       or chk[f'{sd}_rn_g0'] <= -900)]
-                if 'dT_LST' in att and att['dT_LST'] < cfg.ANCHOR['min_dt']:
-                    why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
-                           f"(cold {c_:.1f} K, hot {h_:.1f} K)")
-                elif 'dT_LST' in att and rn_bad:
-                    why = f"anchor Rn−G₀ topilmadi ({'/'.join(rn_bad)})"
-                else:
-                    why = anchors.get('fail_reason') or "anchor: cold/hot nomzod topilmadi"
-                qc.update(att)
-                _reject(info['dates'][i], why + qc_tried, qc)
-                break   # bu sahna scene_images ga QO'SHILMAYDI
-
-            def _pur(v):
-                return f"ulush ≥{v:.2f}" if v else "ROI (zona yetmadi)"
-            print(f"{prefix}   anchor: {anchors.get('method')}/{anchors.get('zone')} | zona: cold "
-                  f"{_pur(anchors['cold_zone_purity'])} | hot {_pur(anchors['hot_zone_purity'])}")
-            att['anchor'] = f"{anchors.get('method')}/{anchors.get('zone')}"
-            if anchors.get('note'):              # default zaxirasi ishlatilgan — QC'ga
-                att.setdefault('warnings', []).append(anchors['note'])
-
-            if ldown_empirical:
-                # L↓ Tref = cold anchor pikselning asl LST — topilmasa TO'XTAYDI.
-                if chk.get('tref') is None:
-                    raise RuntimeError(
-                        f"{prefix} Sahna {i + 1}/{n}: cold anchor LST (L↓ Tref) "
-                        f"topilmadi — default harorat ishlatilmaydi.")
-                tref = chk['tref']
-                print(f"{prefix}   L↓ Tref = cold anchor LST ({anchor_mode}) = {tref:.2f} K")
-                img = radiation.compute_longwave_balance(img, mode, tref=tref)
-                # AYNI cold/hot maskalardan yakuniy qiymatlar (LST, Rn−G₀)
-                img_anchor = _anchor_view(img)
-                anchors = energy_balance.finalize_anchor_values(
-                    img_anchor, roi, anchors, anchor_mode)
-                anchors, chk2 = energy_balance.materialize_anchors(anchors)
-                if not chk2['valid']:
-                    qc.update(att)
-                    _reject(info['dates'][i],
-                            "anchor Rn−G₀ topilmadi (yakuniy bosqich)" + qc_tried, qc)
-                    break
-                if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
-                    print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
-                          f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
-
-            try:
-                img = energy_balance.compute_all(
-                    img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
-                    mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=att,
-                    etr24_source=etr24_source)
-            except energy_balance.SceneQCError as e:
-                tried.append((anchors.get('method'), anchors.get('zone'), str(e)))
-                print(f"{prefix}   ↪ {anchors.get('method')}/{anchors.get('zone')}: {e} "
-                      f"— keyingi metod sinaladi")
-                continue
-            img_ok = img
-            qc.update(att)
-            if tried:
-                qc.setdefault('warnings', []).append(qc_tried.lstrip('; '))
-            break
-
-        if img_ok is None:
-            continue   # sahna rad etildi (sababi _reject'da)
-        img = img_ok
-        _grid_tpw_qc(img, roi, mode, qc, prefix)   # qiymatlarga TEGMAYDI
-        img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
-                                        utc_offset=utc_offset,
-                                        etr24_source=etr24_source,
-                                        sloping_terrain=sloping_terrain)
-        _daily_qc(img, roi, mode, qc, prefix, sloping_terrain)   # qiymatlarga TEGMAYDI
-
-        if mode == 'pysebal':
-            img = et_decomposition.compute_all(img, roi, utc_offset=utc_offset)
-            img = soil_moisture.compute_all(img)
-            img = biomass.compute_all(img)
-            img = irrigation.compute_all(img)
-        else:
-            # 'SEBAL_B' rejimida ham S30 ETrF va VIIRS(kc) ishlashi uchun
-            # ETREF_24 (grass, ASCE-EWRI) va KC har sahnaga qo'shiladi.
-            # pysebal'da bularni et_decomposition allaqachon beradi.
-
-            img = ref_et.compute_etref_daily(img, roi, utc_offset=utc_offset)
-            kc = (img.select('ET_24')
-                  .divide(img.select('ETREF_24').max(0.5))
-                  .clamp(0, 2.5).rename('KC'))
-            img = img.addBands(kc)
-
+        img = process_scene(img, qc, roi, mode, date=info['dates'][i],
+                            label=f"Sahna {i + 1}/{n}", **ctx)
+        if img is None:
+            continue   # sahna rad etildi (sababi QC'da)
         scene_images.append(img)
         scene_dates.append(info['dates'][i])
-        qc['status'] = 'OGOHLANTIRISH' if qc.get('warnings') else 'OK'
-        qc['sabab'] = '; '.join(qc.get('warnings', []))
 
     # ---- SAHNA SIFAT HISOBOTI — eksportdan OLDIN ----
     _scene_qc_report(qc_rows, prefix, tile_label, mode, date_start, date_end)
@@ -407,6 +294,164 @@ def process_tile(roi, date_start, date_end, mode, satellite, cloud_max,
     info['utc_offset'] = utc_offset   # oylik hisob shu offsetni ishlatishi uchun
     info['sloping_terrain'] = sloping_terrain
     return scene_images, info
+
+
+def _reject(date, why, qc_, prefix, extra=None):
+    qc_.update(extra or {})
+    qc_.update({'status': 'RAD ETILDI', 'sabab': why})
+    print(f"{prefix} ❌ Sahna {date}: {why} — O'TKAZIB YUBORILADI")
+
+
+def process_scene(img, qc, roi, mode, *, date, label, prefix, cold_zone, hot_zone,
+                  anchor_method, anchor_mode, ldown_empirical, sloping_terrain, z_ws,
+                  ref_type, utc_offset, etr24_source):
+    """
+    BITTA sahna: anchor kaskadi → energiya balansi → kunlik ET → ETref/KC.
+    Kirish — surface_props va radiatsiyadan (L↓ empirik rejimda — pre-longwave) KEYINGI tasvir.
+    Rad etilsa None (sababi `qc`da). qc — shu sahnaning QC lug'ati (joyida to'ldiriladi).
+    Ikkala yo'l ishlatadi: mode_process='landsat' (process_tile sikli) va 'LHLSVIIRSECO'
+    (pipeline.multisensor). Kod process_tile siklidan AYNAN ko'chirilgan — formulalar o'zgarmagan.
+    Diagnostika (qiymatlarga tegmaydi): qc['_urinishlar'] — anchor kaskadi izi (metod, zona,
+    natija), qc['_anchors'] — topilgan anchorlar (nuqta, nomzod maskalari).
+    """
+    energy_balance.ANCHOR_TRACE.clear()
+    # ---- Anchor tekshiruvi — YIQILISHDAN OLDIN ----
+    # QIYA YUZA: anchor AYNI Ts maydonidan tanlanishi SHART — dT–Ts
+    # munosabati LST_DEM bilan qurilgani uchun (energy_balance.compute_all
+    # ichida). Aks holda cold/hot skalyarlari asl LST da, raster dT esa
+    # LST_DEM da bo'lib, c5 (kesma) 0.0065·z ga siljib ketadi.
+    def _anchor_view(im):
+        if sloping_terrain:
+            from . import sloping_terrain as _slt
+            return im.addBands(_slt.lst_dem(im), overwrite=True)
+        return im
+
+    # Anchor → energiya balansi. Anchor topilib, FIZIK QC'dan o'tmasa (SceneQCError)
+    # — o'sha (metod, zona) chetlanadi va kaskad KEYINGI metoddan davom etadi
+    # (user qarori 2026-09-19). Har urinish L↓/energiya balansidan OLDINGI toza
+    # tasvirdan boshlanadi; muvaffaqiyatsiz urinishlar QC'ga yoziladi.
+    img_pre = img
+    tried = []                      # [(metod, zona, fizik QC sababi)]
+    img_ok = None
+    while True:
+        att = {}                    # shu urinishning QC maydonlari
+        img = img_pre
+        img_anchor = _anchor_view(img)
+        # Empirik L↓: Rn−G₀ hali yo'q → anchor zona/LST tanlanadi (need_rn=False).
+        anchors = energy_balance.select_anchor_pixels(
+            img_anchor, roi, cold_zone=cold_zone, hot_zone=hot_zone,
+            method=anchor_method, anchor_mode=anchor_mode,
+            need_rn=not ldown_empirical,
+            hot_soil=cfg.is_id_mode(mode),   # SEBAL_ID oilasi: hot — faqat tuproq piksel
+            cold_full_cover=cfg.is_id_mode(mode),   # 1.05·ETr — to'liq qoplama (LAI ≥ 4)
+            exclude={(m_, z_) for m_, z_, _ in tried})
+
+        # Anchor LST/Rn−G₀/nuqta BIR MARTA hisoblanadi (klient konstantasi) —
+        # keyingi barcha bosqichlar AYNI qiymat va AYNI pikselni ishlatadi.
+        extra = {}
+        if ldown_empirical:
+            extra['tref'] = energy_balance.cold_anchor_surface_temp(
+                img, img_anchor, anchors, roi, anchor_mode)
+        anchors, chk = energy_balance.materialize_anchors(anchors, extra)
+        chk['cold_lst_1'] = chk.get('cold_lst')
+        c_, h_ = chk.get('cold_lst'), chk.get('hot_lst')
+        if c_ is not None and h_ is not None and c_ > 200 and h_ > 200:
+            att.update({'cold_LST': c_, 'hot_LST': h_, 'dT_LST': h_ - c_})
+        qc_tried = ("; fizik QC'dan o'tmagan anchor: " + "; ".join(
+            f"{m_}/{z_} ({r_})" for m_, z_, r_ in tried)) if tried else ''
+
+        if not chk['valid']:
+            rn_bad = [sd for sd in ('cold', 'hot')
+                      if f'{sd}_rn_g0' in chk and (chk[f'{sd}_rn_g0'] is None
+                                                   or chk[f'{sd}_rn_g0'] <= -900)]
+            if 'dT_LST' in att and att['dT_LST'] < cfg.ANCHOR['min_dt']:
+                why = (f"anchor ΔT = {h_ - c_:.1f} K < {cfg.ANCHOR['min_dt']} K "
+                       f"(cold {c_:.1f} K, hot {h_:.1f} K)")
+            elif 'dT_LST' in att and rn_bad:
+                why = f"anchor Rn−G₀ topilmadi ({'/'.join(rn_bad)})"
+            else:
+                why = anchors.get('fail_reason') or "anchor: cold/hot nomzod topilmadi"
+            qc.update(att)
+            _reject(date, why + qc_tried, qc, prefix)
+            break   # bu sahna scene_images ga QO'SHILMAYDI
+
+        def _pur(v):
+            return f"ulush ≥{v:.2f}" if v else "ROI (zona yetmadi)"
+        print(f"{prefix}   anchor: {anchors.get('method')}/{anchors.get('zone')} | zona: cold "
+              f"{_pur(anchors['cold_zone_purity'])} | hot {_pur(anchors['hot_zone_purity'])}")
+        att['anchor'] = f"{anchors.get('method')}/{anchors.get('zone')}"
+        if anchors.get('note'):              # default zaxirasi ishlatilgan — QC'ga
+            att.setdefault('warnings', []).append(anchors['note'])
+
+        if ldown_empirical:
+            # L↓ Tref = cold anchor pikselning asl LST — topilmasa TO'XTAYDI.
+            if chk.get('tref') is None:
+                raise RuntimeError(
+                    f"{prefix} {label}: cold anchor LST (L↓ Tref) "
+                    f"topilmadi — default harorat ishlatilmaydi.")
+            tref = chk['tref']
+            print(f"{prefix}   L↓ Tref = cold anchor LST ({anchor_mode}) = {tref:.2f} K")
+            img = radiation.compute_longwave_balance(img, mode, tref=tref)
+            # AYNI cold/hot maskalardan yakuniy qiymatlar (LST, Rn−G₀)
+            img_anchor = _anchor_view(img)
+            anchors = energy_balance.finalize_anchor_values(
+                img_anchor, roi, anchors, anchor_mode)
+            anchors, chk2 = energy_balance.materialize_anchors(anchors)
+            if not chk2['valid']:
+                qc.update(att)
+                _reject(date,
+                        "anchor Rn−G₀ topilmadi (yakuniy bosqich)" + qc_tried, qc, prefix)
+                break
+            if abs(chk2['cold_lst'] - chk['cold_lst_1']) > 0.01:
+                print(f"{prefix}   ⚠️ cold anchor LST 1-bosqich {chk['cold_lst_1']:.2f} K ≠ "
+                      f"yakuniy {chk2['cold_lst']:.2f} K (Rn−G₀ maskasi farqi)")
+
+        try:
+            img = energy_balance.compute_all(
+                img, roi, cold_zone=cold_zone, hot_zone=hot_zone, anchors=anchors,
+                mode=mode, sloping_terrain=sloping_terrain, z_ws=z_ws, qc=att,
+                etr24_source=etr24_source)
+        except energy_balance.SceneQCError as e:
+            tried.append((anchors.get('method'), anchors.get('zone'), str(e)))
+            print(f"{prefix}   ↪ {anchors.get('method')}/{anchors.get('zone')}: {e} "
+                  f"— keyingi metod sinaladi")
+            continue
+        img_ok = img
+        qc.update(att)
+        if tried:
+            qc.setdefault('warnings', []).append(qc_tried.lstrip('; '))
+        break
+
+    qc['_urinishlar'] = list(energy_balance.ANCHOR_TRACE)
+    if img_ok is None:
+        return None   # sahna rad etildi (sababi _reject'da)
+    qc['_anchors'] = anchors
+    img = img_ok
+    _grid_tpw_qc(img, roi, mode, qc, prefix)   # qiymatlarga TEGMAYDI
+    img = daily_et.compute_daily_et(img, roi, mode=mode, ref_type=ref_type,
+                                    utc_offset=utc_offset,
+                                    etr24_source=etr24_source,
+                                    sloping_terrain=sloping_terrain)
+    _daily_qc(img, roi, mode, qc, prefix, sloping_terrain)   # qiymatlarga TEGMAYDI
+
+    if mode == 'pysebal':
+        img = et_decomposition.compute_all(img, roi, utc_offset=utc_offset)
+        img = soil_moisture.compute_all(img)
+        img = biomass.compute_all(img)
+        img = irrigation.compute_all(img)
+    else:
+        # 'SEBAL_B' rejimida ham S30 ETrF va VIIRS(kc) ishlashi uchun
+        # ETREF_24 (grass, ASCE-EWRI) va KC har sahnaga qo'shiladi.
+        # pysebal'da bularni et_decomposition allaqachon beradi.
+
+        img = ref_et.compute_etref_daily(img, roi, utc_offset=utc_offset)
+        kc = (img.select('ET_24')
+              .divide(img.select('ETREF_24').max(0.5))
+              .clamp(0, 2.5).rename('KC'))
+        img = img.addBands(kc)
+    qc['status'] = 'OGOHLANTIRISH' if qc.get('warnings') else 'OK'
+    qc['sabab'] = '; '.join(qc.get('warnings', []))
+    return img
 
 
 _GRID_QC_BANDS = ('LST', 'LAI', 'EMISSIVITY', 'L_UP', 'DTA', 'RN')
@@ -528,6 +573,8 @@ def _scene_qc_report(rows, prefix, tile_label, mode, date_start, date_end):
             'grid', 'grid_ok', 'TPW_min', 'TPW_max', 'TPW_bin_min', 'TPW_bin_max', 'n_TPW_bins',
             'pct_etrf_gt110', 'etrf_raw_p99', 'pct_crad_lo', 'pct_crad_hi',
             'lon', 'lat']
+    # LHLSVIIRSECO: sahna manbai va optika — faqat bor bo'lsa (Landsat yo'li CSV'i o'zgarmaydi)
+    cols = cols[:1] + [c for c in ('manba', 'optika') if any(c in r for r in rows)] + cols[1:]
     n_bad = sum(1 for r in rows if r.get('status') == 'RAD ETILDI')
     n_warn = sum(1 for r in rows if r.get('status') == 'OGOHLANTIRISH')
     print(f"\n{prefix} ===== SAHNA SIFAT HISOBOTI: {len(rows)} sahna | "
@@ -588,9 +635,10 @@ def _round_export(img):
 # ==============================================================
 
 def _export_daily(scene_images, roi, mode, folder, scale, crs,
-                 tile_label=''):
-    """Kunlik rasterlar — multi-band, har sahna alohida fayl."""
-    bands = DAILY_BANDS_PYSEBAL if mode == 'pysebal' else DAILY_BANDS_SEBAL_B
+                 tile_label='', extra_bands=()):
+    """Kunlik rasterlar — multi-band, har sahna alohida fayl.
+    extra_bands — qo'shimcha bandlar (LHLSVIIRSECO: SOURCE, ET_24_RAW); sukut — yo'q."""
+    bands = (DAILY_BANDS_PYSEBAL if mode == 'pysebal' else DAILY_BANDS_SEBAL_B) + list(extra_bands)
     tasks = []
 
     for i, img in enumerate(scene_images):
@@ -1178,6 +1226,11 @@ def _export_lst_diag_csv(scenes, region_fc, folder, tile_label, scale=30):
 
 def run(roi_type='gaul', date_start=None, date_end=None,
         mode='SEBAL_B', satellite='BOTH', cloud_max=70, validate=False,
+        # Kirish yo'li: 'landsat' — hozirgi (Landsat 8/9 C2 L2, o'zgarmagan);
+        #   'LHLSVIIRSECO' — ko'p sensorli (Landsat + HLS + VIIRS + ECOSTRESS), faqat
+        #   process_by_tile=True va MGRS tiles=['T42SUJ', ...] bilan; satellite/cloud_max
+        #   ishlatilmaydi (qoidalar — sebal_gee_v4/pipeline/rules.py).
+        mode_process='landsat',
         utc_offset=None,   # mahalliy standart soat (None=avto boylam/15). Siyosiy
         #   vaqt zonasi boylamdan farq qilsa QO'LDA bering: mas. Texas panhandle
         #   Central Time = -6 (avto -7 beradi — El Paso'dan tashqari xato).
@@ -1309,6 +1362,15 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             f"(berildi: tiles={tiles}, process_by_tile=False). "
             f"Aniq tile'lar kerak → process_by_tile=True; "
             f"ROI ga tekkan barcha tile'lar kerak → tiles=None.")
+    if mode_process not in ('landsat', 'LHLSVIIRSECO'):
+        raise ValueError(f"mode_process: 'landsat' yoki 'LHLSVIIRSECO' (berildi: {mode_process!r})")
+    if mode_process == 'LHLSVIIRSECO':
+        if not process_by_tile or (tiles is not None and not all(isinstance(t, str) for t in tiles)):
+            raise ValueError("mode_process='LHLSVIIRSECO' — process_by_tile=True va MGRS "
+                             "tiles=['T42SUJ', ...] (yoki tiles=None — hududdan avtomatik) kerak")
+        if use_viirs or use_s30_etrf:
+            raise ValueError("mode_process='LHLSVIIRSECO' bilan use_viirs / use_s30_etrf "
+                             "(eski to'ldiruvchi qatlamlar) ishlatilmaydi")
 
     roi = cfg.build_roi(roi_type, **roi_kwargs)
     cfg.CROP_ASSETS = crop_assets      # PER-CROP Kc: ndvi_kc cfg.CROP_ASSETS'ni o'qiydi
@@ -1375,12 +1437,25 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 
     # ---- TILE-BASED PROCESSING ----
     if process_by_tile:
-        if tiles is None:
+        if tiles is None and mode_process == 'LHLSVIIRSECO':
+            from .pipeline.tile import mgrs_tiles_for
+            print("\n  MGRS tiles hududdan aniqlanmoqda...")
+            tiles = mgrs_tiles_for(roi, int(date_start[:4]))
+        elif tiles is None:
             print("\n  WRS tiles aniqlanmoqda...")
             tiles = detect_wrs_tiles(roi, date_start, date_end,
                                      satellite, cloud_max)
 
         print(f"  Topilgan tiles: {tiles}")
+        owned = {}
+        if mode_process == 'LHLSVIIRSECO':       # hudud → tile'lar → ekin: avtomatik reja (plan_tiles)
+            from .pipeline.tile import plan_tiles
+            from .pipeline.rules import InputRules
+            plan, _, owned = plan_tiles(tiles, roi, int(date_start[:4]), InputRules().min_calib_crop_km2)
+            for r in plan:
+                if not r['ishlanadi']:
+                    tile_warnings.append({'tile': r['tile'], 'warning': r['holat']})
+            tiles = [r['tile'] for r in plan if r['ishlanadi']]     # reja tartibida (butun → kesik)
 
         for tile_item in tiles:
             # Tile format: Landsat = (155, 33), HLS = 'T42TVK' yoki ('T42TVK',)
@@ -1405,14 +1480,27 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             # Tile geometriyasi — TILE CHEGARASIDA ishlash uchun.
             # HLS: MGRS granula footprint; Landsat: WRS path/row.
             # tile_roi = roi ∩ tile_geom → har tile o'z chegarasida.
+            # LHLSVIIRSECO: calib_roi — butun MGRS tile (sahna yig'uvchi, RF o'qitish); kalendar qoidalari
+            # va kalibratsiya (anchor, z0m, QC) — tile ∩ roi (multisensor, region=roi); eksport —
+            # roi ∩ tile; eksport CRS — tile'ning o'z UTM zonasi (tile_crs).
+            tile_crs, calib_roi, mgrs = crs, None, None
             try:
-                if satellite == 'HLS':
+                if mode_process == 'LHLSVIIRSECO':
+                    from .pipeline.tile import MgrsTile
+                    mgrs = MgrsTile(tile_label)
+                    # eksport — faqat tile egaligi (plan_tiles, ustma-ustliksiz); kalibratsiya — butun tile
+                    tile_geom, tile_crs, calib_roi = owned[tile_label], mgrs.crs, mgrs.geometry
+                elif satellite == 'HLS':
                     tile_geom = get_hls_tile_geometry(
                         tile_label, date_start, date_end)
                 else:
                     tile_geom = get_tile_geometry(path, row)
                 tile_roi = roi.intersection(tile_geom, ee.ErrorMargin(30))
             except Exception as e:
+                if mode_process == 'LHLSVIIRSECO':      # MGRS tile'siz ishlab bo'lmaydi
+                    failed_tiles.append({'tile': tile_label, 'error': f"MGRS tile: {e}"})
+                    print(f"  ❌ TAYL {tile_label}: MGRS tile topilmadi — {e}")
+                    continue
                 print(f"  ⚠️ Tile geometriya topilmadi ({e}) → ROI ishlatiladi")
                 tile_warnings.append({'tile': tile_label,
                                       'warning': f"tayl geometriyasi topilmadi → ROI ({e})"})
@@ -1424,11 +1512,14 @@ def run(roi_type='gaul', date_start=None, date_end=None,
             # Kutilmagan xato turlari (RuntimeError emas) — to'liq traceback bilan.
             try:
                 scenes, info = process_tile(
-                    tile_roi, date_start, date_end, mode,
+                    calib_roi or tile_roi, date_start, date_end, mode,
                     satellite, cloud_max, tile_label,
                     anchor_method=anchor_method, anchor_mode=anchor_mode,
                     utc_offset=utc_offset, sloping_terrain=sloping_terrain,
-                    cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland)
+                    cloud_roi=cloud_roi, cloud_use_cropland=_cloud_use_cropland,
+                    mode_process=mode_process,
+                    region=roi if mode_process == 'LHLSVIIRSECO' else None,
+                    region_label=str(roi_kwargs.get('name') or ''))
             except Exception as e:
                 import traceback
                 err = f"{type(e).__name__}: {e}"
@@ -1455,8 +1546,15 @@ def run(roi_type='gaul', date_start=None, date_end=None,
 
             if export_daily:
                 tasks = _export_daily(scenes, tile_roi, mode,
-                                        folder, scale, crs, tile_label)
+                                        folder, scale, tile_crs, tile_label,
+                                        extra_bands=(('SOURCE', 'ET_24_RAW')
+                                                     if mode_process == 'LHLSVIIRSECO' else ()))
                 all_tasks.extend(tasks)
+
+            if mode_process == 'LHLSVIIRSECO' and (export_daily or export_monthly):
+                from .pipeline import multisensor
+                all_tasks.extend(multisensor.export_crop_mask(
+                    mgrs, tile_roi, date_start, date_end, folder))
 
             if export_monthly:
                 from datetime import datetime
@@ -1505,7 +1603,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         month_tasks, dr_carry = _export_monthly_safe(
                             failed_months,
                             scenes, tile_roi, current_year, current_month,
-                            mode, folder, scale, crs, tile_label,
+                            mode, folder, scale, tile_crs, tile_label,
                             False, save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
                             sloping_terrain=sloping_terrain,
@@ -1521,7 +1619,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         month_tasks, dr_carry = _export_monthly_safe(
                             failed_months,
                             scenes, tile_roi, current_year, current_month,
-                            mode, folder, scale, crs, tile_label,
+                            mode, folder, scale, tile_crs, tile_label,
                             False,  # save_et=False → VIIRS ET ishlatiladi
                             save_biomass, save_etref, save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
@@ -1533,7 +1631,7 @@ def run(roi_type='gaul', date_start=None, date_end=None,
                         month_tasks, dr_carry = _export_monthly_safe(
                             failed_months,
                             scenes, tile_roi, current_year, current_month,
-                            mode, folder, scale, crs, tile_label,
+                            mode, folder, scale, tile_crs, tile_label,
                             save_et, save_biomass, save_etref,
                             save_tact, save_eact,
                             utc_offset=info.get('utc_offset', 0),
