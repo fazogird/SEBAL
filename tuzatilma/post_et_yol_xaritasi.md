@@ -361,7 +361,7 @@ Sinov tuzilishi (tarix uchun):
 | VIIRS sahnasi optikasi (2026-09-28, user) | Downscaling qaysi HLS tasvir (L30 yoki S30) bilan qilingan bo'lsa, SEBAL'ning optik bandlari ham aynan o'sha tasvirdan olinadi |
 | VIIRS ET darajasi (2026-09-28, user) | Xom ET_V ham, tuzatilgan k·ET_V ham saqlanadi (k = 0.92 vaqtincha). Faqat koeffitsientga ko'paytirish yetarli aniqlik bermaydi |
 | Albedo sinovi (2026-09-28, user) | Olmedo BRDF tuzatishsiz va BRDF tuzatishli (`olmedo_brdf`) solishtiriladi — ET'ga ta'siri ko'riladi |
-| Tile va anchor (2026-09-28, user) | Anchor MGRS tile bo'yicha tanlanadi. Har tile o'z pikseliga ega: ustma-ust qismda piksel bitta tile'ga tegishli |
+| Tile va anchor (2026-09-28, user) | Anchor MGRS tile bo'yicha tanlanadi. Har tile o'z pikseliga ega: ustma-ust qismda piksel bitta tile'ga tegishli. 2026-09-29 da aniqlashtirildi — «Anchor hududi» va «Tile'lar va egalik» qatorlari |
 | Ekin xaritasi (2026-09-28, user) | Esri 10 m LULC (sat-io), har yil o'z yili (2026 uchun 2025); ekin = 5 (Crops). Ekin bo'lmagan qism maskalanmaydi — SEBAL butun tile'da ishlaydi, bulut qoidasi faqat ekin ustida. Chiqishga `CROP_MASK` bandi qo'shiladi (hisobi og'ir bo'lmasa) |
 | Bulut filtri (2026-09-28, user) | Hamma sensor uchun bir xil: (1) dastlabki — sahna yoki tile buluti < 80%; (2) tasvir ko'rgan ekin ustida bulut ≤ 20%; (3) tasvir tile ekinining kamida 10% ini ko'rishi shart (S30 tasmalari chiqadi). Bulutli piksel har doim maskalanadi |
 | VIIRS sifat maskasi (2026-09-28, user) | QC 0–1-bitlar = 0 va 4–5-bitlar (bulut bayrog'i) = 0; ko'rish burchagi ≤ 40° |
@@ -369,6 +369,8 @@ Sinov tuzilishi (tarix uchun):
 | Kunlik va oylik (2026-09-28, user) | Har piksel uchun ustuvorlik: Landsat > ECOSTRESS > VIIRS. Landsat yetib bormagan yoki bulutli ekin keyingi manbadan olinadi. Termal kuzatuvsiz kun — hozir eng yaqin sahna, keyin suv balansi. Oylik ET = kunlik ET'lar yig'indisi |
 | Landsat tarmog'i (2026-09-28, user) | Landsat Collection 2 Level-2 qoladi (HLS L30 emas). Bir kunlik qatorlar birlashtiriladi |
 | Tadqiqot tile'i (2026-09-28, user) | T42SUJ. Birinchi mahsulot — 2025 aprel–oktabr kalendari (qaysi kun SEBAL, qaysi kun suv balansi) |
+| Anchor hududi (2026-09-29, user) | Anchor viloyat ekinidan olinadi: tile ∩ viloyat (z0m persentillari va sahna QC ham shu hududda). Tile boshqa viloyatni (masalan, Samarqand, Buxoro) qoplasa ham anchor u yerga ketmaydi. Dalil: tuzatishdan oldin Qashqadaryo sinovida (T42SUJ, 2025-04-10/11) 6 anchor nuqtadan 3 tasi Samarqandga tushgan. VIIRS RF downscaling o'qitishi butun tile'da qoladi |
+| Tile'lar va egalik (2026-09-29, user) | Har viloyat uchun bir xil avtomatik qoida (`plan_tiles`): (1) viloyat tile'lari HLS granulalaridan topiladi (`tiles=None`; ro'yxat berilsa ham shu qoida bilan tekshiriladi); (2) tile'ning to'liq footprint'ida viloyat ekini < 100 km² bo'lsa, tile tushiriladi — anchor ishonchsiz; (3) ustma-ustlik: tile'lar viloyat ekini ko'pligi bo'yicha tartiblanadi — birinchisi butun, keyingisi faqat qoplanmagan qismni oladi ("bittasi butun, qolgani kesik"); kichik kesik qismlar ham hisoblanadi; (4) anchor — tile'ning butun footprint'i ∩ viloyat ekinidan, eksport — faqat tile egaligida. Qashqadaryo: 8 tile avtomatik topildi (qo'lda berilgani bilan bir xil), T41SQD butun, 6 tasi kesik, T42SUH (10 km²) tushirildi, ekin qoplami 99.8%. Samarqand: 10 tile topildi, 5 tasi ishlanadi, 99.9% |
 
 ## 9. Ochiq savollar (user qarori kutilmoqda)
 
@@ -394,7 +396,7 @@ Sinov tuzilishi (tarix uchun):
 **Grid va kunlik birlashtirish (V4 uchun; 2026-09-26 qo'shildi):**
 
 15. ~~Asos grid~~ — **qaror: HLS/MGRS 30 m** (8-bo'lim).
-16. ~~SEBAL kalibratsiya (anchor) hududi qanday bo'ladi?~~ — **qaror: MGRS tile bo'yicha; chok chiqsa qayta ko'riladi** (8- va 10-bo'lim). Uch variant edi:
+16. ~~SEBAL kalibratsiya (anchor) hududi qanday bo'ladi?~~ — **qaror: MGRS tile bo'yicha; chok chiqsa qayta ko'riladi** (8- va 10-bo'lim). **2026-09-29 aniqlashtirildi: anchor tile ∩ viloyat ekinidan** (8-bo'lim, «Anchor hududi»). Uch variant edi:
     - har MGRS tile alohida;
     - qat'iy kalibratsiya zonalari (bir nechta tile bloki yoki iqlim/relyef zonalari);
     - tile bo'yicha kalibratsiya + qo'shni tile'lar bilan silliqlash.
@@ -437,9 +439,9 @@ Sinov tuzilishi (tarix uchun):
 27. ~~**Tile qoplami qoidasi**~~ — **qaror: tasvir tile ekinining ≥ 10% ini ko'rsin, ko'rgan ekin ustida bulut ≤ 20%** (8-bo'lim). Savol edi (2026-09-28):
     - Hozirgi bulut foizi faqat tasvir qoplagan qismdan hisoblanadi. Tile ekin maydonining qancha qismi qoplangani alohida tekshirilmaydi.
     - Savol: eng kam qoplam qancha bo'ladi (masalan, 30%)? Yoki chegara qo'yilmaydi va kichik qoplamdagi anchor sifati sinov bilan tekshiriladi?
-28. ~~**Ustma-ust tile'larda piksel kimniki**~~ — **qaror: har tile o'z pikseliga ega** (8-bo'lim). Savol edi (2026-09-28):
+28. ~~**Ustma-ust tile'larda piksel kimniki**~~ — **qaror: har tile o'z pikseliga ega** (8-bo'lim). **2026-09-29: bittasi butun, qolgani kesik** — tile'lar viloyat ekini ko'pligi bo'yicha tartiblanadi (8-bo'lim, «Tile'lar va egalik»). Savol edi (2026-09-28):
     - Viloyat mahsulotida bitta piksel ikki tile'dan ikki xil ET oladi; UTM zona chegarasida ustma-ust tushish 77–82%.
-    - Taklif (MGRS qoidasi): piksel o'z UTM zonasidagi va o'z 100 km kvadratidagi tile'ga tegishli. Anchor hisobi esa butun tile bo'yicha qoladi.
+    - Taklif (MGRS qoidasi): piksel o'z UTM zonasidagi va o'z 100 km kvadratidagi tile'ga tegishli. Anchor hisobi esa butun tile bo'yicha qoladi. Tanlanmadi (2026-09-29): ikkala tile ham 66°E da kesilardi, chok Qarshi ekin massivi o'rtasidan o'tardi.
 
 ## 10. Keyinga qoldirilganlar (esdan chiqmasin)
 
@@ -449,7 +451,7 @@ Sinov tuzilishi (tarix uchun):
   - SEBAL bilan sug'orilmaydigan joy va paytni aniqlash.
 - **q:** oddiy chelak va van Genuchten natijalari keskin farq qilsa — Ksat va tuproq parametrlarining sezgirligi tekshiriladi.
 - **Yaqinlashish chegaralari** (masalan, 1 mm va 0.01) — qat'iy belgilanmaydi, sezgirlik testi bilan tanlanadi.
-- **Anchor — MGRS tile bo'yicha** (user qarori, 2026-09-28). Bitta Landsat o'tishi bir nechta tile'da har xil anchor bilan hisoblanadi. Agar natijada tile chetlarida ET choki chiqsa, masala qayta ko'tariladi.
+- **Anchor — tile ∩ viloyat ekini** (user qarori, 2026-09-28; 2026-09-29 aniqlashtirildi — avval butun MGRS tile edi). Bitta Landsat o'tishi bir nechta tile'da har xil anchor bilan hisoblanadi. Agar natijada tile egaligi chegaralarida ET choki chiqsa, masala qayta ko'tariladi.
 - **Anchor sinflari — Esri LULC bo'yicha** (user qarori, 2026-09-28). Hali boshlanmagan — anchor qismiga kelganda shu asosda ishlanadi.
   - Cold — Esri 5 (Crops).
   - Hot — H3:
