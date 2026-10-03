@@ -73,12 +73,30 @@ class MgrsTile:
                .filterDate(f'{y}-01-01', f'{y + 1}-01-01'))
         return col.mosaic().select(0).rename('LULC').setDefaultProjection(self.proj(10))
 
+    def class_fraction(self, year, cls, scale=100):
+        """Esri sinfi (cls) ULUSHI 0..1, scale ≤ 100 m, tile gridida.
+        Tile'ning o'z UTM zonasidagi Esri tasviri — 10 m dan to'g'ridan-to'g'ri tile gridiga (aniq, avvalgidek).
+        BOSHQA zonadagi tasvir (zona chegarasidagi tile) — avval O'Z zonasida `scale` ga kamaytiriladi, keyin
+        shu masshtabda tile gridiga o'tadi: aks holda u butun tile bo'ylab 10 m da qayta proyeksiyalanadi va 1 km /
+        masofa hisoblarida "Reprojection output too large (11000x11000)" chiqadi (Bushland T13SGU, 2026-09-30)."""
+        y = self.esri_year(year)
+        proj = self.proj(scale)
+        crs = ee.String(self.crs)
+        col = (ee.ImageCollection(ESRI_LULC).filterBounds(self.geometry)
+               .filterDate(f'{y}-01-01', f'{y + 1}-01-01'))
+
+        def frac(im):
+            b = im.select(0)
+            f = b.eq(cls).toFloat().reduceResolution(ee.Reducer.mean(), maxPixels=1024)
+            own = b.projection()
+            return ee.Image(ee.Algorithms.If(own.crs().equals(crs), f.reproject(proj),
+                                             f.reproject(own.atScale(scale))))
+        return col.map(frac).mosaic().setDefaultProjection(proj)
+
     def crop_fraction(self, year, scale):
-        """Piksel ichidagi ekin (Esri 5) ULUSHI 0..1 — 10 m dan reduceResolution(mean).
-        scale ≤ 320 m bir bosqichda; kattasi (VIIRS 1 km) 100 m orqali ikki bosqichda."""
-        f100 = (self.lulc(year).eq(ESRI_CROPS).toFloat()
-                .reduceResolution(ee.Reducer.mean(), maxPixels=1024)
-                .reproject(self.proj(min(scale, 100))))
+        """Piksel ichidagi ekin (Esri 5) ULUSHI 0..1 — 10 m dan reduceResolution(mean) (class_fraction).
+        scale ≤ 100 m bir bosqichda; kattasi (VIIRS 1 km) 100 m orqali ikki bosqichda."""
+        f100 = self.class_fraction(year, ESRI_CROPS, min(scale, 100))
         if scale <= 100:
             return f100.rename('CROP')
         return (f100.reduceResolution(ee.Reducer.mean(), maxPixels=1024)

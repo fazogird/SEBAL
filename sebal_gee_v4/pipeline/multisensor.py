@@ -8,7 +8,7 @@ Bitta MGRS tile uchun (roi — butun tile, anchor hududi):
   2. Sahna yig'uvchi (scenes.build) → surface_props → radiatsiya (Landsat bo'lmasa SMW
      o'tkaziladi: LST tayyor) → main.process_scene (hozirgi yo'l bilan AYNI anchor/EB/kunlik ET).
   3. Sensorlararo daraja: har sahnada ET_24_RAW (+ SOLAR_FRAC_RAW / ETRF_INST_RAW / EVAP_FRAC_RAW);
-     VIIRS'da ET_24 = k·xom (rules.viirs_k, VAQTINCHA), ECOSTRESS'da rules.eco_k.
+     VIIRS'da ET_24 = k·xom (rules.viirs_k = 1, user qarori 2026-10-02), ECOSTRESS'da rules.eco_k.
   4. Kunlik birlashma: bir kunda bir nechta sahna → piksel bo'yicha Landsat > ECOSTRESS > VIIRS;
      SOURCE bandi (1 Landsat, 2 ECOSTRESS, 3 VIIRS). Oylik hisob keyin mavjud yo'l bilan
      (eng yaqin sahna, SOLAR_FRAC × Rs24); termal kuzatuvsiz kunlar uchun suv balansi — keyin.
@@ -58,10 +58,15 @@ def compose_daily(processed):
     for d in sorted(by):
         lst = sorted(by[d], key=lambda x: PRIORITY.index(x[0]))       # yuqori ustuvorlik birinchi
 
-        def tag(kind, img):
+        def tag(kind, img, bands=None):
+            # Bandlar turi Float'ga keltiriladi (qiymat o'zgarmaydi): sahnalarda bir band (masalan DTA) turli
+            # qiymat oralig'i bilan e'lon qilinadi, mosaic/oylik ImageCollection esa bir xil tur talab qiladi
+            # ("Expected a homogeneous image collection ... band 'DTA'" — Sirdaryo 2025-07 oylik eksporti).
             src = (ee.Image.constant(KIND_CODE[kind]).toByte().rename('SOURCE')
                    .updateMask(img.select('ET_24').mask()))
-            return img.addBands(src)
+            sel = img.select(bands) if bands else img
+            return (ee.Image(sel.toFloat().addBands(src).copyProperties(img))     # copyProperties → Element
+                    .set('system:time_start', img.get('system:time_start')))
 
         label = '+'.join(k for k, _ in lst)
         if len(lst) == 1:
@@ -69,14 +74,14 @@ def compose_daily(processed):
             out.append(tag(kind, img).set('SOURCE_KINDS', label))
         else:
             names = [set(img.bandNames().getInfo()) for _, img in lst]
-            common = sorted(set.intersection(*names)) + ['SOURCE']
+            common = sorted(set.intersection(*names))
             # mosaic: oxirgi tasvir ustida → eng yuqori ustuvorlik oxirida; har piksel — bitta sahnadan
-            ims = [tag(kind, img).select(common).updateMask(img.select('ET_24').mask())
+            ims = [tag(kind, img, common).updateMask(img.select('ET_24').mask())
                    for kind, img in reversed(lst)]
             top = lst[0][1]
-            out.append(ee.ImageCollection(ims).mosaic()
-                       .setDefaultProjection(top.select('NDVI').projection())
-                       .copyProperties(top)
+            out.append(ee.Image(ee.ImageCollection(ims).mosaic()
+                                .setDefaultProjection(top.select('NDVI').projection())
+                                .copyProperties(top))
                        .set({'system:time_start': top.get('system:time_start'),
                              'SOURCE_KINDS': label}))
         dates.append(d)
@@ -159,8 +164,15 @@ def process_tile(roi, date_start, date_end, mode, tile_label, *, anchor_method, 
               'quyosh_geom': 'L1/ASTRONOMIK' if kind == 'L' else 'ASTRONOMIK'}
         qc_rows.append(qc)
         cz, hz = zones_for(d)
-        out = M.process_scene(img, qc, calib, mode, date=d, label=label,
-                              cold_zone=cz, hot_zone=hz, **ctx)
+        try:
+            out = M.process_scene(img, qc, calib, mode, date=d, label=label,
+                                  cold_zone=cz, hot_zone=hz, **ctx)
+        except (RuntimeError, ee.EEException) as e:
+            # Bitta sahna xatosi butun tile'ni to'xtatmasin (Sirdaryo T42TVK, 2025-07-10 V: "hot anchor
+            # koordinatasi topilmadi" — 20 sahnalik tile tushib qolgan). Xato yutilmaydi: sahna RAD ETILDI,
+            # sababi QC hisobotida. Landsat yo'li (main.process_tile) o'zgarmagan.
+            out = None
+            M._reject(d, f'XATO: {type(e).__name__}: {e}', qc, prefix)
         if out is not None:
             out = harmonize(out, mode, k_of[kind])
             processed.append((d, kind, out))

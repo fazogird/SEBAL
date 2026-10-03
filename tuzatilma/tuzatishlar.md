@@ -100,6 +100,12 @@ Kod: `D:\Cloud_comp\Sebal\scripts\sebal_gee_v4`. Raqamlar suhbatdagi raqamlar bi
 | 95 | 2026-09-25 | YAGONA tuproq manbai: FC/WP — HiHydroSoil v2 (`water_balance.soil_fc_wp_rew`), REW — FAO-56 Table 5.1 (tekstura). CUirr / AW / Kc_ETo / Appendix I dagi SoilGrids+Saxton va `REW = 0.15·loy+2` olib tashlandi (`_saxton_fc_wp_raster` o'chirildi) | ✅ commit qilinmagan | water_balance.py, ndvi_kc.py, root_zone_water.py, consumptive_use.py, etrf_water_balance.py |
 | 96 | 2026-09-25 | Sahna QC CSV: `psi_clip_hit` (cold ψ loyiha chegarasiga ±5 urildimi — Allen 2007 da bunday cap YO'Q) va `zeta_2` = z2/L (barqarorlik darajasi; ζ > 1 → chiziqli formula amal doirasidan tashqarida). Qiymatlarga TEGMAYDI | ✅ commit qilinmagan | energy_balance.py, main.py |
 | 97 | 2026-09-25 | Kc_ETo va AW kunlik topsoil balansi FAO-56 tartibiga keltirildi: Kr kun BOSHIDAGI `De(i−1)` dan (Eq 74), yog'in esa depletion yangilanishida (Eq 77) — hot piksel balansi bilan AYNI. Oldin `De2 = De − P` dan Kr olinardi (yomg'irli kunning o'zida Kr = 1) | ✅ commit qilinmagan | ndvi_kc.py, root_zone_water.py |
+| 98 | 2026-09-30 | Esri sinf ulushi UTM zona chegarasida: `MgrsTile.class_fraction` — boshqa zonadagi Esri tasviri avval O'Z zonasida kamaytiriladi ("Reprojection output too large", Bushland T13SGU); `crop_fraction` va H3 zonalari shundan | ✅ sebal_v8 | pipeline/tile.py, pipeline/anchor_zones.py |
+| 99 | 2026-09-30 | Kalendar: HLS kuzatuvlari davrdan ±`hls_window_days` kengroq olinadi — oyna chetidagi VIIRS/ECOSTRESS kunlari ham HLS bilan juftlanadi | ✅ sebal_v8 | pipeline/calendar.py |
+| 100 | 2026-10-02 | Ko'p sensorli yo'l: bitta sahna xatosi (RuntimeError / EEException) butun tile'ni to'xtatmaydi — sahna RAD ETILDI, sababi QC hisobotida. Landsat yo'li o'zgarmagan | ✅ sebal_v8 | pipeline/multisensor.py |
+| 101 | 2026-10-02 | Ko'p sensorli yo'l: kunlik kompozit bandlari Float'ga keltirildi va `ee.Image` ga o'raldi — oylik eksportdagi "homogeneous image collection … band 'DTA'" xatosi | ✅ sebal_v8 | pipeline/multisensor.py |
+| 102 | 2026-10-02 | VIIRS daraja koeffitsienti `viirs_k` 0.92 → 1.0 (user qarori; 11 ta bir kunlik L+V juft) | ✅ sebal_v8 | pipeline/rules.py, pipeline/multisensor.py |
+| 103 | 2026-09-30 | Notebook: `utc_offset=5` (UZT; avtomatik boylam/15 bu yerda +4 beradi) | ✅ sebal_v8 | notebooks/T42SUJ_2025_aprel_SEBAL.ipynb |
 
 ---
 
@@ -2669,3 +2675,51 @@ Hot piksel suv balansi esa kitob tartibida (Kr ← De(i−1)) ishlardi — ikki 
 
 Kutilganidek: yog'inli oyda tuproq bug'lanishi biroz kamaydi (Kr endi kun boshidagi quruqroq holatdan), yog'insiz oyda umuman o'zgarish yo'q. Standart SEBAL ET'ga aloqasi yo'q — bitgacha teng.
 
+
+## #98 — Esri sinf ulushi UTM zona chegarasida (`MgrsTile.class_fraction`)
+
+Bushland (T13SGU, 13-zona, 102°W chegarasidan ~9 km) sinovida H3 anchor zonalari va ekin ulushi "Reprojection output too large (11000x11000)" bilan yiqildi: tile'ni qo'shni 14-zonadagi Esri tasviri ham qoplaydi, u 10 m da butun tile gridiga qayta proyeksiyalanardi.
+
+**Oldin** (`crop_fraction`, `anchor_zones._frac`): `lulc(year).eq(cls).toFloat().reduceResolution(mean).reproject(tile.proj(scale))` — barcha Esri tasvirlari mozaikasidan.
+
+**Keyin:** `class_fraction(year, cls, scale)` — har Esri tasviri alohida:
+- tasvir tile bilan BIR zonada → 10 m dan to'g'ridan-to'g'ri tile gridiga (avvalgi hisob aynan);
+- BOSHQA zonada → avval o'z zonasida `scale` ga kamaytiriladi (`own.atScale(scale)`), keyin tile gridiga.
+
+`crop_fraction` (VIIRS 1 km uchun 100 m orqali) va `anchor_zones.h3_zones` (COLD_FRAC, bare) shu funksiyadan foydalanadi; `_frac` olib tashlandi.
+
+**Sinov:** Bushland T13SGU, 2021 may–oktabr — 50 sahna xatosiz. Bir zonali tile'larda (T42SUJ va h.k.) kod yo'li avvalgidek.
+
+## #99 — Kalendar: HLS oynasi chetida
+
+VIIRS/ECOSTRESS kuni ±`hls_window_days` (2) kun ichidagi HLS bilan juftlanadi. HLS kuzatuvlari esa faqat davr ichidan olinardi — davr boshi/oxiridagi termal kunlar davrdan tashqaridagi yaqin HLS'ni ko'rmasdi va juftsiz qolardi.
+
+**Keyin** (`TileCalendar._sensor`): HLS kalitlari uchun kuzatuv oynasi `[boshi − W, oxiri + W]`; Landsat, VIIRS, ECOSTRESS oynasi o'zgarmagan.
+
+## #100 — Ko'p sensorli yo'l: bitta sahna xatosi tile'ni to'xtatmaydi
+
+Sirdaryo 2025-07 sinovida T42TVK (viloyat ekinining 82%) butunlay tushib qoldi: bitta VIIRS sahnasi (2025-07-10) `energy_balance` da `RuntimeError: SEBAL_Milliy: hot anchor koordinatasi topilmadi` berdi va tile to'xtadi.
+
+**Keyin** (`multisensor.process_tile`): `process_scene` chaqiruvi `try/except (RuntimeError, ee.EEException)` ichida — xato yutilmaydi: sahna `_reject` bilan RAD ETILDI, sababi (`XATO: …`) sahna sifat hisobotida. Landsat yo'li (`main.process_tile`) o'zgarmagan — u yerga ham qo'shish user qarorida.
+
+**Sinov:** Sirdaryo qayta ishga tushirildi — T42TVK 20 sahna, 1 rad etildi (07-10), oylik eksport yakunlandi.
+
+## #101 — Ko'p sensorli yo'l: kunlik kompozit bandlari bir turda
+
+Yangi rejimning oylik eksportlari "Expected a homogeneous image collection … band 'DTA'" bilan FAILED bo'ldi (oylik yo'l avval ishlatilmagan edi): bir kundagi L va V sahnalari mozaikasida bir band turli tur/oraliqda e'lon qilingan; `copyProperties` Python API'da `ee.Element` qaytargani uchun natija `ee.Image` metodlarini yo'qotardi.
+
+**Keyin** (`compose_daily.tag`): sahna bandlari umumiy ro'yxat bo'yicha tanlanadi va `toFloat()` (qiymat o'zgarmaydi), `SOURCE` — Byte; natija `ee.Image(...)` ga o'raladi.
+
+**Sinov:** `test_monthly_chain` (T42SUJ, 2025-04-10/11, L+V mozaika) — oylik ET hisoblandi (aprel, 1.5 km quti 88.6 mm); Sirdaryo T42TVK va T42TVL oylik eksportlari SUCCEEDED.
+
+## #102 — VIIRS daraja koeffitsienti k = 1
+
+User qarori (2026-10-02). `rules.viirs_k` 0.92 → 1.0. 0.92 T-A pilotidan (Landsat C2 optika, ERA5 Landsat vaqtida) edi; yangi yo'lda qayta baholandi — T42SUJ ∩ Qashqadaryo 2025, 11 ta bir kunlik L+V juft:
+- xom VIIRS ET: bias −1.5% (7690 ta 1 km blok), RMSD 0.65 mm, r 0.90; k = 0.92 bilan −9.4%;
+- juftlar k 0.73…1.28 — tarqoqlik, oylik trend yo'q (median 1.026).
+
+Bushland lizimetri (2021 may–oktabr, oylik): k=1 — MBE +4%, RMSE 1.19 mm/kun; k=0.92 — −1.5%, 1.15. Natijalar: `post_et_yol_xaritasi.md` 7-A.
+
+## #103 — Notebook: utc_offset
+
+`notebooks/T42SUJ_2025_aprel_SEBAL.ipynb`: `utc_offset=daily_et.utc_offset_from_roi(roi)` → `utc_offset=5` — O'zbekiston UTC+5; avtomatik boylam/15 T42SUJ uchun +4 beradi.

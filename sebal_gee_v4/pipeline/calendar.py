@@ -105,7 +105,12 @@ class TileCalendar:
     # ---- 1–3: har sensor ----
     def _sensor(self, key):
         src = self.src[key]
-        obs = src.observations(self.tile, self.start, self.end, self.rules)
+        start, end = self.start, self.end
+        if key.startswith('HLS'):     # oyna chetidagi VIIRS/ECOSTRESS kunlari ham ±W kunlik HLS bilan juftlansin
+            W = self.rules.hls_window_days
+            start = (dt.date.fromisoformat(self.start) - dt.timedelta(days=W)).isoformat()
+            end = (dt.date.fromisoformat(self.end) + dt.timedelta(days=W)).isoformat()
+        obs = src.observations(self.tile, start, end, self.rules)
         todo = [o for o in obs if o['pre_ok']]
         self.log(f"  {key}: {len(obs)} kuzatuv, dastlabki filtrdan o'tdi {len(todo)}")
         coarse = src.scale > 100

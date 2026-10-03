@@ -1,6 +1,6 @@
 # Post-ET yo'l xaritasi — ET'dan keyingi mahsulotlar
 
-Yangilangan: 2026-09-26. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, muammo nimada, qanday yechim kelishilgan, keyingi qadam nima.
+Yangilangan: 2026-10-03. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, muammo nimada, qanday yechim kelishilgan, keyingi qadam nima.
 
 - Qarorlarni faqat user qabul qiladi. Bu faylda kelishilganlar va ochiq savollar yozilgan.
 - Kodga hali hech narsa yozilmagan — hammasi dizayn bosqichida.
@@ -19,6 +19,10 @@ Yangilangan: 2026-09-26. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, 
 - **Saqlangan holat — `sebal_v6` (2026-09-26):** git tegi `sebal_v6` (commit 66994f2) va to'liq arxiv `D:\Cloud_comp\Sebal\backups\sebal_v6_2026-09-26.zip`. v6'ni qaytarish:
   - alohida papkaga, joriy ishga tegmasdan: `git worktree add ../sebal_v6 sebal_v6`;
   - yoki arxivni ochish — `sebal_v6/` papkasi, ichida hamma fayllar.
+- **Keyingi versiyalar** (git tegi + `D:\Cloud_comp\Sebal\backups\` dagi to'liq arxiv; natija fayllari faqat arxivda):
+  - `sebal_v7` (2026-09-29) — ko'p sensorli yo'l (LHLSVIIRSECO) va hudud → tile → ekin rejasi;
+  - `sebal_v8` (2026-10-03) — ko'p sensorli yo'l tuzatishlari (`tuzatishlar.md` #98–#103), k = 1, Bushland lizimetri bilan tekshiruv.
+- **Ko'p sensorli yo'l ishlaydi va yer ma'lumoti (Bushland lizimetri) bilan tekshirildi (2026-10-03):** yangi rejim eski Landsat rejimidan aniqroq; VIIRS ishni yaxshiladi; qolgan xato — SEBAL_Milliy modelining o'zida. Natijalar — 7-A bo'limida.
 - **Hozirgi post-ET kodi soddalashtirilgan:** `consumptive_use.py` (CUIRR, PRZ, NIWR, AW = CUirr / samaradorlik) va `root_zone_water.py`. Yangi dizayn ularga tayanmaydi (user qarori).
 - **O'rganilgan manbalar** — 11-bo'limda.
 
@@ -303,6 +307,37 @@ Qo'shish tartibi — qaror: Landsat → ECOSTRESS → VIIRS, optik HLS (S30 + L3
   - naqsh sifatida — daraja eng yaqin Landsat sahnasiga moslanadi;
   - ko'proq juftlik yig'ib, qayta baholash.
 
+**Ko'p sensorli yo'l sinovi — BAJARILDI (2026-09-30 – 2026-10-03, SEBAL_Milliy).**
+1. **VIIRS daraja koeffitsienti k** — T42SUJ ∩ Qashqadaryo 2025, 11 ta bir kunlik Landsat + VIIRS juft:
+   - xom VIIRS ET Landsat bilan deyarli bir xil: bias −1.5% (7690 ta 1 km blok), RMSD 0.65 mm/kun, r 0.90;
+   - juftlar k 0.73…1.28 — tarqoqlik, oylik trend yo'q (median 1.026);
+   - k = 0.92 VIIRS'ni −9.4% pasaytirardi → **k = 1** (user qarori, 2026-10-02; 8-bo'lim).
+2. **Cold anchor, VIIRS va Landsat** — muammo tasdiqlanmadi:
+   - VIIRS cold anchor LST Landsat'nikidan +0.34 K (umumiy siljish olinganda −0.11 K);
+   - RF sovuq dumni qisqartirmagan (nisbat 1.04), issiq dumni 6% qisqartirgan;
+   - VIIRS ~2 soat kech o'tadi (mahalliy quyosh vaqti 12:38 va 10:40) — SOLAR_FRAC bilan kunlikka o'tkazishda farq qilmaydi.
+3. **Sirdaryo, 2025 iyul, oylik raster** — yangi rejim (k = 0.92) va eski Landsat rejimi (BOTH), T42TVK (viloyat ekinining 82%):
+   - yangi 155.2, eski 133.7 mm/oy → **+21.5 mm (+16%)**, RMSD 28 mm, r 0.94; farq g'arbda kattaroq;
+   - Sirdaryo'da yer ma'lumoti (GT) yo'q — qaysi biri to'g'riligini aytib bo'lmaydi. Xulosa faqat shu: Landsat to'g'ri deb olinsa, yangi rejim baland;
+   - qolgan Sirdaryo hisoblari (k = 1 bilan qayta, farqni ajratish) to'xtatildi — user: GEE kvotasi bekorga ketmasin.
+4. **Bushland 2021 lizimetri (GT)** — ikkala rejim bitta tile'da (T13SGU ∩ Texas), may–oktabr, 4 lizimetr, oylik:
+
+   | Variant | MBE | RMSE, mm/kun | r² |
+   |---|---|---|---|
+   | Eski Landsat rejimi (faqat WRS 30/36 — user qarori) | −39% | 1.96 | 0.53 |
+   | Yangi rejim, faqat Landsat kunlari | −7% | 1.20 | 0.53 |
+   | Yangi rejim + VIIRS, k = 1 | +4% | 1.19 | 0.56 |
+   | Yangi rejim + VIIRS, k = 0.92 (solishtirish uchun) | −1.5% | 1.15 | 0.61 |
+
+   - Eski rejim may–iyunda ET ≈ 0 beradi, iyul–avgustda −30…−38%.
+   - Yangi rejimning yutug'i kalibratsiyadan: H3 anchor, tile ∩ hudud ekini, ikkala path sanalari birga (9 o'rniga 14 Landsat sahna). VIIRS'dan emas.
+   - Sahna kunlarida Landsat va VIIRS xatosi har oyda bir xil belgida: model past ET paytida (may, iyun, oktabr) oshirib, cho'qqida (avgust) kamaytirib baholaydi — bu modelning o'z xatosi. Avgust va sentabrda VIIRS kunlari Landsat kunlaridan ham yaqinroq (−8% va −32%; −2% va −10%).
+   - VIIRS'ga xos kichik ta'sir: 1 km da qo'shni dalalar aralashadi (10-20 kuni Landsat sharq va g'arb lizimetrlarni ajratdi, VIIRS ajratmadi).
+   - Lokal oylik hisob pipeline'ning o'z oylik CSV'i bilan bir xil (farq < 1 mm/oy).
+5. **Xulosa (user, 2026-10-03):** VIIRS ishimizni yaxshiladi. Qolgan xato VIIRS yoki Landsat ma'lumotidan emas — SEBAL_Milliy modelining o'zidan. Model xatosi va ma'lumot xatosi alohida baholanadi (8-bo'lim).
+6. Yo'lda topilib tuzatilgan xatolar — `tuzatishlar.md` #98–#103.
+7. Skriptlar va natija fayllari: `validation_result/viirs_k/`, `validation_result/bushland_viirs/`, `validation_result/sirdaryo_2025_07/` (har birida `skriptlar/`). Gitda yo'q — `sebal_v8` arxivida.
+
 Sinov tuzilishi (tarix uchun):
 - Sinov qadamlari:
   1. Landsat LST'ni 70 m va 1 km ga yig'ish (ECOSTRESS va VIIRS'ni taqlid qilish).
@@ -359,7 +394,7 @@ Sinov tuzilishi (tarix uchun):
 | Hisob va eksport (2026-09-28, user) | Oraliq natija asset'ga yozilmaydi. Downscaling GEE grafi ichida, LST kerak bo'lgan joyda hisoblanadi. Faqat yakuniy natija Drive'ga eksport qilinadi |
 | VIIRS bulut filtri (2026-09-28, user) | Landsat bilan bir xil qoida: WorldCover ekin maydoni ustida yomon piksellar ulushi < `CROP_CLOUD_MAX` (hozir 30%, `config.py`). Oylar bo'yicha cheklov yo'q |
 | VIIRS sahnasi optikasi (2026-09-28, user) | Downscaling qaysi HLS tasvir (L30 yoki S30) bilan qilingan bo'lsa, SEBAL'ning optik bandlari ham aynan o'sha tasvirdan olinadi |
-| VIIRS ET darajasi (2026-09-28, user) | Xom ET_V ham, tuzatilgan k·ET_V ham saqlanadi (k = 0.92 vaqtincha). Faqat koeffitsientga ko'paytirish yetarli aniqlik bermaydi |
+| VIIRS ET darajasi (2026-09-28, user) | Xom ET_V ham, tuzatilgan k·ET_V ham saqlanadi (k = 1 — 2026-10-02, user qarori: 11 ta bir kunlik juft, xom VIIRS bias −1.5%, r 0.90). Faqat koeffitsientga ko'paytirish yetarli aniqlik bermaydi |
 | Albedo sinovi (2026-09-28, user) | Olmedo BRDF tuzatishsiz va BRDF tuzatishli (`olmedo_brdf`) solishtiriladi — ET'ga ta'siri ko'riladi |
 | Tile va anchor (2026-09-28, user) | Anchor MGRS tile bo'yicha tanlanadi. Har tile o'z pikseliga ega: ustma-ust qismda piksel bitta tile'ga tegishli. 2026-09-29 da aniqlashtirildi — «Anchor hududi» va «Tile'lar va egalik» qatorlari |
 | Ekin xaritasi (2026-09-28, user) | Esri 10 m LULC (sat-io), har yil o'z yili (2026 uchun 2025); ekin = 5 (Crops). Ekin bo'lmagan qism maskalanmaydi — SEBAL butun tile'da ishlaydi, bulut qoidasi faqat ekin ustida. Chiqishga `CROP_MASK` bandi qo'shiladi (hisobi og'ir bo'lmasa) |
@@ -371,6 +406,7 @@ Sinov tuzilishi (tarix uchun):
 | Tadqiqot tile'i (2026-09-28, user) | T42SUJ. Birinchi mahsulot — 2025 aprel–oktabr kalendari (qaysi kun SEBAL, qaysi kun suv balansi) |
 | Anchor hududi (2026-09-29, user) | Anchor viloyat ekinidan olinadi: tile ∩ viloyat (z0m persentillari va sahna QC ham shu hududda). Tile boshqa viloyatni (masalan, Samarqand, Buxoro) qoplasa ham anchor u yerga ketmaydi. Dalil: tuzatishdan oldin Qashqadaryo sinovida (T42SUJ, 2025-04-10/11) 6 anchor nuqtadan 3 tasi Samarqandga tushgan. VIIRS RF downscaling o'qitishi butun tile'da qoladi |
 | Tile'lar va egalik (2026-09-29, user) | Har viloyat uchun bir xil avtomatik qoida (`plan_tiles`): (1) viloyat tile'lari HLS granulalaridan topiladi (`tiles=None`; ro'yxat berilsa ham shu qoida bilan tekshiriladi); (2) tile'ning to'liq footprint'ida viloyat ekini < 100 km² bo'lsa, tile tushiriladi — anchor ishonchsiz; (3) ustma-ustlik: tile'lar viloyat ekini ko'pligi bo'yicha tartiblanadi — birinchisi butun, keyingisi faqat qoplanmagan qismni oladi ("bittasi butun, qolgani kesik"); kichik kesik qismlar ham hisoblanadi; (4) anchor — tile'ning butun footprint'i ∩ viloyat ekinidan, eksport — faqat tile egaligida. Qashqadaryo: 8 tile avtomatik topildi (qo'lda berilgani bilan bir xil), T41SQD butun, 6 tasi kesik, T42SUH (10 km²) tushirildi, ekin qoplami 99.8%. Samarqand: 10 tile topildi, 5 tasi ishlanadi, 99.9% |
+| Ko'p sensorli yo'l bahosi (2026-10-03, user) | Bushland lizimetri (GT) bo'yicha yangi rejim eski Landsat rejimidan aniqroq (oylik bias −39% → −7%, VIIRS bilan +4%). VIIRS qoldiriladi — ishni yaxshiladi. Qolgan xato SEBAL_Milliy modelining o'zida; model xatosi va ma'lumot xatosi alohida baholanadi. GT bo'lmagan hududda (Sirdaryo) rejimlar aniqlik bo'yicha solishtirilmaydi — faqat farq ko'rsatiladi (7-A) |
 
 ## 9. Ochiq savollar (user qarori kutilmoqda)
 
@@ -381,7 +417,7 @@ Sinov tuzilishi (tarix uchun):
 4. VIIRS: GEE'dagi 1 km VNP21A1D'mi yoki 375 m LST'ni o'zimiz ishlab chiqaramizmi?
 5. Keskinlashtirilgan sahnada anchor qayerda tanlanadi: native rezolyutsiyada, Landsat sahnasiga bog'lab yoki 30 m LST'da?
 6. Sentinel-3 SLSTR qo'shiladimi?
-7. Tekshiruv Bushland 2021 lizimetri bilan bo'ladimi (kunlik ET, zaxira o'zgarishi, 2 va 6 sm dagi namlik)?
+7. ~~Tekshiruv Bushland 2021 lizimetri bilan bo'ladimi?~~ — **ET bo'yicha bajarildi (2026-10-03, 7-A).** Zaxira o'zgarishi va 2/6 sm dagi namlik — suv balansi bosqichida.
 
 **Dvigatel (B):**
 
@@ -410,7 +446,7 @@ Sinov tuzilishi (tarix uchun):
 17. ~~Bir kunda bir nechta termal kuzatuv bo'lsa~~ — **qaror: piksel bo'yicha ustuvorlik Landsat > ECOSTRESS > VIIRS, kunlik ET darajasida** (8-bo'lim).
 18. ~~Landsat kunlarida optik kirish: C2 L2 SR yoki HLS L30?~~ — **qaror: C2 L2 qoladi** (8-bo'lim).
 19. ~~Birlashtirilgan kirish ma'lumotini GEE'da asset sifatida saqlaymizmi yoki har safar kod bilan hisoblaymizmi?~~ — **qaror: asset yo'q, har safar kod bilan (GEE lazy); faqat yakuniy natija Drive'ga** (8-bo'lim).
-20. Suomi NPP'dan keyin VIIRS uchun manba: NOAA-20/21 LST'ni (VJ121A1D, VJ221A1D) GEE'ga o'zimiz yuklaymizmi yoki boshqa yo'l tanlaymizmi? Bu savol `viirs_downscaling.py` (VNP09GA) ga ham tegishli.
+20. Suomi NPP'dan keyin VIIRS uchun manba: NOAA-20/21 LST'ni (VJ121A1D, VJ221A1D) GEE'ga o'zimiz yuklaymizmi yoki boshqa yo'l tanlaymizmi? Bu savol `viirs_downscaling.py` (VNP09GA) ga ham tegishli. (2026-10-02, user: hozircha qoldirildi.)
 21. ~~Pilot tile~~ — **qaror: T42SUJ, 2019–2026** (8-bo'lim).
 22. **Tungi ET qanday hisobga olinadi?** (2026-09-26)
     - Bushland 2021 lizimetri (15 daqiqalik, NE/SE, quruq kunlar): tungi (Rn < 0) ET kunlik ET'ning 4–12% ini tashkil qiladi — iyul ~4%, avgust 5–7%, sentabr 9–12%; bir kechada 0.2–0.6 mm.
@@ -418,7 +454,7 @@ Sinov tuzilishi (tarix uchun):
     - SEBAL_ID esa `ETrF × ETr24` bilan hisoblaydi; ETr24 soatlik yig'indi bo'lgani uchun tungi soatlarni ham qamraydi.
     - Tungi ET SEBAL'ning o'zidan (tungi LST bilan) topilmaydi: kechasi energiya balansi qoldig'i ishonchsiz va anchorlar ishlamaydi.
     - Skript: `inventory/bushland_tungi_et.py`.
-24. **VIIRS SEBAL'ga qanday kiradi?** (2026-09-27, downscaling sinovidan keyin)
+24. **VIIRS SEBAL'ga qanday kiradi?** (2026-09-27, downscaling sinovidan keyin) — **amalda hal bo'ldi (2026-10-03):** VIIRS LST RF bilan 30 m ga keltiriladi va SEBAL VIIRS vaqtida hisoblanadi (LHLSVIIRSECO, 8-bo'lim «Asosiy g'oya»). Bushland lizimetri bilan tekshirildi (7-A).
     - 30 m ga keltirilgan VIIRS LST anchorlar uchun yaroqsiz chiqdi.
     - Variantlar:
       - VIIRS'ni faqat vaqt signali sifatida ishlatish: 1 km da EF/ETrF o'zgarishini hisoblab, Landsat 30 m naqshiga o'tkazish (sinov kerak);
@@ -428,7 +464,7 @@ Sinov tuzilishi (tarix uchun):
 23. **Tungi LST'ni namlik (θ) indikatori sifatida ishlatamizmi?** Kunduz–tun LST farqi termal inersiyani ko'rsatadi.
     - ECOSTRESS'da kunduz–tun juftlari kam.
     - VIIRS'da har kuni ikki kuzatuv bor (~13:30 va ~01:30; VNP21A1N GEE'da mavjud), lekin aniqligi 1 km va Suomi NPP 2026-11-01 da to'xtaydi.
-26. **VIIRS ET darajasini qanday moslaymiz?** (2026-09-28)
+26. ~~**VIIRS ET darajasini qanday moslaymiz?**~~ — **qaror: (a) mustaqil VIIRS-SEBAL + bir kunlik juftlar; k = 1 (2026-10-02, 7-A va 8-bo'lim).** Savol edi (2026-09-28):
     - T1 nisbat usuli 30 m naqshni eski Landsat sahnasida qotirib qo'yadi; user uni asosiy yo'l sifatida qabul qilmadi.
     - Variantlar:
       - (a) mustaqil VIIRS-SEBAL + bir kunlik Landsat–VIIRS juftlaridan kalibrlash (k = median(ET_L/ET_V), keyin qoldiq tahlili);
@@ -442,6 +478,17 @@ Sinov tuzilishi (tarix uchun):
 28. ~~**Ustma-ust tile'larda piksel kimniki**~~ — **qaror: har tile o'z pikseliga ega** (8-bo'lim). **2026-09-29: bittasi butun, qolgani kesik** — tile'lar viloyat ekini ko'pligi bo'yicha tartiblanadi (8-bo'lim, «Tile'lar va egalik»). Savol edi (2026-09-28):
     - Viloyat mahsulotida bitta piksel ikki tile'dan ikki xil ET oladi; UTM zona chegarasida ustma-ust tushish 77–82%.
     - Taklif (MGRS qoidasi): piksel o'z UTM zonasidagi va o'z 100 km kvadratidagi tile'ga tegishli. Anchor hisobi esa butun tile bo'yicha qoladi. Tanlanmadi (2026-09-29): ikkala tile ham 66°E da kesilardi, chok Qarshi ekin massivi o'rtasidan o'tardi.
+
+**Ko'p sensorli yo'l sinovidan chiqqan savollar (2026-10-02 – 10-03):**
+
+29. **Eng yaqin sahna va UTC vaqti.**
+    - `daily_et._nearest_valid` sahnagacha masofani kunning UTC 00:00 idan o'lchaydi.
+    - UTC−6 (Texas) da Landsat (~17:20 UTC) keyingi kunga yaqinroq chiqadi — oylik hisobda sahna 1 kunga siljiydi.
+    - O'zbekistonda (UTC+5) muammo yo'q.
+    - Savol: mahalliy kun o'rtasidan o'lchanadigan qilib tuzatilsinmi?
+30. **Sahna xatosi eski Landsat yo'lida.** Yangi yo'lda bitta sahna xatosi endi tile'ni to'xtatmaydi (`tuzatishlar.md` #100). Eski yo'lga (`main.process_tile`) ham shu qo'shilsinmi?
+31. **Eski yo'l: sahnasiz WRS tile.** Sirdaryo BOTH sinovida sahnasi qolmagan P155 tile'lari "Collection.toList: count must be positive" bilan yiqildi. Bunday tile bo'sh deb o'tkazib yuborilsinmi?
+32. **VIIRS 1 km aralashuvi.** Qo'shni dalalar ajralmaydi (Bushland 2021-10-20). Keyinroq ko'riladimi?
 
 ## 10. Keyinga qoldirilganlar (esdan chiqmasin)
 
@@ -459,6 +506,7 @@ Sinov tuzilishi (tarix uchun):
     - nomzod yetmasa, Esri 8 (Bare ground) istisnolar bilan: qiyalik (tog' va tog' etagi), albedo oralig'i (sho'rxok, tosh), dalaga yaqinlik, balandlik farqi.
   - Hot uchun hech qachon olinmaydigan sinflar: 7, 1, 2, 4, 9, 10, 11.
   - Sinov: T42SUJ'da hozirgi zona, H1 va H2 solishtiriladi; ixtiyoriy — Bushland lizimetri.
+- **SEBAL_Milliy modelining o'z xatosi** (user, 2026-10-03). Bushland'da model past ET paytida (mavsum boshi va oxiri) oshirib, cho'qqida kamaytirib baholaydi. Bu Landsat kunlarida ham bor, VIIRS'ga bog'liq emas (7-A). Tuzatish ishi Landsat kunlarida olib boriladi; qachon boshlash — user qarori.
 - **Piksel darajasida ishlash — keyin** (2026-09-28). Hozir asosiy arxitektura tile bo'yicha: har tile o'z pikseliga ega, ustma-ustlikdan iloji boricha qochiladi. Keyinchalik tile emas, piksel darajasida yurganda pikselning qaysi tile'ga tegishliligi yo'qoladi — shuni hisobga olish kerak.
 
 ## 11. Manbalar

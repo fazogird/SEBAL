@@ -23,17 +23,12 @@ from .. import config as cfg
 from ..energy_balance import ANCHOR_SCALE
 
 
-def _frac(img, proj):
-    return img.toFloat().reduceResolution(ee.Reducer.mean(), maxPixels=1024).reproject(proj)
-
-
 def h3_zones(tile, year, variant='H3', log=print, geom=None):
     p = cfg.ANCHOR_H3
     g = geom if geom is not None else tile.geometry
     proj = tile.proj(ANCHOR_SCALE)
-    lulc = tile.lulc(year)
-    crop = _frac(lulc.eq(p['crop_class']), proj).rename('COLD_FRAC')
-    bare = _frac(lulc.eq(p['bare_class']), proj)
+    crop = tile.class_fraction(year, p['crop_class'], ANCHOR_SCALE).rename('COLD_FRAC')   # zona chegarasiga chidamli
+    bare = tile.class_fraction(year, p['bare_class'], ANCHOR_SCALE)
 
     dem = (ee.Image(cfg.DEM['collection']).select(cfg.DEM['band'])
            .reduceResolution(ee.Reducer.mean(), maxPixels=64).reproject(proj))

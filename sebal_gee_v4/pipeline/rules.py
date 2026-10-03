@@ -37,9 +37,10 @@ class InputRules:
     rf_samples: int = 5000
     rf_seed: int = 7
     # Sensorlararo daraja (ET_V_tuzatilgan = k · ET_V_xom; xom ham saqlanadi).
-    # VAQTINCHA: k T-A pilotida Landsat C2 optika va Landsat vaqtidagi ERA5 bilan olingan;
-    # yangi yo'lda (HLS optika, ERA5 VIIRS vaqtida) qayta baholanishi kerak.
-    viirs_k: float = 0.92
+    # User qarori (2026-10-02): k = 1. Yangi yo'lda qayta baholandi — T42SUJ ∩ Qashqadaryo 2025, 11 ta bir kunlik
+    # L+V juft: xom VIIRS ET bias −1.5 % (r 0.90), juftlar k 0.73…1.28 tarqoq, oylik trend yo'q.
+    # Avvalgi 0.92 T-A pilotidan (Landsat C2 optika, Landsat vaqtidagi ERA5) edi.
+    viirs_k: float = 1.0
     eco_k: float = 1.0                # o'lchanmagan (8 yilda 4 juft)
     # Anchor zonalari: 'H3' (Esri: hot — ekin ichidagi yalang'och dala → Esri 8 istisnolar bilan;
     # user qarori 2026-09-28, cfg.ANCHOR_H3); 'H2' / 'H1' — faqat bitta bosqich (solishtirish);
