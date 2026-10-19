@@ -1,0 +1,852 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Post-ET mahsulotlar katalogi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F4F7F5; --surface:#FFFFFF; --surface-2:#EAF0ED; --ink:#13201B; --ink-2:#4B5B55; --line:#D3DDD8;
+  --accent:#0D7162; --accent-ink:#FFFFFF; --accent-soft:#DCEFEA;
+  --ok:#1D6F33; --ok-soft:#E1F1E5; --warn:#8C5208; --warn-soft:#FAEDD5; --bad:#A8261B; --bad-soft:#F9E3E0;
+  --info:#1E5896; --info-soft:#E1EBF6;
+  --green-water:#2E8544; --blue-water:#1D66A8; --brown-water:#8A5A2B;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --display:"Archivo","Segoe UI",system-ui,sans-serif;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0D1311; --surface:#141C19; --surface-2:#1A2521; --ink:#E2EBE7; --ink-2:#A1B1AB; --line:#2A3731;
+    --accent:#43C2A5; --accent-ink:#052019; --accent-soft:#143029;
+    --ok:#6CCB86; --ok-soft:#15301F; --warn:#E3AA55; --warn-soft:#33260F; --bad:#F2857A; --bad-soft:#3A1A17;
+    --info:#86B6EE; --info-soft:#162A40;
+    --green-water:#72CB88; --blue-water:#86B6EE; --brown-water:#D3A471;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0D1311; --surface:#141C19; --surface-2:#1A2521; --ink:#E2EBE7; --ink-2:#A1B1AB; --line:#2A3731;
+  --accent:#43C2A5; --accent-ink:#052019; --accent-soft:#143029;
+  --ok:#6CCB86; --ok-soft:#15301F; --warn:#E3AA55; --warn-soft:#33260F; --bad:#F2857A; --bad-soft:#3A1A17;
+  --info:#86B6EE; --info-soft:#162A40;
+  --green-water:#72CB88; --blue-water:#86B6EE; --brown-water:#D3A471;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+a:hover{text-decoration-thickness:2px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:clamp(16px,4vw,36px);padding-block:28px 0}
+main{display:flex;flex-direction:column;gap:44px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.2}
+h1{font-size:clamp(28px,4.4vw,42px);font-weight:700;letter-spacing:-0.012em}
+h2{font-size:clamp(21px,2.6vw,26px);font-weight:600;letter-spacing:-0.005em}
+h3{font-size:17px;font-weight:600}
+p{margin:0;max-width:72ch}
+.eyebrow{font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
+.lead{font-size:17px;color:var(--ink);max-width:70ch}
+.muted{color:var(--ink-2)}
+.small{font-size:13px}
+.mono{font-family:var(--mono)}
+header.top{display:flex;flex-direction:column;gap:14px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+.takeaways{list-style:none;padding:0;margin:6px 0 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:12px}
+.takeaways li{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;font-size:14px;line-height:1.5}
+.takeaways b{display:block;font-family:var(--display);font-weight:600;font-size:15px;margin-bottom:4px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px;padding-block:10px}
+nav.toc a{text-decoration:none;color:var(--ink-2)}
+nav.toc a:hover{color:var(--accent)}
+section{display:flex;flex-direction:column;gap:14px;scroll-margin-top:16px}
+.sec-head{display:flex;flex-direction:column;gap:6px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:10px}
+.panel h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.eq{font-family:var(--mono);font-size:13.5px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 11px;overflow-x:auto;white-space:nowrap}
+.src{font-size:12.5px;color:var(--ink-2)}
+ul.plain{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+ul.plain li{max-width:78ch}
+.tag{display:inline-flex;align-items:center;border-radius:999px;padding:1px 9px;font:500 12px var(--sans);border:1px solid transparent;white-space:nowrap}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-info{background:var(--info-soft);color:var(--info)}
+.t-neutral{background:var(--surface-2);color:var(--ink-2);border-color:var(--line)}
+.t-dash{background:transparent;color:var(--ink-2);border:1px dashed var(--ink-2)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:none}
+th{font:600 12px var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);background:var(--surface-2)}
+td.num,.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+figure.diagram{margin:0;display:flex;flex-direction:column;gap:8px}
+.diagram .scroll{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:10px}
+.diagram svg{display:block;width:100%;height:auto;min-width:640px;color:var(--ink)}
+.diagram svg text{font-family:var(--mono);font-size:11.5px;fill:currentColor}
+.diagram svg .lbl-b{font-weight:500}
+.diagram svg .box{fill:var(--surface);stroke:currentColor;stroke-width:1.2}
+.diagram svg .box-hi{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.6}
+.diagram svg .band{fill:currentColor;fill-opacity:.16;stroke:none}
+.diagram svg .ln{stroke:currentColor;stroke-width:1.6;fill:none}
+.diagram svg .ln-d{stroke:currentColor;stroke-width:1.4;fill:none;stroke-dasharray:4 4}
+.diagram svg .head{fill:currentColor;stroke:none}
+.c-acc{color:var(--accent)} .c-warn{color:var(--warn)} .c-green{color:var(--green-water)} .c-blue{color:var(--blue-water)} .c-brown{color:var(--brown-water)} .c-muted{color:var(--ink-2)}
+figcaption{font-size:13.5px;color:var(--ink-2);max-width:90ch}
+ol.phases{list-style:none;counter-reset:ph -1;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+ol.phases>li{counter-increment:ph;position:relative;display:flex;flex-direction:column;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px 14px 54px}
+ol.phases>li::before{content:counter(ph, decimal);position:absolute;left:18px;top:11px;font:600 24px var(--display);color:var(--accent);line-height:1.1}
+ol.phases .gate{font-size:13.5px;color:var(--ink-2)}
+ol.phases .gate b{color:var(--ink)}
+/* catalog */
+.controls{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 13px var(--sans);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:4px 11px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.ctl{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink-2)}
+select,input[type="search"],textarea{font:14px var(--sans);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 9px;max-width:100%}
+input[type="search"]{width:min(100%,230px)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:12px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;display:flex;flex-direction:column;gap:9px}
+.card.sel{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.pick{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.pick input{margin-top:4px;width:17px;height:17px;accent-color:var(--accent);flex:none}
+.pid{font:500 12.5px var(--mono);color:var(--ink-2);white-space:nowrap;margin-top:2px}
+.pname{font-family:var(--display);font-weight:600;font-size:16px;line-height:1.3}
+.pgroup{font-size:12px;color:var(--ink-2)}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.card p.what{font-size:14px}
+.card details{border-top:1px solid var(--line);padding-top:8px}
+.card summary{cursor:pointer;font-size:13px;color:var(--accent);font-weight:500}
+.card dl{margin:8px 0 0;display:flex;flex-direction:column;gap:6px}
+.card dt{font:600 11.5px var(--sans);letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+.card dd{margin:0;font-size:13.5px}
+.card dd.f{font-family:var(--mono);font-size:12.5px;background:var(--surface-2);border-radius:6px;padding:6px 8px;overflow-x:auto}
+.selbar{position:sticky;bottom:0;z-index:5;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius) var(--radius) 0 0;padding:10px 12px calc(10px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;box-shadow:0 -6px 18px rgba(0,0,0,.06)}
+.selbar .count{font:600 15px var(--display);margin-right:auto}
+.btn{font:500 14px var(--sans);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.msg{font-size:13px;color:var(--ink-2);flex-basis:100%}
+.notebox{display:flex;flex-direction:column;gap:6px}
+.notebox textarea{width:100%;min-height:62px;resize:vertical}
+.manual{display:flex;flex-direction:column;gap:6px}
+.manual textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:12.5px}
+.empty{padding:18px;text-align:center;color:var(--ink-2);border:1px dashed var(--line);border-radius:var(--radius)}
+footer{padding-block:34px 40px;color:var(--ink-2);font-size:13px}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+<header class="top" id="xulosa">
+  <div class="eyebrow">SEBAL-GEE v4 · ET'dan keyingi bosqich · 2026-09-25</div>
+  <h1>Post-ET mahsulotlar katalogi</h1>
+  <p class="lead">Hydrosat (IrriWatch) Madera County uchun nima qilganini 33 ta hujjatdan tikladik. IDC formulalarini asl DWR hujjatidan tekshirdik, GPT taklifini baholadik va bizning pipeline'ga qo'shish yo'lini tuzdik. Pastdagi katalogdan kerakli mahsulotlarni belgilang. Qarorlar sizniki, bu sahifada faqat dalil va tavsiya bor.</p>
+  <ul class="takeaways">
+    <li><b>ETaw bizda deyarli bor</b>CUIRR = ET − Prz — bu Hydrosat ilovasidagi Davids formulasi (ETPR = P − R − DP, ETAW = ET − ETPR). Uni IDC darajasiga ko'tarish kerak: mavsum davomida uzluksiz balans, spin-up va suvni manbasi bo'yicha kuzatish.</li>
+    <li><b>Hisob dala darajasida yuritiladi</b>GEE'da mavsumiy kunlik iterate "too complex" beradi. Dala esa hisob birligi. Shuning uchun GEE dala kiritmalarini chiqaradi, balans esa lokal numpy dvigatelda hisoblanadi.</li>
+    <li><b>AW pul hisobiga hali yaroqsiz</b>Dalaga berilgan suvni ET'dan to'g'ridan topib bo'lmaydi. Madera'da ETAW/AW nisbati dalalar bo'yicha 0.4 dan 2 dan ortiqqacha tarqalgan. Kanal o'lchovlari bilan kalibrlanmaguncha AW faqat oraliq sifatida ko'rsatiladi.</li>
+    <li><b>O'zbekistonda sizot suvi hal qiluvchi</b>Xorazmda sayoz sizot suvi paxta ETa'sining 399 mm gachasini bergan. ETgw ajratilmasa, ETaw oshib ketadi va dehqon sizot suvi uchun ham to'laydi.</li>
+  </ul>
+  <nav class="toc" aria-label="Bo'limlar">
+    <a href="#hydrosat">Hydrosat usuli</a><a href="#madera">Madera tajribasi</a><a href="#gpt">GPT taklifi</a><a href="#mexanizm">Manba kuzatuvi</a><a href="#pipeline">Pipeline'ga qo'shish</a><a href="#katalog">Katalog</a><a href="#bosqichlar">Bosqichlar</a><a href="#qarorlar">Qarorlar</a><a href="#manbalar">Manbalar</a>
+  </nav>
+</header>
+
+<main>
+
+<section id="hydrosat">
+  <div class="sec-head">
+    <div class="eyebrow">Hujjatlardan tiklangan</div>
+    <h2>Hydrosat aslida nima qiladi</h2>
+    <p class="muted">Hydrosat hujjatlarida ETPR uch xil formula bilan yozilgan. Ular bitta α emas: biri kunlik zaxira nisbati, biri mavsumiy yog'in ulushi, uchinchisi balans qoldig'i. Suv yili bo'yicha jamlari yaqinlashadi.</p>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <h3>1 · Texnik ilova (shartnoma, 2025)</h3>
+      <div class="eq">ETaw = ET − ETpr &nbsp;·&nbsp; ETpr = α·ET &nbsp;·&nbsp; α = Spr / S</div>
+      <p class="small">S — SEBAL bergan real ildiz zonasi zaxirasi (yog'in + sug'orish). Spr — faqat yog'in bilan hisoblangan IDC zaxirasi. Har piksel uchun "2 parallel soil moisture buckets". Yomg'ir zaxirasi tugagach α → 0.</p>
+      <div class="src">GSA Committee Packet, 69–70-betlar (Annex 1, Soil Water Balance Modelling)</div>
+    </div>
+    <div class="panel">
+      <h3>2 · Fermerlar savollariga javob (2025)</h3>
+      <div class="eq">ETAW = ET − ETPR &nbsp;·&nbsp; ETPR = α·P, &nbsp;α ≈ 0.5–0.8 (o'rtacha 0.65)</div>
+      <p class="small">α IDC modelidan olinadi. Yomg'ir mavsumidan bir necha kun o'tgach zaxira tugaydi va α = 0 bo'ladi. Ular "IDC Madera uchun kalibrlanmagan" deb tan olgan.</p>
+      <div class="src">Responses to Grower Questions from Hydrosat, 5–9-betlar</div>
+    </div>
+    <div class="panel">
+      <h3>3 · Davids chizmasi (o'sha ilova)</h3>
+      <div class="eq">ETPR = P − R − DP &nbsp;·&nbsp; ETAW = ET − ETPR</div>
+      <p class="small">Bu bizning CUIRR = ET − Prz formulamiz bilan bir xil (Prz = P − RO − DP). Farqi — bizda balans har oy qayta boshlanadi va max(0) yog'in zaxirasini keyingi oyga o'tkazmaydi.</p>
+      <div class="src">GSA Committee Packet, 70-bet, Fig. 6 (courtesy J.C. Davids)</div>
+    </div>
+    <div class="panel">
+      <h3>4 · Madera 2020 (Davids + Bastiaanssen)</h3>
+      <div class="eq">AW = ET + Runoff + DP + ΔSp + ΔSaw − Rain</div>
+      <p class="small">Bitta chelak ichida ikki qism. Yozgi kun misoli: ET = 0.18 dy bo'lganda ΔSp = −0.02 va ΔSaw = −0.16. ET zaxira ulushiga qarab ikki manbaga taqsimlanadi. Bu IDC Eq 29–33 mantig'i.</p>
+      <div class="src">Madera SEBAL and Root Zone Balances, 41 va 45-slaydlar</div>
+    </div>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Qo'llangan suv va balans a'zolari</h3>
+      <div class="eq">AW = ET + R + q↓ + ΔS − P</div>
+      <ul class="plain small">
+        <li>R — "fixed infiltration capacities" bilan modifikatsiyalangan SCS-CN. U tuproq namligi tanqisligi va ildiz borligiga bog'liq.</li>
+        <li>q↓ — to'yinish darajasining nochiziqli funksiyasi (to'yinmagan tuproqda Darsi oqimi).</li>
+        <li>Tuproq namligi va ildiz chuqurligi har yili oldingi suv yillaridan initsializatsiya qilinadi.</li>
+        <li>SEBAL 4.0 yangiliklari: hot/cold tanlash, ET'ni T va E ga ajratish, ildiz zonasi namligi, biomassa uchun og'izchalar modeli.</li>
+      </ul>
+      <div class="src">GSA Committee Packet, 59, 60 va 67–69-betlar</div>
+    </div>
+    <div class="panel">
+      <h3>Nima topshiradi va qanday aniqlik va'da qiladi</h3>
+      <ul class="plain small">
+        <li>Kunlik va oylik ET hamda ETAW rasterlari (10 m), dala bo'yicha kunlik yog'in, oylik yog'in xaritasi, yillik yer foydalanish xaritasi, budjet jadvallari, oylik PDF hisobotlar, API.</li>
+        <li>Kunlik 10 m ET SEBAL 4.0 dan olinadi. Termal ma'lumot birlashtiriladi: VIIRS (Sentinel bilan keskinlashtirilgan), Landsat, ECOSTRESS, o'z VanZyl sun'iy yo'ldoshlari. HDST kunlik 20 m LST, stansiyalarga nisbatan RMSE &lt; 5.4 K.</li>
+        <li>Mavsumiy ET xatosi 1–20 %, odatda 5–6 %. Yog'in xatosi ~30 % (±60 mm/yil). α xatosi ±15 %. ETAW uchun kutilgan xato 5–10 %, lekin buning uchun Monte-Carlo "kerak", hali qilinmagan.</li>
+        <li>Narx $0.83/akr/yil (220 000 akr). 3 yillik shartnoma $493 020. Fermerlarning 52 % i IrriWatch'ni tanlagan.</li>
+      </ul>
+      <div class="src">A.-Hydrosat-Madera, 10 va 15-slaydlar · Hydrosat javoblari, 8–9-betlar · GSA paketi, 41-bet · HDST maqolasi</div>
+    </div>
+  </div>
+</section>
+
+<section id="madera">
+  <div class="sec-head">
+    <div class="eyebrow">Pul bilan bog'liq amaliyot</div>
+    <h2>Madera tajribasi: ishonchlilik darslari</h2>
+    <p class="muted">Madera County'da ETAW limitdan oshsa jarima to'lanadi. Davids Engineering uch yil davomida sun'iy yo'ldosh natijalarini hisoblagichlar bilan solishtirgan (Verification Project).</p>
+  </div>
+  <div class="tblwrap">
+    <table>
+      <thead><tr><th>Ko'rsatkich</th><th>Qiymat</th><th>Manba</th></tr></thead>
+      <tbody>
+        <tr><td>Limitdan oshgani uchun jarima</td><td class="num">2023: $100/AF → har yili +$100 → 2027: $500/AF</td><td class="src">GSA paketi, 80-bet</td></tr>
+        <tr><td>O'lchov usuli</td><td>Fermer tanlaydi: Hydrosat/IrriWatch, Land IQ yoki hisoblagich</td><td class="src">GSA paketi, 82-bet</td></tr>
+        <tr><td>E'tiroz tartibi</td><td>Sertifikatlangan hisoblagich + oylik fotosuratlar. Mustaqil uchinchi tomon qaror qiladi, qarori yakuniy</td><td class="src">ETAW Appeal Process</td></tr>
+        <tr><td>Hisoblagichlar aniqligi</td><td class="num">210 ta, 20 % i noto'g'ri o'rnatilgan · MAPE 10.8 % (to'g'ri o'rnatilganda 9.5 %)</td><td class="src">VPP, 10-slayd</td></tr>
+        <tr><td>IrriWatch ETAW tuzatishlari</td><td>2022 va 2023 yillar natijalari keyinroq tuzatilgan</td><td class="src">VPP, 13 va 16-slaydlar</td></tr>
+        <tr><td>2024, barcha birliklar</td><td class="num">ETAW ≈ 31 dy, hisoblagich AW ≈ 28.5 dy → CUF &gt; 1 (fizik jihatdan kutilmagan)</td><td class="src">VPP, 16–17-slaydlar</td></tr>
+        <tr><td>Dala darajasida ETAW / AW</td><td class="num">0.4 dan 2 dan ortiqqacha · qiyalik 0.77–0.98</td><td class="src">VPP, 20–21-slaydlar</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="plain">
+    <li><b>Mavsumiy jami bo'yicha baholanadi.</b> Hydrosat ham kunlik qiymatlar noaniqroq ekanini, muvofiqlik mavsumiy ETAW bo'yicha tekshirilishini yozgan.</li>
+    <li><b>Dala darajasida tarqoqlik katta.</b> Jami to'g'ri bo'lsa ham, alohida fermer uchun xato katta bo'lishi mumkin. Shuning uchun e'tiroz tartibi va noaniqlik chegarasi majburiy.</li>
+    <li><b>Hali hal qilinmagan masalalar.</b> Davids tavsiyasi: tuproq namligi zaxirasini, ETPR ni va yerdagi ET o'lchovlarini chuqurroq o'rganish.</li>
+    <li><b>Qozog'iston va O'zbekiston tajribasi.</b> Hydrosat GeoBox bilan Qizilo'rdada ET, ETAW va AW ni oylik chiqargan. Farg'ona pilotida esa yog'in manbalari "keskin farq" qilgan.</li>
+  </ul>
+</section>
+
+<section id="gpt">
+  <div class="sec-head">
+    <div class="eyebrow">Asl hujjatlar bilan tekshirildi</div>
+    <h2>GPT taklifiga baho</h2>
+  </div>
+  <div class="grid3">
+    <div class="panel">
+      <h3><span class="tag t-ok">Tasdiqlandi</span></h3>
+      <ul class="plain small">
+        <li>Hydrosat IDC'ni SEBAL bilan birlashtirgan: ETaw = ET − ETpr, ETpr = α·ET, α = Spr/S (ilova, 69-bet).</li>
+        <li>IDC tenglamalari to'g'ri keltirilgan: θ = θP + θAw + θG (Eq 2), namlikka bog'liq SCS-CN (Eq 5–7), van Genuchten–Mualem perkolatsiyasi (Eq 13–14), ET stressi (Eq 17), ETaw = α_Aw·ET (Eq 29–31).</li>
+        <li>Fermerlarga javobdagi ETPR = α·P haqiqatan boshqa formula.</li>
+        <li>θ holat o'zgaruvchisi sifatida yuritiladi. IDC bir necha yillik spin-up tavsiya qiladi (hujjatdagi misolda 8 yil).</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3><span class="tag t-warn">Qisman to'g'ri</span></h3>
+      <ul class="plain small">
+        <li>Uchinchi formula ham bor: Davids chizmasidagi ETPR = P − R − DP. α'lar turli narsani anglatadi, shuning uchun bu ziddiyat emas, balki turli ta'riflar.</li>
+        <li>Hydrosat'da real zaxira S SEBAL'dan olinadi. Sug'orish kirimi bilan alohida chelak modellashtirilmaydi.</li>
+        <li>IDC 2015.0.77 havolasi ilovada bor. Chiqarilgan sanasini tekshirmadik.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3><span class="tag t-bad">Dalilsiz yoki xavfli</span></h3>
+      <ul class="plain small">
+        <li>"Bulutli kunda ET suv balansidan (Eq 17)" degan fikr Hydrosat hujjatlarida yo'q. Ular kunlik termal birlashtirishdan foydalanadi. Sug'oriladigan dalada Eq 17 noma'lum sug'orishni talab qiladi, ya'ni mantiq aylanib qoladi.</li>
+        <li>"Formulama-formula qurish mumkin" — S ning SEBAL 4.0 dagi hisobi, IDC moslashuvlari va kalibrlash yopiq. Madera natijalari tuzatishlar kerak bo'lganini ko'rsatadi.</li>
+        <li>O'zbekiston xususiyatlari hisobga olinmagan: sayoz sizot suvi, sho'r yuvish sug'orishi, hisoblagichsiz kanal ta'minoti, CHIRPS sifati, kichik dalalar.</li>
+        <li>GEE cheklovi va validatsiya rejasi yo'q.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="mexanizm">
+  <div class="sec-head">
+    <div class="eyebrow">IDC Eq 29–37</div>
+    <h2>Manba kuzatuvi: bitta ildiz zonasi, uch manba</h2>
+  </div>
+  <figure class="diagram">
+    <div class="scroll">
+      <svg viewBox="0 0 680 340" style="max-width:720px" role="img" aria-label="Ildiz zonasida namlik uch manbaga bo'lingan: yog'in, sug'orish va sizot suvi. Kuzatilgan ET va perkolatsiya shu ulushlar bo'yicha taqsimlanadi.">
+        <g class="c-green">
+          <rect class="band" x="230" y="110" width="55" height="150"/>
+          <line class="ln" x1="257" y1="42" x2="257" y2="100"/>
+          <polygon class="head" points="251,98 263,98 257,108"/>
+          <text x="257" y="32" text-anchor="middle" class="lbl-b">P − R</text>
+          <text x="257" y="190" text-anchor="middle" class="lbl-b">θP</text>
+        </g>
+        <g class="c-blue">
+          <rect class="band" x="285" y="110" width="115" height="150"/>
+          <line class="ln" x1="342" y1="42" x2="342" y2="100"/>
+          <polygon class="head" points="336,98 348,98 342,108"/>
+          <text x="342" y="32" text-anchor="middle" class="lbl-b">AW − Rf</text>
+          <text x="342" y="190" text-anchor="middle" class="lbl-b">θAw</text>
+        </g>
+        <g class="c-brown">
+          <rect class="band" x="400" y="110" width="50" height="150"/>
+          <line class="ln" x1="425" y1="330" x2="425" y2="272"/>
+          <polygon class="head" points="419,274 431,274 425,264"/>
+          <text x="435" y="322" class="lbl-b">G (sizot, kapillyar)</text>
+          <text x="425" y="190" text-anchor="middle" class="lbl-b">θG</text>
+        </g>
+        <rect x="230" y="110" width="220" height="150" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="220" y="180" text-anchor="end" class="lbl-b">Ildiz zonasi</text>
+        <text x="220" y="197" text-anchor="end" class="c-muted">θ·Z, Z(t) o'sadi</text>
+        <g>
+          <line class="ln" x1="400" y1="106" x2="400" y2="50"/>
+          <polygon class="head" points="394,52 406,52 400,42"/>
+          <text x="400" y="32" text-anchor="middle" class="lbl-b" dx="22">ET (SEBAL)</text>
+        </g>
+        <g class="c-muted">
+          <line class="ln" x1="250" y1="72" x2="170" y2="72"/>
+          <polygon class="head" points="172,66 172,78 162,72"/>
+          <text x="156" y="76" text-anchor="end">R (oqim)</text>
+          <line class="ln" x1="270" y1="264" x2="270" y2="316"/>
+          <polygon class="head" points="264,314 276,314 270,324"/>
+          <text x="262" y="322" text-anchor="end">Pc (perkolatsiya)</text>
+        </g>
+        <g class="c-green"><circle cx="486" cy="146" r="5" class="head"/><text x="498" y="150">ETpr = α_P · ET</text></g>
+        <g class="c-blue"><circle cx="486" cy="172" r="5" class="head"/><text x="498" y="176">ETaw = α_Aw · ET</text></g>
+        <g class="c-brown"><circle cx="486" cy="198" r="5" class="head"/><text x="498" y="202">ETgw = α_G · ET</text></g>
+        <text x="486" y="232" class="c-muted">Pc ham shu ulushlarda</text>
+      </svg>
+    </div>
+    <figcaption>Har kuni namlik yog'in, sug'orish va sizot suvi ulushlariga bo'linadi. α — manbaning zaxirasi va bugungi kirimi jami zaxira va kirimga nisbati (IDC Eq 29, 32, 35). Kuzatilgan ET va perkolatsiya shu ulushlarda taqsimlanadi. Shuning uchun ETpr + ETaw + ETgw = ET har kuni bajariladi va ETpr ildiz zonasida qolgan yog'indan oshmaydi.</figcaption>
+  </figure>
+</section>
+
+<section id="pipeline">
+  <div class="sec-head">
+    <div class="eyebrow">Hozirgi kod va taklif</div>
+    <h2>Pipeline'ga qanday qo'shiladi</h2>
+    <p class="muted">Asosiy o'zgarish zaxiraning uzatilishida. Hozir ildiz zonasi zaxirasi har oy oxirida tashlanadi. Taklifda esa u kunma-kun, butun suv yili davomida uzatiladi.</p>
+  </div>
+  <figure class="diagram">
+    <div class="scroll">
+      <svg viewBox="0 0 800 300" style="max-width:920px" role="img" aria-label="Hozir: GEE ichida oylik balans, zaxira har oy tashlanadi, natija CUIRR. Taklif: GEE dala kiritmalarini eksport qiladi, lokal dvigatel kunlik uzluksiz balansni yuritadi, natija ETpr, ETaw, ETgw, AW oralig'i va QC.">
+        <text x="8" y="62" class="lbl-b c-muted">Hozir</text>
+        <rect class="box" x="64" y="32" width="180" height="56" rx="8"/>
+        <text x="154" y="56" text-anchor="middle">GEE: sahnalar</text>
+        <text x="154" y="73" text-anchor="middle">kunlik ET (ichki)</text>
+        <line class="ln" x1="244" y1="60" x2="306" y2="60"/><polygon class="head" points="304,54 304,66 314,60"/>
+        <text x="279" y="52" text-anchor="middle" class="c-muted">ET/kun</text>
+        <rect class="box" x="314" y="32" width="210" height="56" rx="8"/>
+        <text x="419" y="56" text-anchor="middle">Oylik balans (GEE)</text>
+        <text x="419" y="73" text-anchor="middle">har oy Dr₀ = 0.5·TAW</text>
+        <line class="ln" x1="524" y1="60" x2="586" y2="60"/><polygon class="head" points="584,54 584,66 594,60"/>
+        <text x="559" y="52" text-anchor="middle" class="c-muted">oylik</text>
+        <rect class="box" x="594" y="32" width="190" height="56" rx="8"/>
+        <text x="689" y="56" text-anchor="middle">CUIRR = max(ET − Prz, 0)</text>
+        <text x="689" y="73" text-anchor="middle">AW_CUirr = CUIRR / 0.55</text>
+        <g class="c-warn">
+          <path class="ln-d" d="M 480 88 C 480 112, 360 112, 360 88"/>
+          <text x="420" y="110" text-anchor="middle" class="lbl-b">×</text>
+          <text x="419" y="128" text-anchor="middle">oy oxirida zaxira tashlanadi</text>
+        </g>
+        <text x="8" y="237" class="lbl-b c-acc">Taklif</text>
+        <rect class="box" x="64" y="190" width="180" height="92" rx="8"/>
+        <text x="154" y="212" text-anchor="middle" class="lbl-b">GEE (eksport)</text>
+        <text x="154" y="230" text-anchor="middle">sahna × dala: ETrF, QC</text>
+        <text x="154" y="247" text-anchor="middle">kun × dala: P, ETr, Rs24</text>
+        <text x="154" y="264" text-anchor="middle">tuproq: HiHydroSoil</text>
+        <line class="ln" x1="244" y1="236" x2="306" y2="236"/><polygon class="head" points="304,230 304,242 314,236"/>
+        <text x="279" y="228" text-anchor="middle" class="c-muted">dala CSV</text>
+        <g class="c-acc">
+          <rect class="box-hi" x="314" y="190" width="210" height="92" rx="8"/>
+          <path class="ln" d="M 480 190 C 480 162, 368 162, 362 184"/>
+          <polygon class="head" points="356,180 368,182 360,192"/>
+          <text x="419" y="152" text-anchor="middle">θ ertangi kunga uzatiladi</text>
+        </g>
+        <text x="419" y="212" text-anchor="middle" class="lbl-b">Lokal dvigatel (numpy)</text>
+        <text x="419" y="230" text-anchor="middle">kunlik · suv yili · spin-up</text>
+        <text x="419" y="247" text-anchor="middle">θ · CN oqim · vG Pc</text>
+        <text x="419" y="264" text-anchor="middle">manba kuzatuvi → α</text>
+        <line class="ln" x1="524" y1="236" x2="586" y2="236"/><polygon class="head" points="584,230 584,242 594,236"/>
+        <text x="559" y="228" text-anchor="middle" class="c-muted">kun→oy</text>
+        <rect class="box" x="594" y="190" width="190" height="92" rx="8"/>
+        <text x="689" y="212" text-anchor="middle">ETpr · ETaw · ETgw</text>
+        <text x="689" y="230" text-anchor="middle">AW (oraliq) · Pe · DP</text>
+        <text x="689" y="247" text-anchor="middle">QC sinfi · Monte-Carlo ±</text>
+        <text x="689" y="264" text-anchor="middle">dala → SIU → tuman, m³</text>
+      </svg>
+    </div>
+    <figcaption>Taklif qilingan oqim. GEE mavjud sahna hisobini saqlaydi va dala bo'yicha kiritmalarni eksport qiladi. Lokal dvigatel ildiz zonasi holatini (θ) kunma-kun uzatadi. Piksel xaritasi ETaw_px = ET_px − ETpr_dala orqali olinadi, chunki yog'in (5 km) va tuproq (250 m) dala ichida deyarli o'zgarmaydi.</figcaption>
+  </figure>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Nega balansni lokal va dala darajasida yuritamiz</h3>
+      <ul class="plain small">
+        <li>GEE'da mavsumiy kunlik iterate "Computation is too complex" beradi. Oylar zanjiri shu sababli o'chirilgan.</li>
+        <li>Madera'da ham, bizda ham hisob birligi dala. Budjet va jarima dala yoki xo'jalik bo'yicha yuritiladi.</li>
+        <li>Lokal dvigatelda ko'p yillik spin-up, IDC'dagi kabi Newton yoki bisection yechimi va Monte-Carlo noaniqlik hisobi oson.</li>
+        <li>Har dala uchun kiritma va chiqishlar saqlanadi. E'tiroz bo'lganda hisobni qayta tiklash mumkin.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Yangi modullar (<span class="mono">sebal_gee_v4/accounting/</span>)</h3>
+      <ul class="plain small">
+        <li><span class="mono">forcing.py</span> — GEE CSV'larini dala × kun massivlariga o'qiydi.</li>
+        <li><span class="mono">field_et.py</span> — kunlik ET'ni GEE bilan aynan bir qoidada hisoblaydi (eng yaqin yaroqli sahna × ETr24/Rs24). Tekshiruv: Σkun = ET_MONTHLY.</li>
+        <li><span class="mono">idc_core.py</span> — Eq 1 (implitsit θ), Eq 5–7, Eq 13, Eq 15, Z(t), Eq 29–37.</li>
+        <li><span class="mono">aw.py</span> — AW uchun 4 usul va ularning oralig'i. <span class="mono">uncertainty.py</span> — Monte-Carlo. <span class="mono">qc.py</span> — ishonch sinfi.</li>
+        <li>Testlar: <span class="mono">root_zone_balance.py</span> dagi 5 ta test ko'chiriladi, kunlik suv balansi yopilishi tekshiriladi, rasmiy IDC 2025.0.243 SampleModel bilan parity test qilinadi.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="katalog">
+  <div class="sec-head">
+    <div class="eyebrow">Tanlash uchun</div>
+    <h2>Mahsulotlar katalogi</h2>
+    <p class="muted">34 ta mahsulot 6 guruhga bo'lingan. Har kartada hisoblash usuli, koddagi holati, ishonchliligi va pul qarorlariga yaroqliligi yozilgan. "Tavsiya" belgisi dastlabki minimal ishonchli to'plamni ko'rsatadi. Tanlovingizni nusxalab chatga qo'ying yoki saqlang, keyin men uni o'qiyman.</p>
+  </div>
+  <div class="controls" role="group" aria-label="Filtrlar">
+    <div class="chips" id="groupChips"></div>
+    <label class="ctl" for="fStatus">Holati
+      <select id="fStatus">
+        <option value="all">Hammasi</option>
+        <option value="tayyor">Kodda tayyor</option>
+        <option value="qisman">Qisman bor</option>
+        <option value="yangi">Yangi</option>
+        <option value="tadqiqot">Tadqiqot</option>
+      </select>
+    </label>
+    <label class="ctl" for="fBill">Pul qarori
+      <select id="fBill">
+        <option value="all">Hammasi</option>
+        <option value="ha">Ha, validatsiyadan keyin</option>
+        <option value="shartli">Shartli</option>
+        <option value="majburiy">Pul qaroridan oldin shart</option>
+        <option value="yoq">Yo'q (maslahat, boshqaruv)</option>
+        <option value="kiritma">Kiritma</option>
+      </select>
+    </label>
+    <label class="ctl" for="fRec"><input type="checkbox" id="fRec"> Faqat tavsiya</label>
+    <label class="ctl" for="fQ">Qidirish <input type="search" id="fQ" placeholder="masalan: sizot, hosil"></label>
+    <span class="small muted" id="shownInfo"></span>
+  </div>
+  <div class="cards" id="cards"></div>
+  <div class="notebox">
+    <label for="noteTa" class="small muted">Izoh (ixtiyoriy) — tanlov bilan birga saqlanadi va nusxalanadi</label>
+    <textarea id="noteTa" maxlength="2000" placeholder="Masalan: avval Samarqand 2023, faqat paxta va bug'doy"></textarea>
+  </div>
+  <div class="manual" id="manualBox" hidden>
+    <label for="manualTa" class="small muted">Nusxalash bloklandi. Matnni belgilab Ctrl+C bilan nusxalang</label>
+    <textarea id="manualTa" readonly></textarea>
+  </div>
+  <div class="selbar" id="selbar">
+    <span class="count" id="selCount">Tanlandi: 0</span>
+    <button class="btn" type="button" id="btnRec">Tavsiya etilganlarni qo'shish</button>
+    <button class="btn" type="button" id="btnClear">Tozalash</button>
+    <button class="btn" type="button" id="btnCopy">Ro'yxatni nusxalash</button>
+    <button class="btn primary" type="button" id="btnSave" disabled title="Saqlash bu ko'rinishda hali ulanmagan">Saqlash</button>
+    <span class="msg" id="msg" aria-live="polite">Saqlash ulanmagan bo'lsa, ro'yxatni nusxalab chatga qo'ying.</span>
+  </div>
+</section>
+
+<section id="bosqichlar">
+  <div class="sec-head">
+    <div class="eyebrow">Ketma-ketlik</div>
+    <h2>Bosqichlar va har birining chegarasi</h2>
+    <p class="muted">Har bosqich faqat oldingi bosqichning chegarasi bajarilgach boshlanadi. Pul qarorlari 3-bosqichdan oldin qabul qilinmaydi.</p>
+  </div>
+  <ol class="phases">
+    <li><h3>Tayyorgarlik: mavjud kamchiliklarni yopish</h3>
+      <p class="small">Quyidagi ishlar bajariladi:</p>
+      <ul class="plain small">
+        <li><span class="mono">mosaic_zonstat.py</span> bandlarni nomi bo'yicha olsin, band yo'q bo'lsa xato bersin. Ma'lumotsiz dala 0 m³ emas, NaN va bayroq bo'lsin.</li>
+        <li><span class="mono">root_zone_water</span> oylik AW standart eksportdan chiqarilsin yoki "eksperimental" deb belgilansin.</li>
+        <li>NIWR ekin bo'yicha Kc bilan hisoblansin va CSV'da ham chiqsin. Config izohlari tuzatilsin.</li>
+      </ul>
+      <p class="gate"><b>Chegara:</b> eski Samarqand ETCU fayllari (08-08 va 08-10) yangi kod bilan qayta hisoblanadi.</p></li>
+    <li><h3>GEE: dala kiritmalari eksporti</h3>
+      <p class="small">Mavjud <span class="mono">export_csv</span> kengaytiriladi va quyidagilar eksport qilinadi:</p>
+      <ul class="plain small">
+        <li>sahna × dala: ET_24, ETrF yoki SOLAR_FRAC, NDVI, LAI, QC;</li>
+        <li>kun × dala: CHIRPS va ERA5-Land yog'ini, ETr24 yoki ETo24, Rs24;</li>
+        <li>statik: HiHydroSoil (wcsat, wcres, alpha, N, ksat, pF4.2), HSG, tekstura, ekin kodi, maydon.</li>
+      </ul>
+      <p class="small">Suv yili 1-oktyabrdan 30-sentyabrgacha. Spin-up uchun oldingi 1–2 yil ham eksport qilinadi.</p>
+      <p class="gate"><b>Chegara:</b> lokal Σ kunlik ET = GEE ET_MONTHLY zonal qiymati (±1 %).</p></li>
+    <li><h3>Lokal suv hisobi dvigateli</h3>
+      <p class="small">IDC yadrosi, manba kuzatuvi (ETpr, ETaw, ETgw), AW oralig'i, Monte-Carlo (P ±30 %, ET ±10 %, tuproq) va QC sinfi yoziladi. Natijalar kundan oyga, oydan mavsumga yig'iladi va m³ ga aylantiriladi.</p>
+      <p class="gate"><b>Chegara:</b> kunlik balans qoldig'i &lt; 0.01 mm. Rasmiy IDC SampleModel bilan parity test o'tadi.</p></li>
+    <li><h3>Validatsiya</h3>
+      <p class="small">Tekshiruv ikki joyda o'tkaziladi:</p>
+      <ul class="plain small">
+        <li>Bushland 2020–21: kunlik lizimetr ET va ma'lum sug'orish miqdorlari bilan.</li>
+        <li>O'zbekiston pilot (1–2 SIU yoki kanal buyruq maydoni): yetkazib berish o'lchovlari, Uzhydromet yog'ini, sizot chuqurligi, tuman hosil statistikasi.</li>
+      </ul>
+      <p class="gate"><b>Chegara:</b> har mahsulot uchun noaniqlik hisoboti tayyor. Pul qarorlari uchun chegaralar kelishilgan.</p></li>
+    <li><h3>Mahsulot va hisobot</h3>
+      <p class="small">Dala jadvallari (GeoPackage/CSV), ETaw xaritasi (ET_px − ETpr_dala), budjet jadvallari, anomaliyalar, metodologiya hujjati va e'tiroz tartibi tayyorlanadi.</p>
+      <p class="gate"><b>Chegara:</b> metodologiya hujjati va e'tiroz tartibi mahsulot bilan birga chiqadi.</p></li>
+    <li><h3>Hosil va unumdorlik</h3>
+      <p class="small">T/E ajratish, biomassa (AquaCrop WP* yoki Monteith), hosil (HI), Ky bo'yicha yo'qotish, WP va WP-gap. Havza hisobi (SWEO uslubi) ham shu bosqichda.</p>
+      <p class="gate"><b>Chegara:</b> hosil tuman statistikasi yoki xo'jalik ma'lumotlari bilan kalibrlangan.</p></li>
+  </ol>
+</section>
+
+<section id="qarorlar">
+  <div class="sec-head">
+    <div class="eyebrow">Sizning qaroringiz</div>
+    <h2>Hal qilinishi kerak bo'lgan savollar</h2>
+  </div>
+  <div class="tblwrap">
+    <table>
+      <thead><tr><th>#</th><th>Savol</th><th>Variantlar</th><th>Tavsiyam va sababi</th></tr></thead>
+      <tbody>
+        <tr><td class="num">D1</td><td>ETpr qanday hisoblanadi</td><td>(a) faqat yog'in chelagi: hozirgi CUIRR mantig'i, lekin uzluksiz;<br>(b) IDC bitta chelak va talab bo'yicha sug'orish;<br>(c) Hydrosat'ning α = Spr/S usuli;<br>(d) oddiy α·P</td><td>(a) va (b) ikkalasini hisoblab, ETaw oralig'ini berish. (a) ETpr ni yuqori baholaydi, ya'ni dehqon foydasiga. (b) esa pastki chegara. Pul hisobida (a) ishlatiladi. (d) faqat lalmi dalalarda QC uchun.</td></tr>
+        <tr><td class="num">D2</td><td>Sahnasiz kunlar ET'si</td><td>hozirgi: eng yaqin sahna × ETr;<br>chiziqli ETrF;<br>suv balansi ET (GPT)</td><td>Hozirgisi qoladi, chunki u ET_MONTHLY bilan bir xil. Qolganlari Bushland kunlik lizimetrida sinovdan o'tgach tanlanadi.</td></tr>
+        <tr><td class="num">D3</td><td>Balans qayerda yuritiladi</td><td>lokal, dala darajasida;<br>GEE, piksel darajasida (oyma-oy asset)</td><td>Lokal, dala darajasida. GEE cheklovi yo'q, spin-up mumkin, hisobni qayta tiklash oson.</td></tr>
+        <tr><td class="num">D4</td><td>Rasmiy IDC dasturi</td><td>faqat parity test uchun;<br>ishlab chiqarishda</td><td>Faqat parity test uchun. Bu "DWR usuli bilan aynan" deb ko'rsatish imkonini beradi, moslashuvchanlikni esa saqlaydi.</td></tr>
+        <tr><td class="num">D5</td><td>AW pul hisobiga kiradimi</td><td>ha;<br>faqat oraliq va anomaliya</td><td>Kalibrlanmaguncha faqat oraliq va anomaliya sifatida.</td></tr>
+        <tr><td class="num">D6</td><td>Yog'in manbai</td><td>CHIRPS;<br>ERA5-Land;<br>stansiya bilan birlashtirilgan</td><td>CHIRPS asosiy. ERA5-Land bilan farq 30 % dan oshsa bayroq qo'yiladi. Uzhydromet bilan bias tuzatiladi.</td></tr>
+        <tr><td class="num">D7</td><td>Sizot suvi</td><td>hozircha e'tiborsiz;<br>bayroq;<br>ETgw hisobi</td><td>Avval bayroq qo'yiladi. Chuqurlik ma'lumoti kelgach ETgw hisoblanadi. Bayroqli dalada ETaw "shartli" bo'ladi.</td></tr>
+        <tr><td class="num">D8</td><td>Suv yili va spin-up</td><td>kalendar yili;<br>1-okt – 30-sen</td><td>1-oktyabrdan 30-sentyabrgacha va kamida 2 yil spin-up. IDC bir necha yil tavsiya qiladi.</td></tr>
+        <tr><td class="num">D9</td><td>Pul qarori qoidasi</td><td>limitdan har qanday oshish;<br>limit + noaniqlik chegarasi</td><td>Mavsumiy jami bo'yicha, limit + noaniqlik chegarasi (masalan, 2σ) va e'tiroz tartibi bilan.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="manbalar">
+  <div class="sec-head">
+    <div class="eyebrow">Tekshirilgan hujjatlar</div>
+    <h2>Manbalar</h2>
+  </div>
+  <div class="grid2">
+    <div class="panel">
+      <h3>Papkadagi hujjatlar (<span class="mono">E:\My_projects\hydrosat</span>)</h3>
+      <ul class="plain small">
+        <li>1.-GSA-Committee-Packet.pdf — Hydrosat shartnomasi va texnik ilova (41–73-betlar), jarimalar va boshqa GSA'lar (80–83-betlar)</li>
+        <li>Responses-to-Grower-Questions-from-Hydrosat.pdf — ETAW = ET − αP, aniqlik bahosi</li>
+        <li>Madera-SEBAL-Root-Zonev-7-pp-pdf.pdf — 2020 trening: ΔSp va ΔSaw, biomassa va hosil</li>
+        <li>250127_VPP_Grower_Workshop.pdf — hisoblagichlar bilan solishtirish, 2022–2024</li>
+        <li>Evapotranspiration-of-Applied-Water-Appeal-Process.pdf — e'tiroz tartibi</li>
+        <li>IDC-2025.0.243_Documentation.pdf — Eq 1–37, spin-up (3.3–3.4 bo'limlar)</li>
+        <li>Bastiaanssen va boshq. 2026, Irrigation and Drainage — AW algoritmlari va 16 ta KPI</li>
+        <li>Hessels, Davids, Bastiaanssen 2022 (SWEO) — yashil va ko'k ET, ikki balans, Sirdaryo</li>
+        <li>van Eekelen va boshq. 2015 — E_incremental = E − (E/P)·P</li>
+        <li>wif4 W.1.5.11 (Hydrosat + GeoBox) — WP-gap, Qozog'iston 2023</li>
+        <li>_1062.pdf (Hydrosat) — Farg'ona WP xaritasi, yog'in manbalari farqi</li>
+        <li>WUR 564720 — tuproq namligi sensorlari va IrriWatch solishtiruvi</li>
+        <li>Liu va boshq. 2026 RSE; Xue 2020; VIIRS-S2 2021; Pierrat 2025 — termal keskinlashtirish va kunlik ET</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Qo'shimcha adabiyot</h3>
+      <ul class="plain small">
+        <li><a href="https://link.springer.com/article/10.1007/s00271-009-0148-1" target="_blank" rel="noopener">Forkutsa va boshq. 2009 — Xorazm, sayoz sizot suvining paxta ET'dagi ulushi</a></li>
+        <li><a href="https://gee-community-catalog.org/projects/hihydro_soil/" target="_blank" rel="noopener">HiHydroSoil v2.0 GEE qatlamlari (ksat, alpha, N, wcsat, HSG)</a></li>
+        <li><a href="https://water.ca.gov/Programs/Water-Use-And-Efficiency/Land-And-Water-Use/Agricultural-Water-Use-Models" target="_blank" rel="noopener">California DWR — Cal-SIMETAW va CUP+ (ETaw rasmiy modellari)</a></li>
+        <li><a href="https://cawaterlibrary.net/wp-content/uploads/2019/07/Orang-et-al-2013.pdf" target="_blank" rel="noopener">Orang va boshq. 2013 — Cal-SIMETAW</a></li>
+        <li><a href="https://ees.kuleuven.be/en/aquacrop/resources/reference-manual/annexesaquacropv73.pdf" target="_blank" rel="noopener">AquaCrop 7.3 ilovalari — WP* va HI qiymatlari</a></li>
+        <li><a href="https://openknowledge.fao.org/server/api/core/bitstreams/d3db4794-fb5b-444c-9b3a-c5fb154c5f9f/content" target="_blank" rel="noopener">FAO WaPOR metodologiyasi — NPP va biomassa suv unumdorligi</a></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer>Tayyorlagan: Claude (tahlil va tavsiya). Asos: Hydrosat papkasi (33 ta PDF), IDC 2025.0.243 hujjati va <span class="mono">sebal_gee_v4</span> kodining holati (a969854). Raqamlar grafiklardan o'qilgan joylarda taxminiy (≈) deb berilgan.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+var GROUPS = {
+  A: "Suv iste'moli (ET)",
+  B: "Suv manbai bo'yicha ajratish",
+  C: "Qo'llangan suv va samaradorlik",
+  D: "Biomassa, hosil, suv unumdorligi",
+  E: "Nazorat, hisob va ishonch",
+  F: "Tizim KPI va havza hisobi"
+};
+var ST = {
+  tayyor: {label: "Kodda tayyor", cls: "t-ok"},
+  qisman: {label: "Qisman bor", cls: "t-info"},
+  yangi: {label: "Yangi", cls: "t-neutral"},
+  tadqiqot: {label: "Tadqiqot", cls: "t-dash"}
+};
+var BILL = {
+  ha: {label: "Pul qarori: ha, validatsiyadan keyin", cls: "t-ok"},
+  shartli: {label: "Pul qarori: shartli", cls: "t-warn"},
+  majburiy: {label: "Pul qaroridan oldin shart", cls: "t-bad"},
+  yoq: {label: "Pul qarori: yo'q", cls: "t-neutral"},
+  kiritma: {label: "Kiritma", cls: "t-neutral"}
+};
+var EFF = {S: "Hajm: kichik", M: "Hajm: o'rta", L: "Hajm: katta"};
+var P = [
+ {id:"A1",g:"A",name:"ET — haqiqiy evapotranspiratsiya",what:"Daladan haqiqatda bug'langan suv (mm): kunlik, oylik va mavsumiy, piksel va dala bo'yicha.",how:"SEBAL_Milliy, ID, B yoki Kc_ETo. Oylik: har kun uchun eng yaqin yaroqli sahnaning SOLAR_FRAC×Rs24 (Milliy) yoki ETrF×ETr24 (ID).",inp:"Landsat 8/9, ERA5-Land, SRTM",st:"tayyor",stn:"ET_MONTHLY raster va CSV (daily_et.compute_monthly_et).",bill:"ha",rel:"Bushland lizimetri: Kc_ETo mavsum bo'yicha −3 %. O'zbekistonda yerdagi o'lchov bilan hali solishtirilmagan. Termal piksel 100 m, shuning uchun kichik dalalar aralash piksel bo'ladi.",eff:"S",ph:1,rec:true},
+ {id:"A2",g:"A",name:"ETo / ETr — referens ET",what:"Standart o't (ETo) yoki beda (ETr) yuzasining bug'lanish talabi, kunlik va oylik.",how:"ASCE-EWRI Penman-Monteith, ERA5-Land soatlik qiymatlarining mahalliy kun bo'yicha yig'indisi.",inp:"ERA5-Land",st:"tayyor",stn:"ETREF_24 va ETR24 bandlari (ref_et.py).",bill:"kiritma",rel:"ERA5 katagi ~11 km. Uzhydromet stansiyalari bilan bias tekshirilishi kerak.",eff:"S",ph:1,rec:true},
+ {id:"A3",g:"A",name:"ETpot — potensial ekin ET",what:"Ekin suv tanqisligisiz sarflashi mumkin bo'lgan ET, ya'ni ekin suv talabi.",how:"ETpot = (Kcb(NDVI, ekin) + Ke)·ETo. Kcb_max, so'nish davri va ildiz chuqurligi crop_kc_table (FAO-56) dan.",inp:"NDVI qatori, ekin kodi rasteri, ETo, CHIRPS",st:"qisman",stn:"Kc_ETo rejimining o'zi (ndvi_kc.py), lekin alohida band sifatida chiqmaydi.",bill:"yoq",rel:"FAO-56 jadval qiymatlari. Stress bo'lmagan dalalar (A1 ning eng yuqori 10 % i) bilan tekshirish mumkin.",eff:"S",ph:2,rec:true},
+ {id:"A4",g:"A",name:"ET tanqisligi va nisbiy ET",what:"Ekin qancha suv yetishmovchiligida qolgani: ETpot − ET (mm) va ET/ETpot (0–1).",how:"A1 va A3 dan to'g'ridan-to'g'ri hisoblanadi.",inp:"A1, A3",st:"yangi",stn:"A1 va A3 dan bir necha qator kod.",bill:"yoq",rel:"A1 va A3 xatolari qo'shiladi. Nisbiy ko'rsatkich sifatida barqaror.",eff:"S",ph:2,rec:false},
+ {id:"A5",g:"A",name:"T / E va foydali ulush",what:"ET ning transpiratsiya (o'simlik) va evaporatsiya (tuproq) qismlari hamda BF = T/ET.",how:"SEBAL rejimlarida T = ET·Kcb/(Kcb+Ke), nisbat Kc modelidan olinadi. pysebal'da et_decomposition.",inp:"A1, Kc modeli",st:"qisman",stn:"Faqat pysebal va Kc modeli ichida bor. SEBAL_Milliy uchun yo'q.",bill:"yoq",rel:"T ni to'g'ridan o'lchab tekshirib bo'lmaydi. Biomassa (D1) uchun asos.",eff:"M",ph:5,rec:false},
+ {id:"A6",g:"A",name:"Haqiqiy Kc (ET/ETo)",what:"Daladagi haqiqiy ekin koeffitsienti. Dalalar va yillarni solishtirish uchun.",how:"Kc_act = ET_24 / ETREF_24.",inp:"A1, A2",st:"tayyor",stn:"KC bandi (main.py, SEBAL rejimlari).",bill:"yoq",rel:"A1 bilan bir xil.",eff:"S",ph:1,rec:false},
+ {id:"B1",g:"B",name:"Yog'in P (dala bo'yicha)",what:"Dala bo'yicha kunlik va oylik yog'in, manbalar orasidagi farq bilan.",how:"CHIRPS asosiy, ERA5-Land tekshiruv uchun. Uzhydromet stansiyalari bilan bias tuzatiladi.",inp:"CHIRPS DAILY, ERA5-Land, stansiyalar",st:"qisman",stn:"CHIRPS ichida ishlatiladi (check_chirps_month), lekin mahsulot sifatida chiqmaydi.",bill:"kiritma",rel:"Hydrosat yog'in xatosini ~30 % deb baholagan. Farg'ona pilotida manbalar keskin farq qilgan. ETaw xatosining asosiy manbai shu.",eff:"S",ph:1,rec:true},
+ {id:"B2",g:"B",name:"Effektiv yog'in Pe",what:"Ildiz zonasida qolgan va ekin ishlata oladigan yog'in.",how:"Pe = P − RO − DP, kunlik ildiz zonasi balansidan.",inp:"B1, tuproq, A1",st:"qisman",stn:"PRZ bandi bor, lekin har oy qayta boshlanadi (B3) va CN doimiy.",bill:"shartli",rel:"Adabiyotda Pe/P 0.5–0.8 (Hydrosat javobi). Lalmi dalalar bilan tekshirish mumkin.",eff:"M",ph:2,rec:true},
+ {id:"B3",g:"B",name:"ETpr — yog'indan kelgan ET",what:"ET ning yog'in suvi hisobiga bug'langan qismi (IDC'da ETp).",how:"IDC manba kuzatuvi: α_P = (θP·Z + (P − R)·Δt) / (θ·Z + jami kirim), ETpr = α_P·ET (Eq 32–34). Mavsum davomida uzluksiz, spin-up bilan.",inp:"A1, B1, tuproq, ekin",st:"yangi",stn:"Hozir CUIRR ichida Prz orqali taxminan bor.",bill:"shartli",rel:"Yog'in (B1) va boshlang'ich namlikka sezgir. IDC bir necha yillik spin-up tavsiya qiladi.",eff:"M",ph:2,rec:true},
+ {id:"B4",g:"B",name:"ETaw — sug'orish suvidan kelgan ET",what:"ET ning sug'orish suvi hisobiga bug'langan qismi. Kaliforniyada limit va jarimalar shu bo'yicha hisoblanadi.",how:"ETaw = α_Aw·ET (IDC Eq 29–31) = ET − ETpr − ETgw. Oraliq D1 dagi (a) va (b) usullardan olinadi.",inp:"A1, B3, B5",st:"qisman",stn:"CUIRR = ET − Prz ETaw'ning DWR/Davids shakli. Oylik qayta boshlash va max(0) yog'in zaxirasini yo'qotadi.",bill:"shartli",rel:"Hydrosat kutilgan xatoni 5–10 % deb bergan, lekin Monte-Carlo qilinmagan. Madera'da dala darajasida tarqoqlik katta. Sayoz sizot zonasida ETgw ajratilmasa ETaw oshib ketadi.",eff:"M",ph:2,rec:true},
+ {id:"B5",g:"B",name:"ETgw — sizot suvidan kelgan ET",what:"Sayoz sizot suvidan kapillyar ko'tarilish orqali bug'langan qism.",how:"IDC G manbasi (Eq 35–37) va sizot chuqurligi xaritasi. Ma'lumot bo'lmaguncha dalaga 'sayoz sizot' bayrog'i qo'yiladi.",inp:"Gidrogeologik-meliorativ monitoring quduqlari (sizot chuqurligi va sho'rligi)",st:"yangi",stn:"Yo'q.",bill:"majburiy",rel:"Xorazmda sizot suvi paxta ETa'sining 399 mm gachasini bergan (ETa 488–727 mm; Forkutsa va boshq., 2009). Sayoz sizotli hududlarda pul qaroridan oldin shart.",eff:"L",ph:3,rec:true},
+ {id:"B6",g:"B",name:"Oqim RO, perkolatsiya DP, zaxira ΔS",what:"Yuza oqim, ildiz zonasidan chuqur perkolatsiya va zaxira o'zgarishi.",how:"RO: namlikka bog'liq SCS-CN (IDC Eq 5–7), CN — HiHydroSoil gidrologik guruhi. DP: van Genuchten–Mualem (Eq 13), HiHydroSoil ksat, N va wcsat.",inp:"HiHydroSoil v2, B1, A1",st:"qisman",stn:"RO doimiy CN bilan hisoblanadi, DP faqat to'lib-toshish orqali. HiHydroSoil ksat hali ulanmagan.",bill:"yoq",rel:"To'g'ridan tekshirish qiyin. Yashil (lalmi) piksellarda ichki kalibrlanadi (SWEO usuli).",eff:"M",ph:2,rec:true},
+ {id:"C1",g:"C",name:"NIWR — sof sug'orish talabi",what:"Ekin stresssiz o'sishi uchun kerak bo'lgan sof sug'orish. Limit belgilashga asos bo'ladi.",how:"NIWR = ETpot − Pe − ETgw, ekin bo'yicha Kc bilan.",inp:"A3, B2, B5",st:"qisman",stn:"NIWR bor, lekin 1.05·ETr barcha oy va ekinlar uchun bir xil. CSV'da chiqmaydi.",bill:"yoq",rel:"FAO-56 Kc. Hudud normativlari (gidromodul) bilan solishtirish mumkin. Limit belgilash uchun ishlatiladi, dalani jarimalash uchun emas.",eff:"S",ph:2,rec:false},
+ {id:"C2",g:"C",name:"AW — qo'llangan suv (oraliq bilan)",what:"Dalaga haqiqatda berilgan yalpi sug'orish suvi, minimal va maksimal oraliq bilan.",how:"4 usul: (a) ETaw/CUF (sug'orish usuli bo'yicha); (b) IDC talab mantiqi (Eq 21–26); (c) qoldiq AW = ET + R + q↓ + ΔS − P, termal namlik bilan cheklangan (Hydrosat); (d) kanal yetkazib berish o'lchovlariga kalibrlangan.",inp:"B4, B6, sug'orish usuli, kanal o'lchovlari",st:"qisman",stn:"AW_CUirr = CUIRR/0.55 bor. root_zone_water AW oylik rejimda yaroqsiz.",bill:"yoq",rel:"Hisoblagichlar bilan kalibrlanganda MAE 36 mm/yil (Hessels 2026) yoki ~30 % (Dari 2025). Madera'da CUF dala bo'yicha 0.4 dan 2 dan ortiqqacha. Kalibrlanmasdan pul hisobiga kiritib bo'lmaydi.",eff:"L",ph:3,rec:false},
+ {id:"C3",g:"C",name:"CUF — iste'mol ulushi",what:"Dalaga berilgan suvning qancha qismi ET bo'lgani: CUF = ETaw/AW.",how:"B4 va o'lchangan yoki kalibrlangan AW dan hisoblanadi.",inp:"B4, C2",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"Faqat AW o'lchangan joyda ma'noli. Madera'da odatiy qiymat 0.6–0.9. Past CUF har doim isrof emas: sho'r yuvish uchun suv kerak.",eff:"S",ph:3,rec:false},
+ {id:"C4",g:"C",name:"Sug'orish hodisalari",what:"Sug'orishlar soni va sanalari.",how:"Balans modeli, ET va LST ning keskin o'zgarishi hamda Sentinel-1 SAR.",inp:"Dvigatel, Sentinel-1",st:"tadqiqot",stn:"root_zone_water ichida N_IRRIG bor, lekin yaroqsiz rejimda.",bill:"yoq",rel:"Sentinel-1 bilan 48 hodisadan 33 tasi topilgan, hajmi aniqlanmagan (Bazzi 2020).",eff:"L",ph:5,rec:false},
+ {id:"D1",g:"D",name:"Biomassa (quruq modda)",what:"Ekin to'plagan quruq modda, kg/ga: kunlik va mavsumiy.",how:"(i) AquaCrop: B = WP*·Σ(T/ETo). WP* (g/m²): paxta 15, bug'doy 15, makka 33.7, kartoshka 18–20. (ii) Monteith: B = Σ APAR·ε (monteith_biomass.py).",inp:"A5, Rs24, NDVI, harorat",st:"qisman",stn:"monteith_biomass.py yozilgan, lekin hech qayerda chaqirilmaydi. pysebal biomass evristik.",bill:"yoq",rel:"O'rim namunalari bilan tekshirish kerak. T (A5) xatosiga bog'liq.",eff:"M",ph:5,rec:false},
+ {id:"D2",g:"D",name:"Hosil",what:"Kutilayotgan hosil, t/ga.",how:"Y = HI·B, namlik tuzatmasi bilan. HI0: paxta 0.25–0.40, bug'doy 0.45–0.50, makka 0.48–0.52, kartoshka 0.70–0.85 (AquaCrop).",inp:"D1, ekin turi",st:"yangi",stn:"monteith_biomass.compute_yield bor, lekin ulanmagan.",bill:"yoq",rel:"Kalibrlanmasa xato ±20–30 %. Tuman statistikasi yoki xo'jalik ma'lumotlari bilan kalibrlanadi.",eff:"M",ph:5,rec:false},
+ {id:"D3",g:"D",name:"Suv stressidan hosil yo'qotish",what:"Suv yetishmovchiligi tufayli yo'qotilgan hosil ulushi, %.",how:"FAO-33: 1 − Ya/Ym = Ky·(1 − ET/ETpot). Ky: paxta 0.85, kuzgi bug'doy 1.05, makka 1.25, kartoshka 1.1, beda 1.1.",inp:"A1, A3",st:"yangi",stn:"A1 va A3 dan hisoblanadi.",bill:"yoq",rel:"Nisbiy ko'rsatkich. Mutlaq hosilga qaraganda barqaror.",eff:"S",ph:2,rec:false},
+ {id:"D4",g:"D",name:"Suv unumdorligi WP",what:"Bir kub metr suvga olingan hosil yoki biomassa.",how:"WP_ET = Y/ET, WP_AW = Y/AW, biomassa WP = B/T.",inp:"D1, D2, A1, C2",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"D1 va D2 dan keyin. Turli ekinlar emas, bir ekin ichida solishtiriladi.",eff:"S",ph:5,rec:false},
+ {id:"D5",g:"D",name:"WP farqi va muammoli nuqtalar",what:"Har bir dala shu ekinning hududdagi eng yaxshi dalalaridan qanchalik orqada ekani.",how:"Maqsad = ekin bo'yicha WP ning p90–p95 qiymati. Gap % = 1 − WP/maqsad (Hydrosat va GeoBox, Qozog'iston 2023).",inp:"D4, ekin xaritasi",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"Nisbiy ko'rsatkich. Ekin xaritasining aniqligiga bog'liq.",eff:"S",ph:5,rec:false},
+ {id:"D6",g:"D",name:"Ekin rivojlanishi va fenologiya",what:"NDVI, LAI va fAPAR egri chiziqlari, ekish va yig'im sanalari.",how:"Landsat (va HLS) qatorlari. Cho'qqi NDVI sanasi (t_peak) allaqachon hisoblanadi.",inp:"Landsat, HLS",st:"qisman",stn:"NDVI va LAI bandlari hamda t_peak bor.",bill:"yoq",rel:"Yuqori, chunki bu bevosita kuzatuv. Bulut bo'shliqlari bundan mustasno.",eff:"S",ph:4,rec:false},
+ {id:"E1",g:"E",name:"Sug'orilgan va bo'sh dalani aniqlash",what:"Qaysi dala haqiqatda sug'orilgani va qaysi biri bo'sh (fallow) turgani.",how:"Mavsumiy ET − P &gt; 0 va NDVI fenologiyasi, kadastr bilan solishtiriladi.",inp:"A1, B1, NDVI, kadastr",st:"yangi",stn:"Yo'q.",bill:"shartli",rel:"Signal kuchli: quruq yozda sug'orilmagan dalada ET past bo'ladi. GeoBox Qozog'istonda hisobga olinmagan sug'orilgan dalalarni shu bilan topgan. Natija joyida tekshiruvga yo'naltiradi.",eff:"M",ph:4,rec:false},
+ {id:"E2",g:"E",name:"Ekin turini tekshirish",what:"Kadastrdagi \u201cturi\u201d haqiqiy ekin bilan mos kelishini tekshirish.",how:"NDVI fenologiyasi bo'yicha Random Forest (Sentinel-2 va Landsat).",inp:"Sentinel-2, Landsat, kadastr",st:"yangi",stn:"Kadastr ekin rasteri (Samarqand_crop_30m) bor.",bill:"shartli",rel:"Adabiyotda aniqlik 68–98 %.",eff:"M",ph:4,rec:false},
+ {id:"E3",g:"E",name:"Suv budjeti jadvallari",what:"Dala, fermer xo'jaligi, SIU va tuman bo'yicha ETaw va limit: kunlik yig'ilma, m³.",how:"B4 × maydon. Limit, o'tgan yildan qoldiq va tuzatishlar bilan (Madera'dagi IrriWatch jadvali kabi).",inp:"B4, maydon, limitlar",st:"qisman",stn:"mosaic_zonstat.py m³ ni hisoblaydi, lekin band xaritasida xato bor.",bill:"ha",rel:"B4 va E4 ning ishonchliligiga bog'liq.",eff:"M",ph:4,rec:true},
+ {id:"E4",g:"E",name:"QC va noaniqlik qatlami",what:"Har dala-oy uchun ishonch sinfi (A/B/C) va ± noaniqlik.",how:"Sahnalar soni, maksimal bo'shliq, anchor QC, yog'in manbalari farqi, tuproq ma'lumoti, sayoz sizot, ekin mosligi, dala o'lchami va termal piksel nisbati. Monte-Carlo: P ±30 %, ET ±10 %, tuproq.",inp:"Barcha oqimlar",st:"qisman",stn:"Sahna QC CSV va oylik max_gap_days bor.",bill:"majburiy",rel:"Hydrosat ham Monte-Carlo zarurligini yozgan, lekin qilmagan.",eff:"M",ph:2,rec:true},
+ {id:"E5",g:"E",name:"Anomaliya ogohlantirishlari",what:"Limitdan oshish, limitsiz dalada yuqori ET, e'lon qilingan suvdan ko'p iste'mol.",how:"Qoidalar: ETaw &gt; limit + 2σ; ET yuqori, lekin limit yo'q; e'lon qilingan AW &lt; ETaw/0.9.",inp:"B4, E4, limitlar",st:"yangi",stn:"Yo'q.",bill:"shartli",rel:"E4 noaniqligi bilan birga ishlatiladi. Joyida tekshiruvga yo'naltiradi.",eff:"S",ph:4,rec:false},
+ {id:"E6",g:"E",name:"Metodologiya hujjati va e'tiroz tartibi",what:"Usul, versiya, noaniqlik va e'tiroz tartibi yozilgan ochiq hujjat.",how:"Madera namunasi: sertifikatlangan hisoblagich ma'lumoti va mustaqil uchinchi tomon qarori.",inp:"Barcha mahsulotlar",st:"yangi",stn:"Yo'q.",bill:"majburiy",rel:"Dehqon ishonchi va huquqiy himoya uchun kerak.",eff:"S",ph:4,rec:true},
+ {id:"F1",g:"F",name:"Tenglik (equity)",what:"Bir kanal yoki SIU ichida suv iste'moli qanchalik teng taqsimlangani.",how:"Dalalar bo'yicha ET, ETaw va nisbiy ET ning variatsiya koeffitsienti. Kanal boshi va oxirini solishtirish.",inp:"A1, B4, kanal chegaralari",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"Nisbiy ko'rsatkich va ishonchli, chunki barcha dalalarda usul va xato bir xil.",eff:"S",ph:4,rec:false},
+ {id:"F2",g:"F",name:"Yetarlilik (adequacy)",what:"Suv talabi qanchalik qondirilgani.",how:"Nisbiy ET (A4) va nisbiy suv ta'minoti RWS = (AW + Pe)/ETpot.",inp:"A4, C2, B2",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"RWS AW ga bog'liq (C2).",eff:"S",ph:4,rec:false},
+ {id:"F3",g:"F",name:"Ishonchlilik (reliability)",what:"Suv ta'minoti mavsum davomida qanchalik barqaror bo'lgani.",how:"Nisbiy ET ning vaqt bo'yicha variatsiyasi.",inp:"A4",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"Nisbiy ko'rsatkich.",eff:"S",ph:4,rec:false},
+ {id:"F4",g:"F",name:"Havza va tuman suv hisobi",what:"P − ET xaritasi, yer turlari bo'yicha yashil va ko'k ET, kanal olgan suv bilan solishtirish.",how:"SWEO usuli (Sirdaryoda Shardara oqimi bilan tekshirilgan) va SIC ICWC ma'lumotlari.",inp:"A1, B1, B3, kanal ma'lumotlari",st:"yangi",stn:"Yo'q.",bill:"yoq",rel:"Havza darajasida daryo oqimi bilan yopilish orqali tekshiriladi.",eff:"L",ph:5,rec:false},
+ {id:"F5",g:"F",name:"Ildiz zonasi namligi va mavjud suv",what:"Kunlik tuproq namligi holati va ekin foydalana oladigan suv.",how:"Dvigatel holati θ(t). Ixtiyoriy ravishda termal namlik (EF → θ, Scott va boshq. 2003) bilan tekshiriladi.",inp:"Dvigatel",st:"qisman",stn:"AVAILABLE_WATER bor, lekin oylik rejimda yaroqsiz.",bill:"yoq",rel:"WUR sinovida IrriWatch namligi aniqlik bo'yicha 10 dan 8.1 ball olgan, lekin ba'zi yomg'irlarni sezmagan.",eff:"M",ph:3,rec:false},
+ {id:"F6",g:"F",name:"Sug'orish maslahati",what:"Qaysi dalani qachon va qancha sug'orish kerakligi bo'yicha kunlik tavsiya.",how:"F5 holati, ob-havo prognozi va ekinning p (RAW) qiymati.",inp:"F5, prognoz",st:"tadqiqot",stn:"Kunlik termal yo'q (Landsat 8 kunda bir). VIIRS yo'li sinalmagan (B4).",bill:"yoq",rel:"Kunlik ma'lumotsiz sust.",eff:"L",ph:5,rec:false}
+];
+var KEY = "postet-tanlov-v1";
+var sel = new Set();
+var dbRef = null;
+var dbSavedAt = "";
+var f = {g: "all", st: "all", bill: "all", rec: false, q: ""};
+var $ = function(id){ return document.getElementById(id); };
+var cardsEl = $("cards"), msgEl = $("msg"), noteEl = $("noteTa");
+
+function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function setMsg(t){ msgEl.textContent = t; }
+function decode(s){ var t = document.createElement("textarea"); t.innerHTML = s; return t.value; }
+
+function loadLocal(){
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (!raw) return null;
+    var d = JSON.parse(raw);
+    return (d && Array.isArray(d.ids)) ? d : null;
+  } catch (e) { return null; }
+}
+function saveLocal(tOverride){
+  var t = (typeof tOverride === "number" && tOverride > 0) ? tOverride : Date.now();
+  try { localStorage.setItem(KEY, JSON.stringify({ids: Array.from(sel), izoh: noteEl.value, t: t})); } catch (e) {}
+}
+function applyIds(ids, note){
+  sel = new Set(ids.filter(function(id){ return P.some(function(p){ return p.id === id; }); }));
+  if (typeof note === "string") noteEl.value = note;
+  render();
+}
+
+function buildChips(){
+  var box = $("groupChips");
+  var all = [["all", "Hammasi · " + P.length]];
+  Object.keys(GROUPS).forEach(function(k){
+    var n = P.filter(function(p){ return p.g === k; }).length;
+    all.push([k, k + " · " + GROUPS[k] + " · " + n]);
+  });
+  all.forEach(function(it){
+    var b = el("button", "chip", it[1]);
+    b.type = "button";
+    b.setAttribute("aria-pressed", it[0] === f.g ? "true" : "false");
+    b.addEventListener("click", function(){
+      f.g = it[0];
+      Array.prototype.forEach.call(box.children, function(c){ c.setAttribute("aria-pressed", "false"); });
+      b.setAttribute("aria-pressed", "true");
+      render();
+    });
+    box.appendChild(b);
+  });
+}
+
+function matches(p){
+  if (f.g !== "all" && p.g !== f.g) return false;
+  if (f.st !== "all" && p.st !== f.st) return false;
+  if (f.bill !== "all" && p.bill !== f.bill) return false;
+  if (f.rec && !p.rec) return false;
+  if (f.q) {
+    var hay = (p.id + " " + p.name + " " + p.what + " " + p.how + " " + p.inp + " " + p.stn + " " + p.rel).toLowerCase();
+    if (hay.indexOf(f.q) === -1) return false;
+  }
+  return true;
+}
+
+function card(p){
+  var a = el("article", "card" + (sel.has(p.id) ? " sel" : ""));
+  var lab = el("label", "pick");
+  var cb = document.createElement("input");
+  cb.type = "checkbox"; cb.id = "pick-" + p.id; cb.checked = sel.has(p.id);
+  cb.addEventListener("change", function(){
+    if (cb.checked) sel.add(p.id); else sel.delete(p.id);
+    a.className = "card" + (cb.checked ? " sel" : "");
+    saveLocal(); updateBar();
+  });
+  lab.setAttribute("for", cb.id);
+  var tx = el("span");
+  var top = el("span"); top.style.display = "flex"; top.style.gap = "8px"; top.style.alignItems = "baseline"; top.style.flexWrap = "wrap";
+  top.appendChild(el("span", "pid", p.id));
+  top.appendChild(el("span", "pname", p.name));
+  tx.appendChild(top);
+  tx.appendChild(el("div", "pgroup", GROUPS[p.g]));
+  lab.appendChild(cb); lab.appendChild(tx);
+  a.appendChild(lab);
+  var pills = el("div", "pills");
+  pills.appendChild(el("span", "tag " + ST[p.st].cls, ST[p.st].label));
+  pills.appendChild(el("span", "tag " + BILL[p.bill].cls, BILL[p.bill].label));
+  pills.appendChild(el("span", "tag t-neutral", EFF[p.eff]));
+  pills.appendChild(el("span", "tag t-neutral", "Bosqich " + p.ph));
+  if (p.rec) pills.appendChild(el("span", "tag t-acc", "Tavsiya"));
+  a.appendChild(pills);
+  a.appendChild(el("p", "what", decode(p.what)));
+  var d = el("details");
+  d.appendChild(el("summary", null, "Batafsil"));
+  var dl = el("dl");
+  [["Qanday hisoblanadi", p.how, "f"], ["Kiritmalar", p.inp, ""], ["Koddagi holati", p.stn, ""], ["Ishonchlilik va tekshiruv", p.rel, ""]].forEach(function(r){
+    dl.appendChild(el("dt", null, r[0]));
+    dl.appendChild(el("dd", r[2] || null, decode(r[1])));
+  });
+  d.appendChild(dl);
+  a.appendChild(d);
+  return a;
+}
+
+function render(){
+  cardsEl.textContent = "";
+  var shown = P.filter(matches);
+  if (!shown.length) {
+    cardsEl.appendChild(el("div", "empty", "Bu filtrlarga mos mahsulot yo'q. Filtrlarni o'zgartiring."));
+  } else {
+    shown.forEach(function(p){ cardsEl.appendChild(card(p)); });
+  }
+  $("shownInfo").textContent = "Ko'rsatilmoqda: " + shown.length + " / " + P.length;
+  updateBar();
+}
+
+function updateBar(){
+  $("selCount").textContent = "Tanlandi: " + sel.size + " / " + P.length;
+}
+
+function buildText(){
+  var ids = P.filter(function(p){ return sel.has(p.id); });
+  var lines = ["Post-ET tanlov (" + ids.length + " ta):"];
+  ids.forEach(function(p){ lines.push(p.id + " — " + p.name + " [" + ST[p.st].label + "; " + BILL[p.bill].label + "; bosqich " + p.ph + "]"); });
+  var note = noteEl.value.trim();
+  if (note) lines.push("Izoh: " + note);
+  return lines.join("\n");
+}
+
+function showManual(t){
+  $("manualBox").hidden = false;
+  var ta = $("manualTa"); ta.value = t; ta.focus(); ta.select();
+  setMsg("Nusxalash bloklandi. Yuqoridagi belgilangan matnni Ctrl+C bilan nusxalang.");
+}
+
+$("btnCopy").addEventListener("click", function(){
+  var t = buildText();
+  if (!sel.size) { setMsg("Hali hech narsa tanlanmagan."); return; }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(function(){ setMsg("Ro'yxat nusxalandi. Uni chatga qo'yishingiz mumkin."); }, function(){ showManual(t); });
+    } else { showManual(t); }
+  } catch (e) { showManual(t); }
+});
+
+$("btnRec").addEventListener("click", function(){
+  P.forEach(function(p){ if (p.rec) sel.add(p.id); });
+  saveLocal(); render();
+  setMsg("Tavsiya etilgan " + P.filter(function(p){ return p.rec; }).length + " ta mahsulot qo'shildi.");
+});
+
+var clearArmed = null;
+$("btnClear").addEventListener("click", function(){
+  var b = $("btnClear");
+  if (!clearArmed) {
+    b.textContent = "Rostdan tozalansinmi?";
+    clearArmed = setTimeout(function(){ clearArmed = null; b.textContent = "Tozalash"; }, 3500);
+    return;
+  }
+  clearTimeout(clearArmed); clearArmed = null; b.textContent = "Tozalash";
+  sel.clear(); saveLocal(); render(); setMsg("Tanlov tozalandi.");
+});
+
+$("btnSave").addEventListener("click", function(){
+  if (!dbRef) return;
+  var btn = $("btnSave");
+  btn.disabled = true;
+  setMsg("Saqlanmoqda…");
+  var body = {ids: Array.from(sel), izoh: noteEl.value.slice(0, 2000), saqlandi: new Date().toISOString()};
+  dbRef.doc("tanlov/joriy").set(body).then(function(){
+    dbSavedAt = body.saqlandi; saveLocal(Date.parse(body.saqlandi)); btn.disabled = false;
+    setMsg("Saqlandi (" + sel.size + " ta). Claude bu ro'yxatni o'qiy oladi.");
+  }).catch(function(e){
+    var c = e && e.code;
+    if (c === "invalid_argument") {
+      setMsg("Bu ko'rinishda saqlash huquqi yo'q. Ro'yxatni nusxalab chatga qo'ying.");
+    } else {
+      btn.disabled = false;
+      setMsg("Saqlanmadi (" + (c || "xato") + "). Ro'yxatni nusxalab chatga qo'ying.");
+    }
+  });
+});
+
+$("fStatus").addEventListener("change", function(e){ f.st = e.target.value; render(); });
+$("fBill").addEventListener("change", function(e){ f.bill = e.target.value; render(); });
+$("fRec").addEventListener("change", function(e){ f.rec = e.target.checked; render(); });
+$("fQ").addEventListener("input", function(e){ f.q = e.target.value.trim().toLowerCase(); render(); });
+var noteTimer = null;
+noteEl.addEventListener("input", function(){ clearTimeout(noteTimer); noteTimer = setTimeout(saveLocal, 500); });
+
+buildChips();
+var local = loadLocal();
+if (local) applyIds(local.ids, local.izoh || ""); else render();
+
+try {
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("db").then(function(db){
+      if (!db) return;
+      dbRef = db;
+      var btn = $("btnSave"); btn.disabled = false; btn.title = "Tanlovni saqlash — Claude o'qiy oladi";
+      setMsg("Saqlash ulangan. Tanlovni saqlasangiz, Claude uni o'qiy oladi.");
+      db.doc("tanlov/joriy").get().then(function(snap){
+        if (!snap || !snap.exists) return;
+        var d = snap.data() || {};
+        if (!Array.isArray(d.ids)) return;
+        dbSavedAt = d.saqlandi || "";
+        var savedT = Date.parse(dbSavedAt) || 0;
+        if (local && local.t && local.t > savedT + 1000) {
+          setMsg("Saqlanmagan o'zgarishlar bor. Oxirgi saqlangan: " + dbSavedAt.slice(0, 16).replace("T", " ") + ".");
+          return;
+        }
+        applyIds(d.ids, typeof d.izoh === "string" ? d.izoh : "");
+        setMsg("Oxirgi saqlangan tanlov yuklandi (" + d.ids.length + " ta, " + dbSavedAt.slice(0, 16).replace("T", " ") + ").");
+      }).catch(function(){});
+    }).catch(function(){});
+  }
+} catch (e) {}
+})();
+</script>
+
+</body></html>
