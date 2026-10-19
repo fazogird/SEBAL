@@ -8,7 +8,7 @@ import ee
 from sebal_gee_v4 import main
 from sebal_gee_v4 import ee_utils
 ee_utils.install_getinfo_retry()   # 429 "Too many concurrent" da avtomatik retry
-ee.Initialize(project="ee-chexovant11")    # "carbon-science-461016-q2","ee-chexovant11"
+ee.Initialize(project="carbon-science-461016-q2")    # "carbon-science-461016-q2","ee-chexovant11"
 
 
 # ==============================================================

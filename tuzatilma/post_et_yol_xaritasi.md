@@ -1,6 +1,6 @@
 # Post-ET yo'l xaritasi — ET'dan keyingi mahsulotlar
 
-Yangilangan: 2026-10-03. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, muammo nimada, qanday yechim kelishilgan, keyingi qadam nima.
+Yangilangan: 2026-10-04. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, muammo nimada, qanday yechim kelishilgan, keyingi qadam nima.
 
 - Qarorlarni faqat user qabul qiladi. Bu faylda kelishilganlar va ochiq savollar yozilgan.
 - Kodga hali hech narsa yozilmagan — hammasi dizayn bosqichida.
@@ -23,6 +23,7 @@ Yangilangan: 2026-10-03. Maqsad — adashmaslik: qayerdamiz, nima qilmoqchimiz, 
   - `sebal_v7` (2026-09-29) — ko'p sensorli yo'l (LHLSVIIRSECO) va hudud → tile → ekin rejasi;
   - `sebal_v8` (2026-10-03) — ko'p sensorli yo'l tuzatishlari (`tuzatishlar.md` #98–#103), k = 1, Bushland lizimetri bilan tekshiruv.
 - **Ko'p sensorli yo'l ishlaydi va yer ma'lumoti (Bushland lizimetri) bilan tekshirildi (2026-10-03):** yangi rejim eski Landsat rejimidan aniqroq; VIIRS ishni yaxshiladi; qolgan xato — SEBAL_Milliy modelining o'zida. Natijalar — 7-A bo'limida.
+- **Suv balansi dvigateli (7-B) — dizayn kelishildi (2026-10-04).** AW kunlik, manbasi bilan; termalsiz kun ET — tuproq namligidan (eng yaqin sahnadan ko'chirilmaydi). Bushland 2021 lizimetrida 1-bosqich sinovi boshlandi.
 - **Hozirgi post-ET kodi soddalashtirilgan:** `consumptive_use.py` (CUIRR, PRZ, NIWR, AW = CUirr / samaradorlik) va `root_zone_water.py`. Yangi dizayn ularga tayanmaydi (user qarori).
 - **O'rganilgan manbalar** — 11-bo'limda.
 
@@ -352,17 +353,88 @@ Sinov tuzilishi (tarix uchun):
   - GEE-DMS (Liu 2026): mahalliy OLS (25 piksel oyna) + global Random Forest; EC box ECOSTRESS 270 m, VIIRS 780 m; kod: github.com/Open-ET/openet-landsat-lst (litsenziya hali tekshirilmagan).
 
 ### B. Suv balansi dvigateli
-1. **Dizayn hujjati** — kodsiz: tenglamalar, belgilar, kiritmalar. User tasdiqlaydi.
-2. **Prototip:**
+1. **Dizayn hujjati** — kodsiz: tenglamalar, belgilar, kiritmalar. User tasdiqlaydi. — **KELISHILDI (2026-10-04), pastda.**
+2. **Prototip:** — **boshlandi (2026-10-04): Bushland 1-bosqich.**
    - S, R, q;
    - boshlang'ich holat — ikki chegara usuli;
    - ETPR ikki ssenariysi;
    - kunlik balans yopilishi testi.
 
    Mavjud kodga faqat user ruxsati bilan tegiladi.
-3. **Namlik operatorlarini sinash** (θ_kuzatuv).
+3. **Namlik operatorlarini sinash** (θ_kuzatuv) — Bushland'da V0–V4 (pastda).
 4. **Tuzatish (K), hodisa detektori, zaxira qoida.**
 5. **Natijalar:** AW (manbasi bilan), ETPR ssenariylari, ETAW, noaniqlik.
+
+**Dvigatel dizayni (kelishildi 2026-10-03/04, user)**
+
+*Terminlar:*
+- **AW** — dalaga berilgan sug'orish suvi (fermer kanal, egat yoki tomchilatib orqali bergan suv), mm.
+- **ET** — dala jami bug'latgan suv; **ET = ETPR + ETAW + ETGW**.
+- **ETAW** — ET'ning sug'orish suvidan kelgan qismi. **ETPR** — yog'indan. **ETGW** — sizot suvidan (O'zbekiston uchun kerak; hozircha 0, belgi bilan).
+- AW − ETAW — berilgan suvning bug'lanmagan qismi (pastga sizib ketgan yoki tuproqda qolgan).
+- Egat oxiridan dala tashqarisiga oqib chiqqan suvni sun'iy yo'ldosh ko'rmaydi — hisoblanmaydi (AW_gross yo'q).
+
+*Yo'l A — Hydrosat (ochiq hujjatlardan bilganimiz):*
+- har kun: termal kun ET — SEBAL4.0, bulutli kun — suv balansi modeli; S — SEBAL4.0 + IDC suv balansi; R — SCS-CN, q — van Genuchten;
+- ikki chelak: S (yog'in + sug'orish) va S_pr (faqat yog'in); α = S_pr/S, ETPR = α·ET, ETAW = ET − ETPR;
+- oylik AW = ΣET + ΣR + Σq + ΔS − ΣP.
+- Yopiq qismlar: termal → namlik formulasi (SEBAL4.0), bulutli kun ET modeli, sug'orish kuni. Hydrosat jamoasining ochiq tezislarida (Werner 2023; Ziliani 2023) faqat g'oya bor: termal stress → suv balansiga assimilyatsiya; formula berilmagan.
+
+*Yo'l B — bizning usul (Hydrosat skeleti + uning kamchiliklarini yopish):*
+
+| Hydrosat'dagi kamchilik | Bizning yechim |
+|---|---|
+| Termal → namlik formulasi yopiq; ochiq Scott/pySEBAL EF → θ Bushland'da ishlamadi (EF kanopiyaga ergashadi) | Ks_obs = ET_termal / ETpot ("termal + ekin modeli") — Bushland'da zaxira bilan bog'liq (r ≈ 0.6, FAO-56 shakli) |
+| Sug'orish kuni yo'q (faqat oylik AW) | Sentinel-1 + SWIR "qachon sug'orildi" moduli; AW kunlik, manbasi bilan |
+| Sizot suvi ajratilmagan (Madera'da "uchinchi manba") | ETGW alohida had |
+| α = S_pr/S 1 dan oshishi mumkin | IDC manba kuzatuvi: bitta zaxira ulushlarga bo'linadi, yig'indisi 1 |
+| Ildiz chuqurligi o'zgarmas | Zr(t) — FAO-56 ekin bosqichlari bo'yicha; ildiz ostidagi qatlam suvi hisobga olinadi |
+| Ochiq tekshiruv yo'q | Bushland lizimetri bilan tekshiriladi (ET, zaxira, sug'orish) |
+
+*Kunlik tartib (har piksel, 1-oktabrdan har kun ketma-ket; boshlang'ich holat — ikki chegara, keyingi yillarda oldingi yilning 30-sentabri):*
+
+```text
+Bir martalik: HiHydroSoil qatlamlari → θFC (VG, 33 kPa), θWP (pF4.2), θs, θr, n, Ks (garmonik o'rtacha); CN (HSG, IDC)
+              TAW(d) = 1000·(θFC − θWP)·Zr(d);   RAW(d) = p·TAW(d)   (paxta p = 0.65, FAO-56)
+
+1. Zr(d): ekishgacha Zr_min; rivojlanish bosqichi oxirigacha chiziqli o'sadi; keyin Zr_max   (FAO-56; paxta 0.20 → 1.4 m)
+   ildiz ostidagi qatlam S_sub: Zr(d) dan Z_tub gacha (Bushland'da 2.3 m — lizimetr chuqurligi)
+   Zr o'sganda: S_rz += θ_sub·ΔZ·1000,  S_sub −= shuncha
+2. ETpot = (Kcb(NDVI) + Ke)·ETo           — Milliy_Kc formulalari (ndvi_kc), FAO-56 paxta koeffitsientlari
+3. ET:  termal kun   → SEBAL_Milliy ET_24
+        termalsiz kun → (Ks·Kcb + Ke)·ETo;   Ks — kechagi namlikdan:
+                        FAO-56 (ekin p) yoki IDC Eq 17 (p = 0.5) — Bushland'da aniqrog'i qoladi
+4. R — SCS-CN, namlikka bog'liq (IDC Eq 5–7), faqat yog'indan
+   q — van Genuchten–Mualem (IDC Eq 13), bir kunda FC dan pastga quritmaydi → S_sub ga;
+       S_sub FC dan oshsa → chuqur drenaj (tizimdan chiqadi)
+5. AW_d — faqat dalil bo'lsa; miqdori — FC gacha (IDC standarti):
+   a) S1/SWIR namlanish + yog'in yo'q + ekin faol            → sug'orish shu kuni
+   b) dalil yo'q, lekin Dr > RAW (IDC chegarasi) + ekin faol → IDC qoidasi
+6. S_rz = S_rz + P − R + AW − ET − q
+7. Termal kun — tekshiruv:  Ks_obs = ET_obs / ETpot
+   Ks_obs < 1: S_obs = S_FC − [TAW − Ks_obs·(TAW − RAW)];   S_rz ← S_rz + K·(S_obs − S_rz)
+               oraliqda ortiqcha berilgan AW kamaytiriladi (0 dan past emas)
+   Ks_obs ≈ 1 va model Dr > RAW: ko'rilmagan sug'orish — S_rz kamida S_FC − RAW gacha ko'tariladi, farq AW'ga;
+               sana: oraliqda radar kuni bo'lsa — o'sha kun, bo'lmasa — termal kuni ("sana kuzatilmagan" belgisi)
+8. Manbalar (IDC manba kuzatuvi):  S = S_P + S_A (+ S_G)
+   S_P += P − R − (S_P/S)·(ET + q);   S_A += AW − (S_A/S)·(ET + q)
+   ETPR_d = (S_P/S)·ET_d;   ETAW_d = (S_A/S)·ET_d;   ETGW = 0 + belgi
+   ETPR ikkinchi ssenariysi — "faqat yomg'ir" chelagi (8-bo'lim qarori, oraliq uchun)
+
+Oy oxirida: AW_oy = Σ AW_d;  ET_oy, ETPR_oy, ETAW_oy — kunlik yig'indilar;  θ_d = S_rz/(1000·Zr)
+Tekshiruv:  Σ AW_d = ΣET + ΣR + Σq + ΔS − ΣP  (qoldiq ≈ 0 bo'lishi shart)
+```
+
+- Har son manbasi bilan: o'lchangan (SEBAL, CHIRPS, ERA5, HLS, S1), fizika (R, q, balans), hujjatlangan parametr (FAO-56, HiHydroSoil, IDC). S1/SWIR chegaralari Bushland ma'lumoti bilan aniqlanadi. K — bitta koeffitsient, Bushland'da 0.3 / 0.5 / 0.8 / 1.0 sinaladi (1.0 — to'liq reset).
+
+*Bushland 2021 sinovi* (lizimetr: ET, zaxira, drenaj, yog'in, sug'orish belgilari, 2/6 sm namlik):
+- Lizimetr — 3×3 m, 2.3 m chuqur monolit, ~210×210 m dala markazida. SEBAL zonasi — 150×150 m (25 ta 30 m piksel).
+- **1-bosqich — "mukammal termal":** termal kuzatuv o'rniga lizimetrning o'z ET'si (sahna kunlarida); hisob lizimetr ustuni uchun, pastki chegara 2.3 m. 4 nuqtada — lokal hisob, formulalar dvigatel bilan bir xil; GEE'dan faqat nuqta qatorlari (ERA5 ETo, HLS NDVI, CHIRPS, Sentinel-1, HiHydroSoil).
+- **Variantlar** (faqat 7-qadam farq qiladi): V0 — termal zaxiraga tegmaydi; V1 — Scott/pySEBAL; V2 — EFSOIL; V3 — Ks_obs (bizniki); V4 — pySEBAL Separate_E_T (kod bo'lsa). Stress funksiyasi: FAO-56 va Eq 17.
+- **2-bosqich:** 1-bosqichdan o'tgan variantlar SEBAL_Milliy ET bilan.
+- **Baholash:** zaxira o'zgarishi; AW (oylik, mavsumiy; sug'orish kunlari — topildi / topilmadi / ortiqcha); termalsiz kunlar ET'si; drenaj.
+- **Eslatmalar:** sharqiy lizimetrlar yer osti tomchilatib sug'oriladi — S1/SWIR ularni ko'rmaydi. Milliy_Kc'ning Bushland'dagi R² 0.92 shu lizimetrga kalibrlangan koeffitsientlar bilan olingan — sinovda FAO-56 paxta.
+- **Solishtirilmaydi:** Random Forest (dala namlik datchiklari kerak) va APSIM assimilyatsiyasi (har dala kalibrlanadi, GEE'da yo'q) — 10-bo'lim.
 
 ### C. O'zbekiston hududida qo'llash
 - Hududni user tanlaydi.
@@ -375,7 +447,7 @@ Sinov tuzilishi (tarix uchun):
 
 | Mavzu | Qaror |
 |---|---|
-| Sahnasiz kun ET | hozirgi usul (`daily_et.py`: eng yaqin yaroqli sahna) |
+| Sahnasiz kun ET | hozirgi usul (`daily_et.py`: eng yaqin yaroqli sahna). **Suv balansi dvigatelida (2026-10-04): (Ks·Kcb + Ke)·ETo — Milliy_Kc formulalari × tuproq namligidan stress (7-B)** |
 | ETPR | ikki ssenariy parallel ("noaniqlik konverti", haqiqiy min/max emas) |
 | Yog'in P | faqat CHIRPS |
 | Ildiz chuqurligi Z | Zmax, yil davomida o'zgarmas |
@@ -383,7 +455,7 @@ Sinov tuzilishi (tarix uchun):
 | Perkolatsiya q | van Genuchten–Mualem; oddiy chelak — QA uchun |
 | Boshlang'ich holat | ikki chegara (θ₀ = WP va θ₀ = FC); yaqinlashish chegaralari sezgirlik bilan tanlanadi |
 | ETGW | quduq ma'lumoti kelguncha 0, bayroq bilan |
-| AW | AW = ET + R + q + ΔS − P |
+| AW | AW = ET + R + q + ΔS − P. **2026-10-04: AW kunlik hisoblanadi (AW_d, manbasi bilan: hodisa / qoida / termal), AW_oy = Σ AW_d; oylik ΔS formulasi faqat tekshiruv** |
 | θ | 5-bo'limdagi sxema |
 | Sun'iy yo'ldosh ma'lumoti | ko'paytiriladi: ECOSTRESS, VIIRS, HLS |
 | Asos grid (2026-09-26) | HLS/MGRS, 30 m, UTM (har tile o'z zonasida). Landsat WRS-2 endi hisob hududi emas, faqat metadata |
@@ -406,6 +478,7 @@ Sinov tuzilishi (tarix uchun):
 | Tadqiqot tile'i (2026-09-28, user) | T42SUJ. Birinchi mahsulot — 2025 aprel–oktabr kalendari (qaysi kun SEBAL, qaysi kun suv balansi) |
 | Anchor hududi (2026-09-29, user) | Anchor viloyat ekinidan olinadi: tile ∩ viloyat (z0m persentillari va sahna QC ham shu hududda). Tile boshqa viloyatni (masalan, Samarqand, Buxoro) qoplasa ham anchor u yerga ketmaydi. Dalil: tuzatishdan oldin Qashqadaryo sinovida (T42SUJ, 2025-04-10/11) 6 anchor nuqtadan 3 tasi Samarqandga tushgan. VIIRS RF downscaling o'qitishi butun tile'da qoladi |
 | Tile'lar va egalik (2026-09-29, user) | Har viloyat uchun bir xil avtomatik qoida (`plan_tiles`): (1) viloyat tile'lari HLS granulalaridan topiladi (`tiles=None`; ro'yxat berilsa ham shu qoida bilan tekshiriladi); (2) tile'ning to'liq footprint'ida viloyat ekini < 100 km² bo'lsa, tile tushiriladi — anchor ishonchsiz; (3) ustma-ustlik: tile'lar viloyat ekini ko'pligi bo'yicha tartiblanadi — birinchisi butun, keyingisi faqat qoplanmagan qismni oladi ("bittasi butun, qolgani kesik"); kichik kesik qismlar ham hisoblanadi; (4) anchor — tile'ning butun footprint'i ∩ viloyat ekinidan, eksport — faqat tile egaligida. Qashqadaryo: 8 tile avtomatik topildi (qo'lda berilgani bilan bir xil), T41SQD butun, 6 tasi kesik, T42SUH (10 km²) tushirildi, ekin qoplami 99.8%. Samarqand: 10 tile topildi, 5 tasi ishlanadi, 99.9% |
+| Suv balansi dvigateli (2026-10-03/04, user) | GEE'da; suv yili 1-okt – 30-sen, asosiy natija mart–okt; ildiz Zr(t) — FAO-56 ekin bosqichlari (hozir paxta default, keyin ekin rasteri); termal kun ET — SEBAL_Milliy ET_24; termalsiz kun — Milliy_Kc formulalari × Ks; stress — FAO-56 yoki IDC Eq 17, Bushland'da aniqrog'i; termal yangilash — Ks_obs = ET/ETpot (Scott emas), bitta K; S1 + SWIR "qachon sug'orildi" moduli; hodisada FC gacha; AW kunlik manbasi bilan; ETPR/ETAW — IDC manba kuzatuvi; ETGW = 0 + belgi; AW_gross yo'q. Batafsil — 7-B |
 | Ko'p sensorli yo'l bahosi (2026-10-03, user) | Bushland lizimetri (GT) bo'yicha yangi rejim eski Landsat rejimidan aniqroq (oylik bias −39% → −7%, VIIRS bilan +4%). VIIRS qoldiriladi — ishni yaxshiladi. Qolgan xato SEBAL_Milliy modelining o'zida; model xatosi va ma'lumot xatosi alohida baholanadi. GT bo'lmagan hududda (Sirdaryo) rejimlar aniqlik bo'yicha solishtirilmaydi — faqat farq ko'rsatiladi (7-A) |
 
 ## 9. Ochiq savollar (user qarori kutilmoqda)
@@ -421,13 +494,13 @@ Sinov tuzilishi (tarix uchun):
 
 **Dvigatel (B):**
 
-8. Dvigatel qayerda ishlaydi: GEE'da (piksel bo'yicha) yoki lokal (GEE'dan eksport qilingan kiritmalar bilan)?
-9. Hisob davri: kalendar yilmi yoki suv yili (1-okt – 30-sen)?
-10. Namlik operatori: pySEBAL, EFSOIL, FAO-56 Ks — qaysilari sinaladi?
-11. Tuzatish usuli: bitta K koeffitsientimi yoki ansambl (EnKF)?
-12. Hodisa detektori: faqat Sentinel-1'mi yoki Sentinel-1 + SWIR?
-13. Hodisa topilganda sug'orish miqdori qancha deb olinadi: FC gacha to'ldiriladimi yoki sug'orish usuliga xos me'yor olinadimi?
-14. Ekin ma'lumoti bo'lmagan dalada Z qanday olinadi?
+8. ~~Dvigatel qayerda ishlaydi?~~ — **qaror: GEE'da (2026-10-03).** Bushland 1-bosqichi 4 nuqtada lokal hisob bilan (formulalar bir xil), keyin GEE.
+9. ~~Hisob davri?~~ — **qaror: suv yili (1-okt – 30-sen); asosiy natija mart–oktabr; boshlang'ich namlik qachon to'g'ri kelsa (ikki chegara).**
+10. ~~Namlik operatori?~~ — **qaror: asosiy — Ks_obs = ET/ETpot (termal + ekin modeli); Scott/pySEBAL, EFSOIL, pySEBAL Separate_E_T — Bushland'da solishtirish uchun (7-B).** Asosiy muammo — ildiz zonasi namligi.
+11. ~~Tuzatish usuli?~~ — **qaror: bitta K.**
+12. ~~Hodisa detektori?~~ — **qaror: Sentinel-1 + SWIR, alohida "qachon sug'orildi" moduli.**
+13. ~~Sug'orish miqdori?~~ — **qaror: FC gacha (IDC standarti); usul me'yori — faqat usul hujjatlangan bo'lsa.**
+14. ~~Ekin noma'lum dalada Z?~~ — **qaror: Zr ekin bo'yicha, FAO-56 bosqichlari (fenologiya); hozir hamma joy paxta, keyin ekin rasteri.**
 
 **Grid va kunlik birlashtirish (V4 uchun; 2026-09-26 qo'shildi):**
 
@@ -507,6 +580,7 @@ Sinov tuzilishi (tarix uchun):
   - Hot uchun hech qachon olinmaydigan sinflar: 7, 1, 2, 4, 9, 10, 11.
   - Sinov: T42SUJ'da hozirgi zona, H1 va H2 solishtiriladi; ixtiyoriy — Bushland lizimetri.
 - **SEBAL_Milliy modelining o'z xatosi** (user, 2026-10-03). Bushland'da model past ET paytida (mavsum boshi va oxiri) oshirib, cho'qqida kamaytirib baholaydi. Bu Landsat kunlarida ham bor, VIIRS'ga bog'liq emas (7-A). Tuzatish ishi Landsat kunlarida olib boriladi; qachon boshlash — user qarori.
+- **Random Forest va APSIM yo'llari — keyin** (2026-10-04). Kisekka 2022'da RF dala namlik datchiklari bilan o'qitilganda yaxshi ishlagan; Ziliani 2023 — RS ET va LAI bilan APSIM'ni moslashtirish. O'zbekistonda dala datchiklari tarmog'i yo'q, APSIM har dala uchun kalibrlanadi va GEE'da ishlamaydi — keyingi tadqiqot sifatida.
 - **Piksel darajasida ishlash — keyin** (2026-09-28). Hozir asosiy arxitektura tile bo'yicha: har tile o'z pikseliga ega, ustma-ustlikdan iloji boricha qochiladi. Keyinchalik tile emas, piksel darajasida yurganda pikselning qaysi tile'ga tegishliligi yo'qoladi — shuni hisobga olish kerak.
 
 ## 11. Manbalar
@@ -536,6 +610,11 @@ Asosiy papka: `E:\My_projects\hydrosat`.
 
 **Namlik** (`moisture/`):
 - Kisekka va boshq. 2022 (Irrigation Science). Annotatsiyasiga ko'ra: pySEBAL va EFSOIL hamma nuqtada ishonchli natija bermagan; Random Forest joydagi sensorlar ma'lumoti bilan o'qitilganda yaxshi ishlagan.
+- User topgan (2026-10-04):
+  - Scott, Bastiaanssen va Ahmad 2003 (J. Irrig. Drain. Eng.) — EF → ildiz zonasi namligi (θ = θs·exp((EF − 1)/0.421));
+  - pySEBAL_dev kodi (Hessels, van Opstal, Bastiaanssen, Mohamed): `Calc_Soil_Moisture` — Scott orqali namlik; `Separate_E_T` — T_haqiqiy / T_potensial tuzatishi, lekin Scott namligiga tayanadi;
+  - Werner, Ziliani va Abelló 2023 (Hydrosat; EGU23-15023) — termal → ekin suv stressi → suv balansiga assimilyatsiya → namlik (tezis, formula yo'q);
+  - Ziliani, Werner va Abelló 2023 (EGU23-16403) — termal + optik ET va LAI bilan APSIM'ni moslashtirish → θ, hosil (tezis).
 
 **Sizot suvi** (`sizot-suvi/`):
 - Forkutsa 2009 — Xorazm; paxta ETa'sining 399 mm gachasi sizot suvidan;

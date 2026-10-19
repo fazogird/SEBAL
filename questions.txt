@@ -1466,3 +1466,39 @@ AW = ΣET + ΣR + Σq + ΔS − ΣP
 Qolgan zanjir Hydrosat hujjatidagi structure’ni takrorlaydi.
 
 Keyin bu V0 ishlagach, aynan shu ikki substitute’ni alohida validatsiya qilib yaxshilaymiz.
+
+
+
+
+[]]]]]]]]]]]]]]]]]]]]]]]]
+4. ETAW kerak bo'lsa, AW suv balansi kerakmi?
+
+2-shakl bilan — kerak emas. ETAW = ET − (P − R − DP). Buning uchun faqat ET, yog'in va tuproq kerak; AW ham, haqiqiy namlik ham kerak emas. 
+Shuning uchun ETAW AW'dan barqarorroq mahsulot. Hydrosat/Madera ham dalalarga aynan ETAW beradi.
+
+To'rtta shart bilan:
+
+O'zbekistonda sizot suvi hissasi (ETGW) ayirilishi kerak.
+Hisob suv yilidan boshlanishi kerak, aks holda mavsumdan oldingi tuproq suvi ETAW'ga qo'shilib ketadi.
+Oylik qiymat yomg'irli oyda manfiy chiqishi mumkin, shuning uchun mavsumiy yoki suv yili jami beriladi.
+Bu ETAW'ning yuqori bahosi bo'ladi.
+
+1-shakl yoki bizning manba kuzatuvi bilan esa AW va zaxira kerak bo'ladi.
+
+5. ETPR: qaysi formula aniq
+
+Bushland 2021, mart–oktabr, mukammal kiritmalar: har kuni lizimetr ET'si va haqiqiy sug'orish. Yog'in 328 mm, sug'orish 313 mm.
+
+Formula	ETPR, mm	ETAW, mm	Fizik tekshiruv
+1) α = S_pr/S, umumiy suv	692	42	ETPR yog'indan 2.1 marta ko'p. α 245 kundan 115 kunida 1 dan katta (max 3.4)
+1) α, o'simlik oladigan suv (≤ 1 bilan cheklangan)	374	360	ETPR yog'indan ko'p. Cheklanmasa, WP yaqinida α "portlaydi"
+2) P − R − DP	328 (butun yog'in)	406	ETAW sug'orishdan ko'p: boshlang'ich tuproq suvini ETAW'ga qo'shadi
+Bizniki — IDC manba kuzatuvi	238	217	Ikkala chegara saqlanadi. Yana 279 mm ET kelib chiqishi noma'lum boshlang'ich suvdan
+
+ETPR hech qayerda o'lchanmaydi, shuning uchun baho fizik chegaralar bo'yicha: ETPR yog'indan, ETAW esa sug'orishdan oshmasligi kerak.
+
+1-shakl ishonchsiz. Ta'rifi aniq emas: suvni qanday hisoblashga qarab ETPR 692 yoki 374 mm chiqadi. α 1 dan oshadi va u haqiqiy zaxirani sun'iy yo'ldoshdan talab qiladi — biz buni ola olmasligimizni ko'rdik.
+2-shakl — Hydrosat'ning ikkalasidan ishonchlirog'i. Ta'rifi aniq va AW talab qilmaydi. Kamchiligi: ETPR'ni yuqori baholaydi va boshlang'ich tuproq suvini ETAW'ga qo'shadi, shuning uchun suv yili bilan ishlatish shart.
+Fizik jihatdan eng izchili — bizning manba kuzatuvi. Bu aslida 1-shaklning to'g'ri yozilgan varianti: α haqiqiy zaxira ichida hisoblanadi va 1 dan oshmaydi. Lekin u AW bahosiga va boshlang'ich zaxiraga bog'liq.
+
+Tavsiyam: ETAW'ni asosiy mahsulot qilish. 2-shakl suv yili bilan hisoblanadi, bizning manba kuzatuvi esa oraliq sifatida yoniga qo'yiladi. 1-shakl ishlatilmasin. AW'ni esa oraliq va noaniqlik bilan berish.
